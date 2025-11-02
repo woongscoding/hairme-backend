@@ -591,11 +591,11 @@ def save_to_database(
         processing_time: float,
         detection_method: str,
         opencv_features: Optional[FaceFeatures] = None
-):
-    """분석 결과를 MySQL에 저장"""
+) -> Optional[int]:  # ✅ 반환 타입 추가
+    """분석 결과를 MySQL에 저장하고 ID 반환"""
     if not SessionLocal:
         logger.warning("⚠️ 데이터베이스 연결이 없어 저장을 생략합니다.")
-        return
+        return None  # ✅ None 반환
 
     try:
         db = SessionLocal()
@@ -641,10 +641,11 @@ def save_to_database(
         })
 
         db.close()
+        return history.id  # ✅ ID 반환 추가!
 
     except Exception as e:
         logger.error(f"❌ DB 저장 실패: {str(e)}")
-
+        return None  # ✅ 에러 시 None 반환
 
 # ========== API 엔드포인트 ==========
 @app.get("/")
@@ -793,7 +794,7 @@ async def analyze_face(file: UploadFile = File(...)):
 
         # DB 저장
         total_time = round(time.time() - start_time, 2)
-        save_to_database(
+        analysis_id = save_to_database(  # ✅ 이 부분 추가!
             image_hash=image_hash,
             analysis_result=analysis_result,
             processing_time=total_time,
@@ -809,22 +810,9 @@ async def analyze_face(file: UploadFile = File(...)):
             "opencv_enabled": opencv_features is not None,
             "ml_enabled": ml_model is not None,
             "face_shape": face_shape,
-            "personal_color": skin_tone
+            "personal_color": skin_tone,
+            "analysis_id": analysis_id
         })
-
-        # analysis_id 조회
-        analysis_id = None
-        if SessionLocal:
-            try:
-                db = SessionLocal()
-                latest_record = db.query(AnalysisHistory).filter(
-                    AnalysisHistory.image_hash == image_hash
-                ).order_by(AnalysisHistory.created_at.desc()).first()
-                if latest_record:
-                    analysis_id = latest_record.id
-                db.close()
-            except Exception as e:
-                logger.error(f"❌ analysis_id 조회 실패: {str(e)}")
 
         return {
             "success": True,
