@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# 모델 파일 (용량 큰 파일)
+*.pth
+*.pkl
+data_source/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# AWS 민감 정보
+*secret*.json
+*policy*.json
+*.txt
+ecs-task-trust-policy.json
+
+# 로그 및 테스트
+*.log
+logs-*.json
+test_face*.jpg
+
+# 백업 파일
+*_backup.py
+
+# 임시 파일
+fortest.py
+test_api.py
+run_schema_update.py
+
+# Config (환경변수로 관리)
+config/
