@@ -253,7 +253,7 @@ class AnalysisHistory(Base):
     detection_method = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-    # OpenCV 측정 데이터
+    # OpenCV 측정 데이터 - 수평 비율
     opencv_face_ratio = Column(Float)
     opencv_forehead_ratio = Column(Float)
     opencv_cheekbone_ratio = Column(Float)
@@ -262,13 +262,18 @@ class AnalysisHistory(Base):
     opencv_confidence = Column(Float)
     opencv_gemini_agreement = Column(Boolean)
 
+    # OpenCV 측정 데이터 - 수직 비율 (v20.1.6)
+    opencv_upper_face_ratio = Column(Float)
+    opencv_middle_face_ratio = Column(Float)
+    opencv_lower_face_ratio = Column(Float)
+
     # v20: 추천 스타일 저장
     recommended_styles = Column(JSON)
 
-    # v20: 피드백 컬럼
-    style_1_feedback = Column(SQLEnum(FeedbackType), nullable=True)
-    style_2_feedback = Column(SQLEnum(FeedbackType), nullable=True)
-    style_3_feedback = Column(SQLEnum(FeedbackType), nullable=True)
+    # v20: 피드백 컬럼 (String으로 저장하여 타입 불일치 방지)
+    style_1_feedback = Column(String(10), nullable=True)
+    style_2_feedback = Column(String(10), nullable=True)
+    style_3_feedback = Column(String(10), nullable=True)
 
     # v20: 네이버 클릭 여부
     style_1_naver_clicked = Column(Boolean, default=False)
@@ -299,10 +304,9 @@ class FeedbackResponse(BaseModel):
 # ========== FastAPI 앱 초기화 ==========
 app = FastAPI(
     title="HairMe API",
-    description="AI 기반 헤어스타일 추천 서비스 (v20.1: ML 통합)",
-    version="20.1.0"
+    description="AI 기반 헤어스타일 추천 서비스 (v20.1.6: 수직 비율 데이터 수집)",
+    version="20.1.6"
 )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -340,6 +344,132 @@ SessionLocal = None
 DATABASE_URL = os.getenv("DATABASE_URL")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
+
+def migrate_database_schema():
+    """
+    v20 스키마 마이그레이션 (자동 실행)
+    - 필요한 컬럼이 없으면 자동으로 추가
+    - 이미 존재하면 스킵
+    """
+    if not SessionLocal:
+        return
+
+    try:
+        from sqlalchemy import text
+        db = SessionLocal()
+
+        logger.info("🔄 DB 스키마 마이그레이션 시작...")
+
+        # 현재 테이블 구조 확인
+        result = db.execute(text("DESCRIBE analysis_history"))
+        existing_columns = {row[0] for row in result}
+
+        required_columns = [
+            "recommended_styles",
+            "style_1_feedback",
+            "style_2_feedback",
+            "style_3_feedback",
+            "style_1_naver_clicked",
+            "style_2_naver_clicked",
+            "style_3_naver_clicked",
+            "feedback_at",
+            # v20.1.6: 수직 비율 데이터
+            "opencv_upper_face_ratio",
+            "opencv_middle_face_ratio",
+            "opencv_lower_face_ratio"
+        ]
+
+        missing_columns = [col for col in required_columns if col not in existing_columns]
+
+        if not missing_columns:
+            logger.info("✅ 스키마가 이미 최신 상태입니다 (v20.1.6)")
+            db.close()
+            return
+
+        logger.info(f"🔧 누락된 컬럼 발견: {missing_columns}")
+
+        # 마이그레이션 SQL 실행
+        migration_sqls = []
+
+        if "recommended_styles" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN recommended_styles JSON COMMENT '추천된 3개 헤어스타일'"
+            )
+
+        if "style_1_feedback" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_1_feedback ENUM('like', 'dislike') DEFAULT NULL"
+            )
+
+        if "style_2_feedback" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_2_feedback ENUM('like', 'dislike') DEFAULT NULL"
+            )
+
+        if "style_3_feedback" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_3_feedback ENUM('like', 'dislike') DEFAULT NULL"
+            )
+
+        if "style_1_naver_clicked" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_1_naver_clicked BOOLEAN DEFAULT FALSE"
+            )
+
+        if "style_2_naver_clicked" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_2_naver_clicked BOOLEAN DEFAULT FALSE"
+            )
+
+        if "style_3_naver_clicked" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN style_3_naver_clicked BOOLEAN DEFAULT FALSE"
+            )
+
+        if "feedback_at" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN feedback_at DATETIME DEFAULT NULL"
+            )
+
+        # v20.1.6: 수직 비율 컬럼 추가
+        if "opencv_upper_face_ratio" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN opencv_upper_face_ratio FLOAT DEFAULT NULL COMMENT '상안부 높이 비율'"
+            )
+
+        if "opencv_middle_face_ratio" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN opencv_middle_face_ratio FLOAT DEFAULT NULL COMMENT '중안부 높이 비율'"
+            )
+
+        if "opencv_lower_face_ratio" in missing_columns:
+            migration_sqls.append(
+                "ALTER TABLE analysis_history ADD COLUMN opencv_lower_face_ratio FLOAT DEFAULT NULL COMMENT '하안부 높이 비율'"
+            )
+
+        # 트랜잭션으로 실행
+        for sql in migration_sqls:
+            logger.info(f"실행: {sql[:80]}...")
+            db.execute(text(sql))
+
+        db.commit()
+        logger.info("✅ 스키마 마이그레이션 완료!")
+
+        log_structured("schema_migration", {
+            "status": "success",
+            "added_columns": missing_columns
+        })
+
+        db.close()
+
+    except Exception as e:
+        logger.error(f"❌ 스키마 마이그레이션 실패: {str(e)}")
+        logger.error("서버는 계속 실행되지만, v20 기능이 제대로 작동하지 않을 수 있습니다.")
+        if 'db' in locals():
+            db.rollback()
+            db.close()
+
+
 if DATABASE_URL and DB_PASSWORD:
     try:
         sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql").replace("://admin@", f"://admin:{DB_PASSWORD}@")
@@ -352,6 +482,10 @@ if DATABASE_URL and DB_PASSWORD:
         SessionLocal = sessionmaker(bind=engine)
         Base.metadata.create_all(bind=engine)
         logger.info("✅ MySQL 데이터베이스 연결 성공")
+
+        # 🆕 자동 스키마 마이그레이션 실행
+        migrate_database_schema()
+
         log_structured("database_connected", {
             "database": "hairme-data",
             "tables": ["analysis_history"]
@@ -619,13 +753,18 @@ def save_to_database(
             recommended_styles=recommendations,
             processing_time=processing_time,
             detection_method=detection_method,
+            # 수평 비율 데이터
             opencv_face_ratio=opencv_features.face_ratio if opencv_features else None,
             opencv_forehead_ratio=opencv_features.forehead_ratio if opencv_features else None,
             opencv_cheekbone_ratio=opencv_features.cheekbone_ratio if opencv_features else None,
             opencv_jaw_ratio=opencv_features.jaw_ratio if opencv_features else None,
             opencv_prediction=opencv_features.face_shape_hint if opencv_features else None,
             opencv_confidence=opencv_features.confidence if opencv_features else None,
-            opencv_gemini_agreement=opencv_agreement
+            opencv_gemini_agreement=opencv_agreement,
+            # 수직 비율 데이터 (v20.1.6)
+            opencv_upper_face_ratio=opencv_features.upper_face_ratio if opencv_features else None,
+            opencv_middle_face_ratio=opencv_features.middle_face_ratio if opencv_features else None,
+            opencv_lower_face_ratio=opencv_features.lower_face_ratio if opencv_features else None
         )
 
         db.add(history)
@@ -636,6 +775,7 @@ def save_to_database(
         log_structured("database_saved", {
             "record_id": history.id,
             "opencv_enabled": opencv_features is not None,
+            "opencv_vertical_ratios": opencv_features is not None,  # v20.1.6
             "agreement": opencv_agreement,
             "recommendations_count": len(recommendations)
         })
@@ -647,14 +787,15 @@ def save_to_database(
         logger.error(f"❌ DB 저장 실패: {str(e)}")
         return None  # ✅ 에러 시 None 반환
 
+
 # ========== API 엔드포인트 ==========
 @app.get("/")
 async def root():
     """Root 엔드포인트"""
     face_detection_status = "enabled" if (face_cascade is not None and not face_cascade.empty()) else "disabled"
     return {
-        "message": "헤어스타일 분석 API - v20.1 (ML 통합)",
-        "version": "20.1.0",
+        "message": "헤어스타일 분석 API - v20.1.6 (수직 비율 데이터 수집)",
+        "version": "20.1.6",
         "model": MODEL_NAME,
         "status": "running",
         "features": {
@@ -676,7 +817,7 @@ async def health_check():
 
     return {
         "status": "healthy",
-        "version": "20.1.0",
+        "version": "20.1.6",
         "model": MODEL_NAME,
         "face_detection": face_detection_status,
         "opencv_analysis": "enabled",
@@ -877,7 +1018,8 @@ async def submit_feedback(request: FeedbackRequest):
         feedback_column = f"style_{request.style_index}_feedback"
         clicked_column = f"style_{request.style_index}_naver_clicked"
 
-        setattr(record, feedback_column, request.feedback)
+        # 명시적 문자열 변환 (Enum → str)
+        setattr(record, feedback_column, request.feedback.value)
         setattr(record, clicked_column, request.naver_clicked)
         record.feedback_at = datetime.utcnow()
 
@@ -909,6 +1051,105 @@ async def submit_feedback(request: FeedbackRequest):
         raise HTTPException(
             status_code=500,
             detail=f"피드백 저장 중 오류 발생: {str(e)}"
+        )
+
+
+@app.get("/api/stats/feedback")
+async def get_feedback_stats():
+    """
+    피드백 통계 조회 API
+
+    Returns:
+        - total_analysis: 전체 분석 기록 수
+        - total_feedback: 피드백이 있는 기록 수
+        - recent_feedbacks: 최근 5개 피드백 데이터
+    """
+    if not SessionLocal:
+        raise HTTPException(
+            status_code=500,
+            detail="데이터베이스 연결이 없습니다"
+        )
+
+    try:
+        db = SessionLocal()
+
+        # 전체 통계
+        total = db.query(AnalysisHistory).count()
+        feedback_count = db.query(AnalysisHistory).filter(
+            AnalysisHistory.feedback_at.isnot(None)
+        ).count()
+
+        # 최근 5개 피드백
+        recent = db.query(AnalysisHistory).filter(
+            AnalysisHistory.feedback_at.isnot(None)
+        ).order_by(AnalysisHistory.id.desc()).limit(5).all()
+
+        recent_data = []
+        for r in recent:
+            recent_data.append({
+                "id": r.id,
+                "face_shape": r.face_shape,
+                "personal_color": r.personal_color,
+                "style_1_feedback": r.style_1_feedback,
+                "style_2_feedback": r.style_2_feedback,
+                "style_3_feedback": r.style_3_feedback,
+                "style_1_naver_clicked": r.style_1_naver_clicked,
+                "style_2_naver_clicked": r.style_2_naver_clicked,
+                "style_3_naver_clicked": r.style_3_naver_clicked,
+                "feedback_at": r.feedback_at.isoformat() if r.feedback_at else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None
+            })
+
+        # 좋아요/싫어요 통계
+        like_counts = {
+            "style_1": 0,
+            "style_2": 0,
+            "style_3": 0
+        }
+        dislike_counts = {
+            "style_1": 0,
+            "style_2": 0,
+            "style_3": 0
+        }
+
+        all_feedback = db.query(AnalysisHistory).filter(
+            AnalysisHistory.feedback_at.isnot(None)
+        ).all()
+
+        for record in all_feedback:
+            if record.style_1_feedback == "like":
+                like_counts["style_1"] += 1
+            elif record.style_1_feedback == "dislike":
+                dislike_counts["style_1"] += 1
+
+            if record.style_2_feedback == "like":
+                like_counts["style_2"] += 1
+            elif record.style_2_feedback == "dislike":
+                dislike_counts["style_2"] += 1
+
+            if record.style_3_feedback == "like":
+                like_counts["style_3"] += 1
+            elif record.style_3_feedback == "dislike":
+                dislike_counts["style_3"] += 1
+
+        db.close()
+
+        logger.info(f"📊 통계 조회: 전체 {total}개, 피드백 {feedback_count}개")
+
+        return {
+            "success": True,
+            "total_analysis": total,
+            "total_feedback": feedback_count,
+            "like_counts": like_counts,
+            "dislike_counts": dislike_counts,
+            "recent_feedbacks": recent_data
+        }
+
+    except Exception as e:
+        logger.error(f"❌ 통계 조회 실패: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"통계 조회 중 오류 발생: {str(e)}"
         )
 
 
