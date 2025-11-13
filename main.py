@@ -33,6 +33,11 @@ from models.mediapipe_analyzer import MediaPipeFaceAnalyzer, MediaPipeFaceFeatur
 # ========== ML & 하이브리드 추천 시스템 임포트 ==========
 from services.hybrid_recommender import get_hybrid_service
 from models.ml_recommender import get_ml_recommender
+from services.feedback_collector import get_feedback_collector
+from services.retrain_queue import get_retrain_queue
+
+# ========== 라우터 임포트 ==========
+from routers.admin import router as admin_router
 
 Base = declarative_base()
 
@@ -100,6 +105,8 @@ style_encoder = None
 sentence_transformer = None
 mediapipe_analyzer = None  # MediaPipe 얼굴 분석기
 hybrid_service = None  # 하이브리드 추천 서비스 (Gemini + ML)
+feedback_collector = None  # 피드백 수집기
+retrain_queue = None  # 재학습 큐
 
 
 # ========== CloudWatch Logs 구조화 로깅 ==========
@@ -353,12 +360,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ========== 라우터 등록 ==========
+app.include_router(admin_router, prefix="/api", tags=["admin"])
+
 
 # ========== 앱 시작 이벤트 ==========
 @app.on_event("startup")
 async def startup_event():
     """서버 시작 시 ML 모델 로드"""
-    global mediapipe_analyzer, hybrid_service
+    global mediapipe_analyzer, hybrid_service, feedback_collector, retrain_queue
 
     logger.info("🚀 서버 시작 중...")
 
@@ -429,6 +439,36 @@ async def startup_event():
         logger.error(f"❌ 하이브리드 서비스 초기화 실패: {str(e)}")
         hybrid_service = None
         log_structured("hybrid_service_initialized", {
+            "status": "failed",
+            "error": str(e)
+        })
+
+    # 피드백 수집기 초기화
+    try:
+        feedback_collector = get_feedback_collector()
+        logger.info("✅ 피드백 수집기 초기화 완료")
+        log_structured("feedback_collector_initialized", {
+            "status": "success"
+        })
+    except Exception as e:
+        logger.error(f"❌ 피드백 수집기 초기화 실패: {str(e)}")
+        feedback_collector = None
+        log_structured("feedback_collector_initialized", {
+            "status": "failed",
+            "error": str(e)
+        })
+
+    # 재학습 큐 초기화
+    try:
+        retrain_queue = get_retrain_queue()
+        logger.info("✅ 재학습 큐 초기화 완료")
+        log_structured("retrain_queue_initialized", {
+            "status": "success"
+        })
+    except Exception as e:
+        logger.error(f"❌ 재학습 큐 초기화 실패: {str(e)}")
+        retrain_queue = None
+        log_structured("retrain_queue_initialized", {
             "status": "failed",
             "error": str(e)
         })
@@ -1367,6 +1407,109 @@ async def analyze_face_hybrid(file: UploadFile = File(...)):
         raise HTTPException(
             status_code=500,
             detail=f"분석 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@app.post("/api/v2/feedback")
+async def collect_feedback(
+    face_shape: str,
+    skin_tone: str,
+    hairstyle_id: int,
+    user_reaction: str,
+    ml_prediction: float,
+    user_id: str = "anonymous"
+):
+    """
+    사용자 피드백 수집 엔드포인트 (v2)
+
+    Args:
+        face_shape: 얼굴형 ("계란형", "둥근형", "긴형", "각진형")
+        skin_tone: 피부톤 ("가을웜", "겨울쿨", "봄웜", "여름쿨")
+        hairstyle_id: 헤어스타일 ID (0-based index)
+        user_reaction: "👍" (좋아요) or "👎" (싫어요)
+        ml_prediction: ML 모델 예측 점수
+        user_id: 사용자 ID (기본값: "anonymous")
+
+    Returns:
+        {"total_feedbacks": int, "retrain_triggered": bool, "retrain_job_id": str}
+
+    Ground Truth Rules:
+        👍 -> 90.0 (user LIKED this combination)
+        👎 -> 10.0 (user DISLIKED this combination)
+    """
+    if not feedback_collector:
+        raise HTTPException(
+            status_code=500,
+            detail="피드백 수집기가 초기화되지 않았습니다."
+        )
+
+    try:
+        # 입력 검증
+        if user_reaction not in ["👍", "👎"]:
+            raise HTTPException(
+                status_code=400,
+                detail="user_reaction은 '👍' 또는 '👎'만 가능합니다."
+            )
+
+        # 피드백 저장
+        result = feedback_collector.save_feedback(
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            hairstyle_id=hairstyle_id,
+            user_reaction=user_reaction,
+            ml_prediction=ml_prediction,
+            user_id=user_id
+        )
+
+        retrain_job_id = None
+
+        # 재학습 트리거 확인
+        if result['retrain_triggered'] and retrain_queue:
+            # 재학습 작업을 큐에 추가
+            job = retrain_queue.add_job(result['total_feedbacks'])
+            retrain_job_id = job['job_id']
+
+            logger.info(
+                f"🔄 재학습 작업 생성: {retrain_job_id} "
+                f"(피드백 {result['total_feedbacks']}개)"
+            )
+
+            log_structured("retrain_job_created", {
+                "job_id": retrain_job_id,
+                "feedback_count": result['total_feedbacks']
+            })
+
+        logger.info(
+            f"✅ 피드백 수집 완료: {face_shape} + {skin_tone} + ID#{hairstyle_id} "
+            f"-> {user_reaction} | Total: {result['total_feedbacks']}"
+        )
+
+        log_structured("feedback_collected", {
+            "face_shape": face_shape,
+            "skin_tone": skin_tone,
+            "hairstyle_id": hairstyle_id,
+            "user_reaction": user_reaction,
+            "ml_prediction": ml_prediction,
+            "total_feedbacks": result['total_feedbacks'],
+            "retrain_triggered": result['retrain_triggered'],
+            "retrain_job_id": retrain_job_id
+        })
+
+        return {
+            "success": True,
+            "total_feedbacks": result['total_feedbacks'],
+            "retrain_triggered": result['retrain_triggered'],
+            "retrain_job_id": retrain_job_id,
+            "message": "피드백이 성공적으로 저장되었습니다."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 피드백 수집 실패: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"피드백 수집 중 오류가 발생했습니다: {str(e)}"
         )
 
 
