@@ -26,8 +26,13 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, Boolean, 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# ========== OpenCV 얼굴 분석 모듈 임포트 ==========
-from models.face_analyzer import extract_face_features, create_enhanced_prompt, FaceFeatures
+# ========== 얼굴 분석 모듈 임포트 ==========
+# from models.face_analyzer import extract_face_features, create_enhanced_prompt, FaceFeatures  # ❌ 제거됨 (Haar Cascade)
+from models.mediapipe_analyzer import MediaPipeFaceAnalyzer, MediaPipeFaceFeatures
+
+# ========== ML & 하이브리드 추천 시스템 임포트 ==========
+from services.hybrid_recommender import get_hybrid_service
+from models.ml_recommender import get_ml_recommender
 
 Base = declarative_base()
 
@@ -92,6 +97,9 @@ ml_model = None
 face_encoder = None
 skin_encoder = None
 style_encoder = None
+sentence_transformer = None
+mediapipe_analyzer = None  # MediaPipe 얼굴 분석기
+hybrid_service = None  # 하이브리드 추천 서비스 (Gemini + ML)
 
 
 # ========== CloudWatch Logs 구조화 로깅 ==========
@@ -153,6 +161,36 @@ def load_ml_model():
     except Exception as e:
         logger.error(f"❌ ML 모델 로드 실패: {str(e)}")
         ml_model = None
+        return False
+
+
+def load_sentence_transformer():
+    """Sentence Transformer 모델 로드 (헤어스타일 임베딩용)"""
+    global sentence_transformer
+
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        model_name = 'paraphrase-multilingual-MiniLM-L12-v2'
+        logger.info(f"⏳ Sentence Transformer 로드 중: {model_name}")
+
+        sentence_transformer = SentenceTransformer(model_name)
+
+        logger.info("✅ Sentence Transformer 로드 성공")
+        logger.info(f"  - 모델: {model_name}")
+        logger.info(f"  - 임베딩 차원: 384")
+
+        return True
+
+    except ImportError:
+        logger.warning("⚠️ sentence-transformers 라이브러리가 설치되지 않음")
+        logger.warning("  - pip install sentence-transformers 실행 필요")
+        sentence_transformer = None
+        return False
+
+    except Exception as e:
+        logger.error(f"❌ Sentence Transformer 로드 실패: {str(e)}")
+        sentence_transformer = None
         return False
 
 
@@ -320,7 +358,25 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """서버 시작 시 ML 모델 로드"""
+    global mediapipe_analyzer, hybrid_service
+
     logger.info("🚀 서버 시작 중...")
+
+    # MediaPipe 얼굴 분석기 초기화
+    try:
+        mediapipe_analyzer = MediaPipeFaceAnalyzer()
+        logger.info("✅ MediaPipe 얼굴 분석기 초기화 완료")
+        log_structured("mediapipe_initialized", {
+            "status": "success",
+            "landmarks": 478
+        })
+    except Exception as e:
+        logger.error(f"❌ MediaPipe 초기화 실패: {str(e)}")
+        mediapipe_analyzer = None
+        log_structured("mediapipe_initialized", {
+            "status": "failed",
+            "error": str(e)
+        })
 
     # ML 모델 로드 시도
     ml_loaded = load_ml_model()
@@ -336,6 +392,45 @@ async def startup_event():
         log_structured("ml_model_loaded", {
             "status": "failed",
             "fallback": "default_score"
+        })
+
+    # Sentence Transformer 로드 시도
+    st_loaded = load_sentence_transformer()
+
+    if st_loaded:
+        logger.info("✅ 스타일 임베딩: 활성화")
+        log_structured("sentence_transformer_loaded", {
+            "status": "success",
+            "model": "paraphrase-multilingual-MiniLM-L12-v2",
+            "embedding_dim": 384
+        })
+    else:
+        logger.warning("⚠️ 스타일 임베딩: 비활성화 (임베딩 없이 진행)")
+        log_structured("sentence_transformer_loaded", {
+            "status": "failed",
+            "fallback": "no_embedding"
+        })
+
+    # 하이브리드 추천 서비스 초기화 (Gemini + ML)
+    try:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key:
+            hybrid_service = get_hybrid_service(gemini_api_key)
+            logger.info("✅ 하이브리드 추천 서비스 초기화 완료 (Gemini + ML)")
+            log_structured("hybrid_service_initialized", {
+                "status": "success",
+                "gemini_model": "gemini-1.5-flash-latest",
+                "ml_model": "hairstyle_recommender.pt"
+            })
+        else:
+            logger.warning("⚠️ GEMINI_API_KEY 없음 - 하이브리드 서비스 비활성화")
+            hybrid_service = None
+    except Exception as e:
+        logger.error(f"❌ 하이브리드 서비스 초기화 실패: {str(e)}")
+        hybrid_service = None
+        log_structured("hybrid_service_initialized", {
+            "status": "failed",
+            "error": str(e)
         })
 
 
@@ -555,29 +650,8 @@ else:
 
 MODEL_NAME = "gemini-flash-latest"
 
-# ========== OpenCV 얼굴 감지기 ==========
-face_cascade = None
-try:
-    cascade_paths = [
-        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml',
-        '/usr/local/lib/python3.11/site-packages/cv2/data/haarcascade_frontalface_default.xml',
-        '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml'
-    ]
-
-    for path in cascade_paths:
-        if os.path.exists(path):
-            face_cascade = cv2.CascadeClassifier(path)
-            if not face_cascade.empty():
-                logger.info(f"✅ OpenCV 얼굴 감지기 초기화 완료: {path}")
-                break
-
-    if face_cascade is None or face_cascade.empty():
-        logger.error("❌ OpenCV 얼굴 감지기 초기화 실패")
-        face_cascade = None
-
-except Exception as e:
-    logger.error(f"OpenCV 얼굴 감지기 초기화 실패: {str(e)}")
-    face_cascade = None
+# ========== Haar Cascade 제거됨 (MediaPipe로 대체) ==========
+# MediaPipe가 실패하면 Gemini로 직접 백업
 
 # ========== Gemini 기본 프롬프트 ==========
 ANALYSIS_PROMPT = """분석하고 JSON으로 응답:
@@ -632,37 +706,33 @@ JSON으로만 답변:
 
 
 def detect_face(image_data: bytes) -> dict:
-    """얼굴 감지 (OpenCV 우선, 실패 시 Gemini)"""
-    if face_cascade is not None and not face_cascade.empty():
+    """얼굴 감지 (MediaPipe 우선, 실패 시 Gemini)"""
+    # 1차 시도: MediaPipe (가장 정확함 - 90%+)
+    if mediapipe_analyzer is not None:
         try:
-            nparr = np.frombuffer(image_data, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            mp_features = mediapipe_analyzer.analyze(image_data)
 
-            if img is not None:
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(
-                    gray,
-                    scaleFactor=1.1,
-                    minNeighbors=5,
-                    minSize=(100, 100)
-                )
-
-                if len(faces) > 0:
-                    log_structured("face_detection", {
-                        "method": "opencv",
-                        "face_count": len(faces),
-                        "success": True
-                    })
-                    return {
-                        "has_face": True,
-                        "face_count": len(faces),
-                        "method": "opencv"
-                    }
+            if mp_features:
+                log_structured("face_detection", {
+                    "method": "mediapipe",
+                    "face_count": 1,
+                    "success": True,
+                    "face_shape": mp_features.face_shape,
+                    "skin_tone": mp_features.skin_tone,
+                    "confidence": mp_features.confidence
+                })
+                return {
+                    "has_face": True,
+                    "face_count": 1,
+                    "method": "mediapipe",
+                    "features": mp_features  # MediaPipe 분석 결과 포함
+                }
 
         except Exception as e:
-            logger.warning(f"OpenCV 얼굴 감지 실패: {str(e)}")
+            logger.warning(f"MediaPipe 얼굴 감지 실패: {str(e)}")
 
-    logger.info("OpenCV 실패, Gemini로 얼굴 검증 시작...")
+    # 2차 시도: Gemini (최종 백업)
+    logger.info("MediaPipe 실패, Gemini로 얼굴 검증 시작...")
     gemini_result = verify_face_with_gemini(image_data)
 
     log_structured("face_detection", {
@@ -674,19 +744,48 @@ def detect_face(image_data: bytes) -> dict:
     return gemini_result
 
 
-def analyze_with_gemini(image_data: bytes) -> dict:
-    """Gemini Vision API로 얼굴 분석"""
+def analyze_with_gemini(image_data: bytes, mp_features: Optional[MediaPipeFaceFeatures] = None) -> dict:
+    """Gemini Vision API로 얼굴 분석 (MediaPipe 힌트 제공)"""
     try:
         image = Image.open(io.BytesIO(image_data))
 
-        opencv_features = extract_face_features(image_data)
+        # MediaPipe 결과가 있으면 힌트 제공
+        if mp_features:
+            prompt = f"""다음 얼굴 사진을 분석하고 JSON으로 응답해주세요.
 
-        if opencv_features:
-            prompt = create_enhanced_prompt(opencv_features)
-            logger.info(f"✅ OpenCV 힌트 적용: {opencv_features.face_shape_hint}")
+🔍 **참고용 측정 데이터** (MediaPipe AI 분석 - 신뢰도 {mp_features.confidence:.0%}):
+- 얼굴형: {mp_features.face_shape}
+- 피부톤: {mp_features.skin_tone}
+- 얼굴 비율(높이/너비): {mp_features.face_ratio:.2f}
+- 이마 너비: {mp_features.forehead_width:.0f}px
+- 광대 너비: {mp_features.cheekbone_width:.0f}px
+- 턱 너비: {mp_features.jaw_width:.0f}px
+- ITA 값: {mp_features.ITA_value:.1f}°
+
+위 수치는 참고만 하고, 당신의 시각적 판단을 우선하세요.
+
+**분석 항목:**
+1. 얼굴형: 계란형/둥근형/각진형/긴형/하트형 중 1개
+2. 퍼스널컬러: 봄웜/가을웜/여름쿨/겨울쿨 중 1개
+3. 헤어스타일 추천 3개 (각 이름 15자, 이유 30자 이내)
+
+**JSON 형식:**
+{{
+  "analysis": {{
+    "face_shape": "계란형",
+    "personal_color": "봄웜",
+    "features": "이목구비 특징 설명"
+  }},
+  "recommendations": [
+    {{"style_name": "스타일명", "reason": "추천 이유"}}
+  ]
+}}"""
+            logger.info(f"✅ MediaPipe 힌트 적용: {mp_features.face_shape} / {mp_features.skin_tone}")
+
         else:
+            # MediaPipe 없을 때 기본 프롬프트
             prompt = ANALYSIS_PROMPT
-            logger.warning("⚠️ OpenCV 특징 추출 실패, 기본 프롬프트 사용")
+            logger.warning("⚠️ MediaPipe 특징 없음, 기본 프롬프트 사용")
 
         model = genai.GenerativeModel(MODEL_NAME)
         response = model.generate_content([prompt, image])
@@ -724,23 +823,24 @@ def save_to_database(
         analysis_result: dict,
         processing_time: float,
         detection_method: str,
-        opencv_features: Optional[FaceFeatures] = None
-) -> Optional[int]:  # ✅ 반환 타입 추가
+        mp_features: Optional[MediaPipeFaceFeatures] = None
+) -> Optional[int]:
     """분석 결과를 MySQL에 저장하고 ID 반환"""
     if not SessionLocal:
         logger.warning("⚠️ 데이터베이스 연결이 없어 저장을 생략합니다.")
-        return None  # ✅ None 반환
+        return None
 
     try:
         db = SessionLocal()
 
         gemini_shape = analysis_result.get("analysis", {}).get("face_shape")
 
-        opencv_agreement = None
-        if opencv_features:
-            opencv_agreement = (
-                    opencv_features.face_shape_hint in gemini_shape or
-                    gemini_shape in opencv_features.face_shape_hint
+        # MediaPipe 일치도 계산
+        mediapipe_agreement = None
+        if mp_features:
+            mediapipe_agreement = (
+                    mp_features.face_shape in gemini_shape or
+                    gemini_shape in mp_features.face_shape
             )
 
         recommendations = analysis_result.get("recommendations", [])
@@ -753,18 +853,17 @@ def save_to_database(
             recommended_styles=recommendations,
             processing_time=processing_time,
             detection_method=detection_method,
-            # 수평 비율 데이터
-            opencv_face_ratio=opencv_features.face_ratio if opencv_features else None,
-            opencv_forehead_ratio=opencv_features.forehead_ratio if opencv_features else None,
-            opencv_cheekbone_ratio=opencv_features.cheekbone_ratio if opencv_features else None,
-            opencv_jaw_ratio=opencv_features.jaw_ratio if opencv_features else None,
-            opencv_prediction=opencv_features.face_shape_hint if opencv_features else None,
-            opencv_confidence=opencv_features.confidence if opencv_features else None,
-            opencv_gemini_agreement=opencv_agreement,
-            # 수직 비율 데이터 (v20.1.6)
-            opencv_upper_face_ratio=opencv_features.upper_face_ratio if opencv_features else None,
-            opencv_middle_face_ratio=opencv_features.middle_face_ratio if opencv_features else None,
-            opencv_lower_face_ratio=opencv_features.lower_face_ratio if opencv_features else None
+            # OpenCV 데이터는 더이상 수집하지 않음 (MediaPipe로 대체)
+            opencv_face_ratio=None,
+            opencv_forehead_ratio=None,
+            opencv_cheekbone_ratio=None,
+            opencv_jaw_ratio=None,
+            opencv_prediction=None,
+            opencv_confidence=None,
+            opencv_gemini_agreement=mediapipe_agreement,  # MediaPipe 일치도로 대체
+            opencv_upper_face_ratio=None,
+            opencv_middle_face_ratio=None,
+            opencv_lower_face_ratio=None
         )
 
         db.add(history)
@@ -774,14 +873,13 @@ def save_to_database(
         logger.info(f"✅ DB 저장 성공 (ID: {history.id})")
         log_structured("database_saved", {
             "record_id": history.id,
-            "opencv_enabled": opencv_features is not None,
-            "opencv_vertical_ratios": opencv_features is not None,  # v20.1.6
-            "agreement": opencv_agreement,
+            "mediapipe_enabled": mp_features is not None,
+            "mediapipe_agreement": mediapipe_agreement,
             "recommendations_count": len(recommendations)
         })
 
         db.close()
-        return history.id  # ✅ ID 반환 추가!
+        return history.id
 
     except Exception as e:
         logger.error(f"❌ DB 저장 실패: {str(e)}")
@@ -792,20 +890,20 @@ def save_to_database(
 @app.get("/")
 async def root():
     """Root 엔드포인트"""
-    face_detection_status = "enabled" if (face_cascade is not None and not face_cascade.empty()) else "disabled"
+    mediapipe_status = "enabled" if mediapipe_analyzer is not None else "disabled"
     return {
-        "message": "헤어스타일 분석 API - v20.1.6 (수직 비율 데이터 수집)",
-        "version": "20.1.6",
+        "message": "헤어스타일 분석 API - v20.2.0 (MediaPipe 전환 완료)",
+        "version": "20.2.0",
         "model": MODEL_NAME,
         "status": "running",
         "features": {
-            "face_detection": face_detection_status,
-            "opencv_analysis": "enabled",
+            "mediapipe_analysis": mediapipe_status,
             "gemini_analysis": "enabled" if GEMINI_API_KEY else "disabled",
             "redis_cache": "enabled" if redis_client else "disabled",
             "database": "enabled" if SessionLocal else "disabled",
             "feedback_system": "enabled",
-            "ml_prediction": "enabled" if ml_model else "disabled"
+            "ml_prediction": "enabled" if ml_model else "disabled",
+            "style_embedding": "enabled" if sentence_transformer else "disabled"
         }
     }
 
@@ -813,19 +911,19 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """헬스체크 엔드포인트"""
-    face_detection_status = "enabled" if (face_cascade is not None and not face_cascade.empty()) else "disabled"
+    mediapipe_status = "enabled" if mediapipe_analyzer is not None else "disabled"
 
     return {
         "status": "healthy",
-        "version": "20.1.6",
+        "version": "20.2.0",
         "model": MODEL_NAME,
-        "face_detection": face_detection_status,
-        "opencv_analysis": "enabled",
+        "mediapipe_analysis": mediapipe_status,
         "gemini_api": "configured" if GEMINI_API_KEY else "not_configured",
         "redis": "connected" if redis_client else "disconnected",
         "database": "connected" if SessionLocal else "disconnected",
         "feedback_system": "enabled",
-        "ml_model": "enabled" if ml_model else "disabled"
+        "ml_model": "enabled" if ml_model else "disabled",
+        "style_embedding": "enabled" if sentence_transformer else "disabled"
     }
 
 
@@ -904,12 +1002,13 @@ async def analyze_face(file: UploadFile = File(...)):
                 }
             )
 
-        # Gemini 분석
-        gemini_start = time.time()
-        analysis_result = analyze_with_gemini(image_data)
-        gemini_time = round((time.time() - gemini_start) * 1000, 2)
+        # MediaPipe features 추출 (detect_face에서 이미 분석됨)
+        mp_features = face_result.get("features", None)
 
-        opencv_features = extract_face_features(image_data)
+        # Gemini 분석 (MediaPipe 힌트 제공)
+        gemini_start = time.time()
+        analysis_result = analyze_with_gemini(image_data, mp_features)
+        gemini_time = round((time.time() - gemini_start) * 1000, 2)
 
         # ✅ ML 점수 추가
         face_shape = analysis_result.get("analysis", {}).get("face_shape")
@@ -925,6 +1024,18 @@ async def analyze_face(file: UploadFile = File(...)):
             recommendation['ml_confidence'] = ml_score
             recommendation['confidence_level'] = get_confidence_level(ml_score)
 
+            # 스타일 임베딩 생성 (Sentence Transformer)
+            if sentence_transformer is not None:
+                try:
+                    embedding = sentence_transformer.encode(style_name)
+                    recommendation['style_embedding'] = embedding.tolist()
+                    logger.info(f"✅ 임베딩 생성 성공: {style_name} → {len(embedding)}차원")
+                except Exception as e:
+                    logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
+                    recommendation['style_embedding'] = None
+            else:
+                recommendation['style_embedding'] = None
+
             # 네이버 검색 URL
             encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
             recommendation[
@@ -935,12 +1046,12 @@ async def analyze_face(file: UploadFile = File(...)):
 
         # DB 저장
         total_time = round(time.time() - start_time, 2)
-        analysis_id = save_to_database(  # ✅ 이 부분 추가!
+        analysis_id = save_to_database(
             image_hash=image_hash,
             analysis_result=analysis_result,
             processing_time=total_time,
-            detection_method=face_result.get("method", "opencv"),
-            opencv_features=opencv_features
+            detection_method=face_result.get("method", "mediapipe"),
+            mp_features=mp_features
         )
 
         log_structured("analysis_complete", {
@@ -950,6 +1061,7 @@ async def analyze_face(file: UploadFile = File(...)):
             "gemini_analysis_time_ms": gemini_time,
             "opencv_enabled": opencv_features is not None,
             "ml_enabled": ml_model is not None,
+            "embedding_enabled": sentence_transformer is not None,
             "face_shape": face_shape,
             "personal_color": skin_tone,
             "analysis_id": analysis_id
@@ -965,7 +1077,8 @@ async def analyze_face(file: UploadFile = File(...)):
                 "gemini_analysis_ms": gemini_time,
                 "detection_method": face_result.get("method", "opencv"),
                 "opencv_analysis": "enabled" if opencv_features else "failed",
-                "ml_prediction": "enabled" if ml_model else "disabled"
+                "ml_prediction": "enabled" if ml_model else "disabled",
+                "style_embedding": "enabled" if sentence_transformer else "disabled"
             },
             "cached": False,
             "model_used": MODEL_NAME
@@ -1150,6 +1263,110 @@ async def get_feedback_stats():
         raise HTTPException(
             status_code=500,
             detail=f"통계 조회 중 오류 발생: {str(e)}"
+        )
+
+
+# ========== 하이브리드 추천 엔드포인트 (Gemini + ML) ==========
+@app.post("/api/v2/analyze-hybrid")
+async def analyze_face_hybrid(file: UploadFile = File(...)):
+    """
+    하이브리드 얼굴 분석 및 헤어스타일 추천 (Gemini + ML)
+
+    플로우:
+    1. MediaPipe로 얼굴형 + 피부톤 분석
+    2. Gemini API로 4개 추천
+    3. ML 모델로 Top-3 추천
+    4. 중복 제거 후 최대 7개 반환
+    """
+    start_time = time.time()
+
+    try:
+        # 파일 검증
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="파일명이 없습니다")
+
+        file_ext = file.filename.lower().split('.')[-1]
+        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+            raise HTTPException(
+                status_code=400,
+                detail="지원하지 않는 파일 형식입니다."
+            )
+
+        logger.info(f"🎨 하이브리드 분석 시작: {file.filename}")
+
+        # 이미지 읽기
+        image_data = await file.read()
+        image_hash = calculate_image_hash(image_data)
+
+        # 1. MediaPipe로 얼굴 분석
+        if not mediapipe_analyzer:
+            raise HTTPException(
+                status_code=500,
+                detail="MediaPipe 분석기가 초기화되지 않았습니다."
+            )
+
+        mp_features = mediapipe_analyzer.analyze(image_data)
+
+        if not mp_features:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "no_face_detected",
+                    "message": "얼굴이 감지되지 않았습니다.\\n밝은 곳에서 정면 사진을 촬영해주세요."
+                }
+            )
+
+        face_shape = mp_features.face_shape
+        skin_tone = mp_features.skin_tone
+
+        logger.info(f"✅ MediaPipe 분석: {face_shape} + {skin_tone}")
+
+        # 2. 하이브리드 추천
+        if not hybrid_service:
+            raise HTTPException(
+                status_code=500,
+                detail="하이브리드 추천 서비스가 초기화되지 않았습니다."
+            )
+
+        recommendation_result = hybrid_service.recommend(
+            image_data, face_shape, skin_tone
+        )
+
+        # 3. 네이버 검색 URL 추가
+        import urllib.parse
+        for rec in recommendation_result.get("recommendations", []):
+            style_name = rec.get("style_name", "")
+            encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
+            rec["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
+
+        # 4. 응답
+        total_time = round(time.time() - start_time, 2)
+
+        logger.info(f"✅ 하이브리드 분석 완료 ({total_time}초)")
+
+        return {
+            "success": True,
+            "data": recommendation_result,
+            "processing_time": total_time,
+            "method": "hybrid",
+            "mediapipe_features": {
+                "face_shape": face_shape,
+                "skin_tone": skin_tone,
+                "confidence": mp_features.confidence
+            },
+            "model_used": "gemini-1.5-flash-latest + hairstyle_recommender.pt"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 하이브리드 분석 오류: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"분석 중 오류가 발생했습니다: {str(e)}"
         )
 
 

@@ -4,41 +4,119 @@ __pycache__/
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
 .venv/
 venv/
-env/
 ENV/
-.env
-
-# 모델 파일 (용량 큰 파일)
-*.pth
-*.pkl
-data_source/
+env/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 
-# AWS 민감 정보
-*secret*.json
-*policy*.json
-*.txt
-ecs-task-trust-policy.json
+# OS
+.DS_Store
+Thumbs.db
 
-# 로그 및 테스트
+# Project specific
+# Models (large files, should be stored elsewhere)
+*.pt
+*.pth
+*.h5
+*.pkl
+models/backup/
+models/hairstyle_recommender_v2.pt/
+
+# Data files
+data_source/*.json
+!data_source/valid_hairstyles.json
+data_source/*.npz
+data_quality/
+evaluation/
+
+# Logs and temporary files
 *.log
-logs-*.json
-test_face*.jpg
+nul
+*.tmp
+response.json
+migration_response*.json
+test-event.json
+log-streams.json
+error_analysis_report.json
 
-# 백업 파일
-*_backup.py
+# Archives
+archive/
+*.zip
+*.tar.gz
 
-# 임시 파일
-fortest.py
-test_api.py
-run_schema_update.py
+# AWS temporary files
+lambda/
+cost-*.json
 
-# Config (환경변수로 관리)
-config/
+# Analysis and experiment scripts (temporary)
+analyze_*.py
+check_*.py
+verify_*.py
+explain_*.py
+cleanup_*.py
+run_experiments.py
+
+# Test files (keep only if needed)
+test_*.py
+
+# Planning and experiment docs (keep final docs only)
+ACTION_PLAN*.md
+EXPERIMENT_PLAN*.md
+IMPROVEMENT_PLAN.md
+AI_HUB_DATA_CHECKLIST.md
+COMBINATION_LEAKAGE_SOLUTION.md
+FEEDBACK_LOGIC_IMPROVEMENT.md
+MISSING_STYLE_SOLUTION.md
+PROPORTIONAL_FEEDBACK_LOGIC.md
+REALITY_CHECK.md
+TEMPLATE_REASON_GUIDE.md
+
+# Images
+*.png
+*.jpg
+*.jpeg
+
+# Testsprite
+testsprite_tests/
+
+# Scripts that are work-in-progress
+scripts/collect_balanced_training_data.py
+scripts/collect_synthetic_training_data_v*.py
+scripts/collect_to_5k.py
+scripts/prepare_training_data_v*.py
+scripts/train_model_v3.py
+scripts/evaluate_*.py
+scripts/merge_all_data.py
+scripts/generate_style_*.py
+scripts/prepare_and_train_final_model.py
+
+# Endpoints (reference only, already in main.py)
+endpoints/
+
+# Utils backup
+start_server.py
