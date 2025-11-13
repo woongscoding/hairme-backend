@@ -613,8 +613,10 @@ if DATABASE_URL:
 
         # DATABASE_URL에 이미 패스워드가 포함되어 있으면 그대로 사용
         if "://admin@" in DATABASE_URL and DB_PASSWORD:
-            sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql").replace("://admin@", f"://admin:{DB_PASSWORD}@")
-            logger.info("Using DATABASE_URL with DB_PASSWORD injection")
+            # 비밀번호를 URL 인코딩 (특수문자 처리)
+            encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
+            sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql").replace("://admin@", f"://admin:{encoded_password}@")
+            logger.info("Using DATABASE_URL with DB_PASSWORD injection (URL-encoded)")
         else:
             sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql")
             logger.info("Using DATABASE_URL as-is (already has password)")
