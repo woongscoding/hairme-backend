@@ -1099,7 +1099,7 @@ async def analyze_face(file: UploadFile = File(...)):
             "processing_time": total_time,
             "face_detection_time_ms": face_detection_time,
             "gemini_analysis_time_ms": gemini_time,
-            "opencv_enabled": opencv_features is not None,
+            "mediapipe_enabled": mp_features is not None,
             "ml_enabled": ml_model is not None,
             "embedding_enabled": sentence_transformer is not None,
             "face_shape": face_shape,
@@ -1115,8 +1115,8 @@ async def analyze_face(file: UploadFile = File(...)):
             "performance": {
                 "face_detection_ms": face_detection_time,
                 "gemini_analysis_ms": gemini_time,
-                "detection_method": face_result.get("method", "opencv"),
-                "opencv_analysis": "enabled" if opencv_features else "failed",
+                "detection_method": face_result.get("method", "mediapipe"),
+                "mediapipe_analysis": "enabled" if mp_features else "failed",
                 "ml_prediction": "enabled" if ml_model else "disabled",
                 "style_embedding": "enabled" if sentence_transformer else "disabled"
             },
