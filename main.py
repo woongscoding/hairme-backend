@@ -1380,13 +1380,44 @@ async def analyze_face_hybrid(file: UploadFile = File(...)):
             encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
             rec["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
 
-        # 4. 응답
+        # 4. DB에 분석 결과 저장
         total_time = round(time.time() - start_time, 2)
+        analysis_id = None
+
+        if SessionLocal:
+            try:
+                db = SessionLocal()
+
+                # AnalysisHistory 레코드 생성
+                new_record = AnalysisHistory(
+                    user_id="anonymous",
+                    image_hash=image_hash,
+                    face_shape=face_shape,
+                    personal_color=skin_tone,
+                    recommendations=recommendation_result,
+                    processing_time=total_time,
+                    detection_method="hybrid",
+                    recommended_styles=recommendation_result.get("recommendations", [])
+                )
+
+                db.add(new_record)
+                db.commit()
+                db.refresh(new_record)
+
+                analysis_id = new_record.id
+
+                logger.info(f"✅ 분석 결과 DB 저장 완료: analysis_id={analysis_id}")
+
+                db.close()
+            except Exception as e:
+                logger.error(f"❌ DB 저장 실패: {str(e)}")
+                # DB 저장 실패해도 분석 결과는 반환
 
         logger.info(f"✅ 하이브리드 분석 완료 ({total_time}초)")
 
         return {
             "success": True,
+            "analysis_id": analysis_id,
             "data": recommendation_result,
             "processing_time": total_time,
             "method": "hybrid",

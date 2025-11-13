@@ -240,6 +240,7 @@ class MLHairstyleRecommender:
             for j, score in enumerate(scores):
                 style_idx = i + j
                 all_scores.append({
+                    "hairstyle_id": style_idx,  # ✅ DB ID 추가
                     "hairstyle": self.styles[style_idx],
                     "score": max(0.0, min(100.0, float(score)))
                 })

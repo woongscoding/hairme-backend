@@ -194,6 +194,11 @@ class HybridRecommendationService:
             if normalized_name in seen_styles:
                 continue
 
+            # hairstyle_id 찾기 (정규화된 이름으로)
+            hairstyle_id = None
+            if self.ml_available and self.ml_recommender:
+                hairstyle_id = self.ml_recommender.style_to_idx.get(normalized_name)
+
             # ML 점수 추가 (정규화된 이름 사용)
             ml_score = 0.0
             if self.ml_available and self.ml_recommender:
@@ -205,10 +210,11 @@ class HybridRecommendationService:
                     pass
 
             merged.append({
+                "hairstyle_id": hairstyle_id,  # ✅ DB ID 추가
                 "style_name": style_name,
                 "reason": rec.get("reason", ""),
                 "source": "gemini",
-                "ml_score": ml_score,
+                "score": ml_score,  # ✅ score로 필드명 통일
                 "rank": len(merged) + 1
             })
 
@@ -219,6 +225,7 @@ class HybridRecommendationService:
             if len(merged) >= 7:  # 최대 7개
                 break
 
+            hairstyle_id = rec.get("hairstyle_id")  # ✅ ML에서 ID 가져오기
             style_name = rec.get("hairstyle", "").strip()
             ml_score = rec.get("score", 0.0)
 
@@ -244,10 +251,11 @@ class HybridRecommendationService:
                 reason = f"ML 모델 추천 (점수: {ml_score:.1f})"
 
             merged.append({
+                "hairstyle_id": hairstyle_id,  # ✅ DB ID 추가
                 "style_name": style_name,
                 "reason": reason,
                 "source": "ml",
-                "ml_score": ml_score,
+                "score": ml_score,  # ✅ score로 필드명 통일
                 "rank": len(merged) + 1
             })
 
