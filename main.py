@@ -605,9 +605,24 @@ def migrate_database_schema():
             db.close()
 
 
-if DATABASE_URL and DB_PASSWORD:
+if DATABASE_URL:
     try:
-        sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql").replace("://admin@", f"://admin:{DB_PASSWORD}@")
+        logger.info(f"DATABASE_URL exists: {bool(DATABASE_URL)}")
+        logger.info(f"DB_PASSWORD exists: {bool(DB_PASSWORD)}")
+        logger.info(f"Has '://admin@' pattern: {'://admin@' in DATABASE_URL}")
+
+        # DATABASE_URL에 이미 패스워드가 포함되어 있으면 그대로 사용
+        if "://admin@" in DATABASE_URL and DB_PASSWORD:
+            sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql").replace("://admin@", f"://admin:{DB_PASSWORD}@")
+            logger.info("Using DATABASE_URL with DB_PASSWORD injection")
+        else:
+            sync_db_url = DATABASE_URL.replace("asyncmy", "pymysql")
+            logger.info("Using DATABASE_URL as-is (already has password)")
+
+        # 보안을 위해 패스워드 부분은 마스킹
+        masked_url = sync_db_url.split('@')[0].split(':')[:-1]
+        logger.info(f"Connecting to DB (masked): mysql+pymysql://admin:***@{sync_db_url.split('@')[1] if '@' in sync_db_url else 'unknown'}")
+
         engine = create_engine(
             sync_db_url,
             pool_pre_ping=True,
@@ -629,7 +644,7 @@ if DATABASE_URL and DB_PASSWORD:
         logger.error(f"❌ MySQL 연결 실패: {str(e)}")
         SessionLocal = None
 else:
-    logger.warning("⚠️ DATABASE_URL 또는 DB_PASSWORD가 설정되지 않았습니다.")
+    logger.warning("⚠️ DATABASE_URL이 설정되지 않았습니다.")
 
 # ========== Redis 캐시 ==========
 redis_client = None
