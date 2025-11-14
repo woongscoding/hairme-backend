@@ -72,6 +72,16 @@ archive/
 # AWS temporary files
 lambda/
 cost-*.json
+task-def-*.json
+!task-def-current-deploy.json
+!task-def-new-deploy.json
+*-task-def.json
+route-table-info.txt
+security-group-info.txt
+subnet-info.txt
+*-trust-policy.json
+*-secret-policy.json
+latest-stream.txt
 
 # Analysis and experiment scripts (temporary)
 analyze_*.py
@@ -80,21 +90,14 @@ verify_*.py
 explain_*.py
 cleanup_*.py
 run_experiments.py
+start_server.py
 
 # Test files (keep only if needed)
 test_*.py
 
 # Planning and experiment docs (keep final docs only)
-ACTION_PLAN*.md
-EXPERIMENT_PLAN*.md
-IMPROVEMENT_PLAN.md
-AI_HUB_DATA_CHECKLIST.md
-COMBINATION_LEAKAGE_SOLUTION.md
-FEEDBACK_LOGIC_IMPROVEMENT.md
-MISSING_STYLE_SOLUTION.md
-PROPORTIONAL_FEEDBACK_LOGIC.md
-REALITY_CHECK.md
-TEMPLATE_REASON_GUIDE.md
+*.md
+!README.md
 
 # Images
 *.png

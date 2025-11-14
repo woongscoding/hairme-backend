@@ -1,0 +1,46 @@
+[
+  {
+    "timestamp": "2025-11-13T14:48:34.371296",
+    "user_id": "anonymous",
+    "face_shape": "계란형",
+    "skin_tone": "봄웜",
+    "hairstyle_id": 42,
+    "user_reaction": "👍",
+    "reaction_type": "like",
+    "ml_prediction": 85.3,
+    "ground_truth": 90.0
+  },
+  {
+    "timestamp": "2025-11-13T14:48:58.685516",
+    "user_id": "anonymous",
+    "face_shape": "둥근형",
+    "skin_tone": "가을웜",
+    "hairstyle_id": 15,
+    "user_reaction": "👎",
+    "reaction_type": "dislike",
+    "ml_prediction": 45.2,
+    "ground_truth": 10.0
+  },
+  {
+    "timestamp": "2025-11-13T14:48:58.961949",
+    "user_id": "anonymous",
+    "face_shape": "계란형",
+    "skin_tone": "여름쿨",
+    "hairstyle_id": 28,
+    "user_reaction": "👍",
+    "reaction_type": "like",
+    "ml_prediction": 78.5,
+    "ground_truth": 90.0
+  },
+  {
+    "timestamp": "2025-11-13T21:05:14.319787",
+    "user_id": "test_user",
+    "face_shape": "계란형",
+    "skin_tone": "봄웜",
+    "hairstyle_id": 42,
+    "user_reaction": "👍",
+    "reaction_type": "like",
+    "ml_prediction": 85.3,
+    "ground_truth": 90.0
+  }
+]
