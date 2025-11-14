@@ -810,7 +810,7 @@ def analyze_with_gemini(image_data: bytes, mp_features: Optional[MediaPipeFaceFe
         if mp_features:
             prompt = f"""다음 얼굴 사진을 분석하고 JSON으로 응답해주세요.
 
-🔍 **참고용 측정 데이터** (MediaPipe AI 분석 - 신뢰도 {mp_features.confidence:.0%}):
+🔍 **MediaPipe 측정 데이터** (수학적 얼굴 분석 - 신뢰도 {mp_features.confidence:.0%}):
 - 얼굴형: {mp_features.face_shape}
 - 피부톤: {mp_features.skin_tone}
 - 얼굴 비율(높이/너비): {mp_features.face_ratio:.2f}
@@ -819,7 +819,9 @@ def analyze_with_gemini(image_data: bytes, mp_features: Optional[MediaPipeFaceFe
 - 턱 너비: {mp_features.jaw_width:.0f}px
 - ITA 값: {mp_features.ITA_value:.1f}°
 
-위 수치는 참고만 하고, 당신의 시각적 판단을 우선하세요.
+⚠️ **중요**: 위 MediaPipe 측정값은 수학적으로 계산된 정확한 데이터입니다.
+시각적으로 명백히 다르지 않다면 MediaPipe 결과를 그대로 사용하세요.
+(참고: 최종 결과는 MediaPipe 값이 우선 채택되므로, 일관성을 위해 같은 값 사용 권장)
 
 **분석 항목:**
 1. 얼굴형: 계란형/둥근형/각진형/긴형/하트형 중 1개
@@ -845,7 +847,16 @@ def analyze_with_gemini(image_data: bytes, mp_features: Optional[MediaPipeFaceFe
             logger.warning("⚠️ MediaPipe 특징 없음, 기본 프롬프트 사용")
 
         model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content([prompt, image])
+
+        # ✅ temperature=0으로 설정하여 일관된 응답 보장
+        generation_config = genai.types.GenerationConfig(
+            temperature=0.0,  # 결정적 응답 (같은 입력 → 같은 출력)
+        )
+
+        response = model.generate_content(
+            [prompt, image],
+            generation_config=generation_config
+        )
 
         raw_text = response.text.strip()
 
@@ -1067,9 +1078,26 @@ async def analyze_face(file: UploadFile = File(...)):
         analysis_result = analyze_with_gemini(image_data, mp_features)
         gemini_time = round((time.time() - gemini_start) * 1000, 2)
 
-        # ✅ ML 점수 추가
-        face_shape = analysis_result.get("analysis", {}).get("face_shape")
-        skin_tone = analysis_result.get("analysis", {}).get("personal_color")
+        # ✅ MediaPipe 결과 우선 사용 (일관성 보장)
+        if mp_features:
+            face_shape = mp_features.face_shape  # MediaPipe 측정값 사용
+            skin_tone = mp_features.skin_tone     # MediaPipe 측정값 사용
+            logger.info(f"✅ MediaPipe 결과 채택: {face_shape} / {skin_tone} (일관성 보장)")
+
+            # Gemini 결과도 기록 (비교용)
+            gemini_face_shape = analysis_result.get("analysis", {}).get("face_shape")
+            gemini_skin_tone = analysis_result.get("analysis", {}).get("personal_color")
+            if gemini_face_shape != face_shape:
+                logger.warning(f"⚠️ Gemini 불일치: {gemini_face_shape} (MediaPipe: {face_shape})")
+
+            # analysis_result 업데이트 (MediaPipe 값으로)
+            analysis_result["analysis"]["face_shape"] = face_shape
+            analysis_result["analysis"]["personal_color"] = skin_tone
+        else:
+            # MediaPipe 실패 시 Gemini 결과 사용
+            face_shape = analysis_result.get("analysis", {}).get("face_shape")
+            skin_tone = analysis_result.get("analysis", {}).get("personal_color")
+            logger.warning(f"⚠️ MediaPipe 없음, Gemini 결과 사용: {face_shape} / {skin_tone}")
 
         for idx, recommendation in enumerate(analysis_result.get("recommendations", []), 1):
             style_name = recommendation.get("style_name", "")
@@ -1163,8 +1191,9 @@ async def analyze_face(file: UploadFile = File(...)):
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
+@app.post("/api/feedback/submit", response_model=FeedbackResponse)
 async def submit_feedback(request: FeedbackRequest):
-    """사용자 피드백 제출 엔드포인트"""
+    """사용자 피드백 제출 엔드포인트 (두 경로 지원: /api/feedback, /api/feedback/submit)"""
     if not SessionLocal:
         raise HTTPException(
             status_code=500,
