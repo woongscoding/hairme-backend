@@ -31,7 +31,7 @@ jobs:
     - name: Build, tag, and push image to Amazon ECR
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: hairstyle-server
+        ECR_REPOSITORY: hairstyle-api
         IMAGE_TAG: ${{ github.sha }}
       run: |
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
@@ -42,7 +42,7 @@ jobs:
     - name: Download task definition
       run: |
         aws ecs describe-task-definition \
-          --task-definition hairstyle-server-task \
+          --task-definition hairme-task \
           --query taskDefinition > task-definition.json
 
     - name: Update ECS task definition
@@ -50,22 +50,22 @@ jobs:
       uses: aws-actions/amazon-ecs-render-task-definition@v1
       with:
         task-definition: task-definition.json
-        container-name: hairstyle-server
-        image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-server:${{ github.sha }}
+        container-name: hairstyle-api
+        image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-api:${{ github.sha }}
 
     - name: Deploy to Amazon ECS
       uses: aws-actions/amazon-ecs-deploy-task-definition@v1
       with:
         task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: hairstyle-server-service
-        cluster: hairstyle-cluster
+        service: hairme-service
+        cluster: hairme-cluster
         wait-for-service-stability: true
 
     - name: Notify deployment success
       if: success()
       run: |
         echo "✅ Deployment successful!"
-        echo "Image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-server:${{ github.sha }}"
+        echo "Image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-api:${{ github.sha }}"
 
     - name: Notify deployment failure
       if: failure()
