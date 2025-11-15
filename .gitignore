@@ -93,8 +93,18 @@ cleanup_*.py
 run_experiments.py
 start_server.py
 
-# Test files (keep only if needed)
-test_*.py
+# Test coverage reports
+htmlcov/
+.coverage
+coverage.xml
+.pytest_cache/
+*.cover
+.hypothesis/
+
+# Security reports
+bandit-report.json
+pip-audit-report.json
+pylint-report.json
 
 # Planning and experiment docs (keep final docs only)
 *.md

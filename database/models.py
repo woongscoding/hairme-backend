@@ -50,3 +50,19 @@ class AnalysisHistory(Base):
 
     # v20: Feedback submission timestamp
     feedback_at = Column(DateTime, nullable=True)
+
+    # MediaPipe continuous features (연속형 변수)
+    mediapipe_face_ratio = Column(Float, nullable=True)
+    mediapipe_forehead_width = Column(Float, nullable=True)
+    mediapipe_cheekbone_width = Column(Float, nullable=True)
+    mediapipe_jaw_width = Column(Float, nullable=True)
+    mediapipe_forehead_ratio = Column(Float, nullable=True)
+    mediapipe_jaw_ratio = Column(Float, nullable=True)
+
+    # MediaPipe skin features
+    mediapipe_ITA_value = Column(Float, nullable=True)
+    mediapipe_hue_value = Column(Float, nullable=True)
+
+    # MediaPipe metadata
+    mediapipe_confidence = Column(Float, nullable=True)
+    mediapipe_features_complete = Column(Boolean, default=False)
