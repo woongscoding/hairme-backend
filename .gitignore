@@ -74,6 +74,7 @@ archive/
 lambda/
 cost-*.json
 task-def-*.json
+task-definition-*.json
 !task-def-current-deploy.json
 !task-def-new-deploy.json
 *-task-def.json
@@ -83,6 +84,15 @@ subnet-info.txt
 *-trust-policy.json
 *-secret-policy.json
 latest-stream.txt
+migration_log_*.json
+validation_report.json
+hairme_infrastructure_report_*.md
+hairme_action_commands.*
+hairme_raw_data.json
+infrastructure/
+
+# SQL schema files (completed migrations)
+db_schema_*.sql
 
 # Analysis and experiment scripts (temporary)
 analyze_*.py
