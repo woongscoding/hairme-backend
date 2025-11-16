@@ -99,10 +99,13 @@ db_schema_*.sql
 analyze_*.py
 check_*.py
 verify_*.py
+verify_*.sh
 explain_*.py
 cleanup_*.py
 run_experiments.py
 start_server.py
+quick_evaluate.py
+evaluation_report*.json
 
 # Test coverage reports
 htmlcov/
