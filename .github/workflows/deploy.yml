@@ -146,7 +146,7 @@ jobs:
           echo "Updating function configuration..."
           aws lambda update-function-configuration \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,GEMINI_API_KEY=${{'{{'}} secrets.GEMINI_API_KEY {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest}" \
+            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,GEMINI_API_KEY=${{'{{'}} secrets.GEMINI_API_KEY {{'}}'}},ADMIN_API_KEY=${{'{{'}} secrets.ADMIN_API_KEY {{'}}'}},ALLOWED_ORIGINS=${{'{{'}} secrets.ALLOWED_ORIGINS {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest}" \
             --memory-size 2048 \
             --timeout 30 \
             --region $AWS_REGION \
