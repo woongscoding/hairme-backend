@@ -2,8 +2,10 @@
 
 import os
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from typing import List, Dict, Any, Optional
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from database.models import AnalysisHistory
@@ -13,10 +15,14 @@ from api.dependencies import FeedbackRequest, FeedbackResponse
 
 router = APIRouter()
 
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("/feedback", response_model=FeedbackResponse)
 @router.post("/feedback/submit", response_model=FeedbackResponse)
-async def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
+@limiter.limit("20/minute")  # 분당 20회 제한
+async def submit_feedback(http_request: Request, request: FeedbackRequest) -> FeedbackResponse:
     """
     User feedback submission endpoint (supports both /api/feedback and /api/feedback/submit)
 
@@ -159,7 +165,8 @@ async def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
 
 
 @router.get("/stats/feedback")
-async def get_feedback_stats() -> Dict[str, Any]:
+@limiter.limit("30/minute")  # 분당 30회 제한 (통계 조회)
+async def get_feedback_stats(request: Request) -> Dict[str, Any]:
     """
     Feedback statistics query API
 

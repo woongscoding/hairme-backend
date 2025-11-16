@@ -3,8 +3,11 @@ HairMe Backend - AI-powered Hairstyle Recommendation Service
 Version: 20.2.0 (MediaPipe transition complete)
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from config.settings import settings
 from core.logging import logger, log_structured
@@ -22,6 +25,9 @@ from api.endpoints.feedback import router as feedback_router
 import api.endpoints.analyze as analyze_module
 
 
+# ========== Rate Limiter Initialization ==========
+limiter = Limiter(key_func=get_remote_address)
+
 # ========== FastAPI App Initialization ==========
 app = FastAPI(
     title=settings.APP_TITLE,
@@ -29,15 +35,36 @@ app = FastAPI(
     version=settings.APP_VERSION
 )
 
+# Attach limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # ========== CORS Middleware ==========
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ========== File Size Limit Middleware ==========
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    """Limit file upload size to prevent DoS attacks"""
+    if request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_FILE_SIZE:
+            logger.warning(f"🚫 File too large: {int(content_length)} bytes (max: {MAX_FILE_SIZE})")
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+            )
+    return await call_next(request)
 
 
 # ========== Register Routers ==========
@@ -51,6 +78,11 @@ app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 async def startup_event():
     """Initialize all services on server startup"""
     logger.info("🚀 서버 시작 중...")
+
+    # Validate critical configuration
+    if not settings.GEMINI_API_KEY:
+        logger.error("❌ GEMINI_API_KEY is not set!")
+        raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
     # Initialize Gemini API
     init_gemini()
