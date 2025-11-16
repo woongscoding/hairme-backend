@@ -38,6 +38,7 @@ Usage:
 
 import os
 import uuid
+import json
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 from decimal import Decimal
@@ -48,6 +49,11 @@ try:
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
+
+try:
+    from core.cache import redis_client
+except ImportError:
+    redis_client = None
 
 from config.settings import settings
 from core.logging import logger, log_structured
@@ -391,6 +397,14 @@ def save_feedback(
             "naver_clicked": naver_clicked
         })
 
+        # ========== Invalidate Statistics Cache ==========
+        if redis_client:
+            try:
+                redis_client.delete("feedback_stats")
+                logger.info("✅ 통계 캐시 무효화 완료")
+            except Exception as e:
+                logger.warning(f"⚠️ 캐시 무효화 실패: {str(e)}")
+
         return True
 
     except ClientError as e:
@@ -486,9 +500,23 @@ def get_feedback_stats() -> Dict[str, Any]:
         }
 
     try:
-        # Scan all items (for small datasets this is acceptable)
-        # For production with large datasets, consider using DynamoDB Streams
-        # or maintaining separate aggregate tables
+        # ========== Redis Cache Layer (5-minute TTL) ==========
+        # Reduces expensive scan() operations
+        cache_key = "feedback_stats"
+
+        if redis_client:
+            try:
+                cached_stats = redis_client.get(cache_key)
+                if cached_stats:
+                    logger.info("✅ 통계 캐시 히트 (DynamoDB scan 생략)")
+                    return json.loads(cached_stats)
+            except Exception as e:
+                logger.warning(f"⚠️ Redis 캐시 조회 실패: {str(e)}")
+
+        # ========== DynamoDB Scan (Cache Miss) ==========
+        # TODO (Long-term): Replace with DynamoDB Streams + Lambda for real-time aggregation
+        # or use separate aggregate table (feedback-stats) to avoid full table scan
+        logger.info("🔍 통계 캐시 미스, DynamoDB scan 시작...")
 
         response = dynamodb_table.scan()
         items = response.get('Items', [])
@@ -546,7 +574,7 @@ def get_feedback_stats() -> Dict[str, Any]:
 
         logger.info(f"📊 통계 조회: 전체 {total_analysis}개, 피드백 {total_feedback}개")
 
-        return {
+        result = {
             'success': True,
             'total_analysis': total_analysis,
             'total_feedback': total_feedback,
@@ -554,6 +582,20 @@ def get_feedback_stats() -> Dict[str, Any]:
             'dislike_counts': dislike_counts,
             'recent_feedbacks': recent_data
         }
+
+        # ========== Save to Redis Cache (TTL: 5 minutes) ==========
+        if redis_client:
+            try:
+                redis_client.setex(
+                    cache_key,
+                    300,  # 5 minutes TTL
+                    json.dumps(result, ensure_ascii=False)
+                )
+                logger.info("✅ 통계 캐시 저장 완료 (TTL: 5분)")
+            except Exception as e:
+                logger.warning(f"⚠️ Redis 캐시 저장 실패: {str(e)}")
+
+        return result
 
     except ClientError as e:
         logger.error(f"❌ 통계 조회 실패: {e.response['Error']['Message']}")

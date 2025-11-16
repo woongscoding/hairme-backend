@@ -2,16 +2,11 @@
 
 import os
 import time
-import json
-import io
 import urllib.parse
 from typing import Optional, Dict, Any, Union
-from datetime import datetime
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
-from PIL import Image
-import google.generativeai as genai
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -28,8 +23,18 @@ from core.ml_loader import (
     get_confidence_level,
     sentence_transformer
 )
-from database.models import AnalysisHistory
-from database.connection import get_db_session
+from core.dependencies import (
+    get_face_detection_service,
+    get_gemini_analysis_service,
+    get_hybrid_service,
+    get_feedback_collector,
+    get_retrain_queue
+)
+from services.face_detection_service import FaceDetectionService
+from services.gemini_analysis_service import GeminiAnalysisService
+from services.hybrid_recommender import HybridRecommender
+from services.feedback_collector import FeedbackCollector
+from services.retrain_queue import RetrainQueue
 from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 
@@ -38,230 +43,8 @@ router = APIRouter()
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# Global variables (initialized in main.py startup)
-mediapipe_analyzer = None
-hybrid_service = None
-feedback_collector = None
-retrain_queue = None
-
-
-# ========== Gemini Configuration ==========
-ANALYSIS_PROMPT = """분석하고 JSON으로 응답:
-
-얼굴형: 계란형/둥근형/각진형/긴형 중 1개
-퍼스널컬러: 봄웜/가을웜/여름쿨/겨울쿨 중 1개
-헤어스타일 추천 3개 (각 이름 15자, 이유 30자 이내)
-
-JSON 형식:
-{
-  "analysis": {
-    "face_shape": "계란형",
-    "personal_color": "봄웜",
-    "features": "이목구비 특징"
-  },
-  "recommendations": [
-    {"style_name": "스타일명", "reason": "추천 이유"}
-  ]
-}"""
-
-
-def init_gemini() -> None:
-    """Initialize Gemini API"""
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY 환경변수가 설정되지 않았습니다!")
-    else:
-        try:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            logger.info("✅ Gemini API 초기화 완료")
-        except Exception as e:
-            logger.error(f"Gemini API 초기화 실패: {str(e)}")
-
 
 # ========== Helper Functions ==========
-def verify_face_with_gemini(image_data: bytes) -> Dict[str, Any]:
-    """
-    Verify face with Gemini when OpenCV fails
-
-    Args:
-        image_data: Image binary data
-
-    Returns:
-        Dictionary with face verification results
-    """
-    try:
-        image = Image.open(io.BytesIO(image_data))
-        image.thumbnail((256, 256))
-
-        model = genai.GenerativeModel(settings.MODEL_NAME)
-        prompt = """이미지에 사람 얼굴이 있나요?
-
-JSON으로만 답변:
-{"has_face": true/false, "face_count": 숫자}"""
-
-        response = model.generate_content([prompt, image])
-        result = json.loads(response.text.strip())
-
-        return {
-            "has_face": result.get("has_face", False),
-            "face_count": result.get("face_count", 0),
-            "method": "gemini"
-        }
-
-    except Exception as e:
-        logger.error(f"Gemini 얼굴 검증 실패: {str(e)}")
-        return {
-            "has_face": False,
-            "face_count": 0,
-            "method": "gemini",
-            "error": str(e)
-        }
-
-
-def detect_face(image_data: bytes) -> Dict[str, Any]:
-    """
-    Detect face (MediaPipe first, fallback to Gemini)
-
-    Args:
-        image_data: Image binary data
-
-    Returns:
-        Dictionary with face detection results
-    """
-    # 1st attempt: MediaPipe (most accurate - 90%+)
-    if mediapipe_analyzer is not None:
-        try:
-            mp_features = mediapipe_analyzer.analyze(image_data)
-
-            if mp_features:
-                log_structured("face_detection", {
-                    "method": "mediapipe",
-                    "face_count": 1,
-                    "success": True,
-                    "face_shape": mp_features.face_shape,
-                    "skin_tone": mp_features.skin_tone,
-                    "confidence": mp_features.confidence
-                })
-                return {
-                    "has_face": True,
-                    "face_count": 1,
-                    "method": "mediapipe",
-                    "features": mp_features
-                }
-
-        except Exception as e:
-            logger.warning(f"MediaPipe 얼굴 감지 실패: {str(e)}")
-
-    # 2nd attempt: Gemini (final fallback)
-    logger.info("MediaPipe 실패, Gemini로 얼굴 검증 시작...")
-    gemini_result = verify_face_with_gemini(image_data)
-
-    log_structured("face_detection", {
-        "method": "gemini",
-        "face_count": gemini_result.get("face_count", 0),
-        "success": gemini_result.get("has_face", False)
-    })
-
-    return gemini_result
-
-
-def analyze_with_gemini(
-    image_data: bytes,
-    mp_features: Optional[MediaPipeFaceFeatures] = None
-) -> Dict[str, Any]:
-    """
-    Analyze face with Gemini Vision API (with MediaPipe hints)
-
-    Args:
-        image_data: Image binary data
-        mp_features: MediaPipe analysis results (optional)
-
-    Returns:
-        Dictionary with analysis results
-    """
-    try:
-        image = Image.open(io.BytesIO(image_data))
-
-        # Provide MediaPipe hints if available
-        if mp_features:
-            prompt = f"""다음 얼굴 사진을 분석하고 JSON으로 응답해주세요.
-
-🔍 **MediaPipe 측정 데이터** (수학적 얼굴 분석 - 신뢰도 {mp_features.confidence:.0%}):
-- 얼굴형: {mp_features.face_shape}
-- 피부톤: {mp_features.skin_tone}
-- 얼굴 비율(높이/너비): {mp_features.face_ratio:.2f}
-- 이마 너비: {mp_features.forehead_width:.0f}px
-- 광대 너비: {mp_features.cheekbone_width:.0f}px
-- 턱 너비: {mp_features.jaw_width:.0f}px
-- ITA 값: {mp_features.ITA_value:.1f}°
-
-⚠️ **중요**: 위 MediaPipe 측정값은 수학적으로 계산된 정확한 데이터입니다.
-시각적으로 명백히 다르지 않다면 MediaPipe 결과를 그대로 사용하세요.
-(참고: 최종 결과는 MediaPipe 값이 우선 채택되므로, 일관성을 위해 같은 값 사용 권장)
-
-**분석 항목:**
-1. 얼굴형: 계란형/둥근형/각진형/긴형/하트형 중 1개
-2. 퍼스널컬러: 봄웜/가을웜/여름쿨/겨울쿨 중 1개
-3. 헤어스타일 추천 3개 (각 이름 15자, 이유 30자 이내)
-
-**JSON 형식:**
-{{
-  "analysis": {{
-    "face_shape": "계란형",
-    "personal_color": "봄웜",
-    "features": "이목구비 특징 설명"
-  }},
-  "recommendations": [
-    {{"style_name": "스타일명", "reason": "추천 이유"}}
-  ]
-}}"""
-            logger.info(f"✅ MediaPipe 힌트 적용: {mp_features.face_shape} / {mp_features.skin_tone}")
-
-        else:
-            # Default prompt without MediaPipe hints
-            prompt = ANALYSIS_PROMPT
-            logger.warning("⚠️ MediaPipe 특징 없음, 기본 프롬프트 사용")
-
-        model = genai.GenerativeModel(settings.MODEL_NAME)
-
-        # Use temperature=0 for consistent responses
-        generation_config = genai.types.GenerationConfig(
-            temperature=0.0,
-        )
-
-        response = model.generate_content(
-            [prompt, image],
-            generation_config=generation_config
-        )
-
-        raw_text = response.text.strip()
-
-        # Clean up markdown code blocks
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.startswith("```"):
-            raw_text = raw_text[3:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-
-        result = json.loads(raw_text.strip())
-
-        logger.info(f"✅ Gemini 분석 성공: {result.get('analysis', {}).get('face_shape')}")
-        return result
-
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON 파싱 실패: {str(e)}\n응답 내용: {response.text[:200]}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI 응답 파싱 실패: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Gemini 분석 실패: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI 분석 중 오류가 발생했습니다: {str(e)}"
-        )
-
-
 def save_to_database(
     image_hash: str,
     analysis_result: Dict[str, Any],
@@ -270,9 +53,9 @@ def save_to_database(
     mp_features: Optional[MediaPipeFaceFeatures] = None
 ) -> Optional[Union[int, str]]:
     """
-    Save analysis result to database (MySQL or DynamoDB)
+    Save analysis result to database using Repository pattern
 
-    Supports both MySQL (RDS) and DynamoDB backends based on USE_DYNAMODB env variable.
+    Automatically routes to MySQL or DynamoDB based on USE_DYNAMODB env variable.
 
     Args:
         image_hash: SHA256 hash of the image
@@ -284,159 +67,55 @@ def save_to_database(
     Returns:
         Record ID if successful (int for MySQL, str for DynamoDB), None otherwise
     """
-    use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+    from database.repository import get_repository
 
-    # ========== DynamoDB Backend ==========
-    if use_dynamodb:
-        try:
-            from database.dynamodb_connection import save_analysis
+    try:
+        repo = get_repository()
+        analysis_id = repo.save_analysis(
+            image_hash=image_hash,
+            analysis_result=analysis_result,
+            processing_time=processing_time,
+            detection_method=detection_method,
+            mp_features=mp_features
+        )
 
-            gemini_shape = analysis_result.get("analysis", {}).get("face_shape")
+        # Log the result
+        if analysis_id:
+            backend = "dynamodb" if os.getenv('USE_DYNAMODB', 'false').lower() == 'true' else "mysql"
             recommendations = analysis_result.get("recommendations", [])
 
-            # Calculate MediaPipe agreement
             mediapipe_agreement = None
             if mp_features:
+                gemini_shape = analysis_result.get("analysis", {}).get("face_shape")
                 mediapipe_agreement = (
                     mp_features.face_shape in gemini_shape or
                     gemini_shape in mp_features.face_shape
                 )
 
-            # Build data dict for DynamoDB
-            data = {
-                'image_hash': image_hash,
-                'face_shape': gemini_shape,
-                'personal_color': analysis_result.get("analysis", {}).get("personal_color"),
-                'recommendations': recommendations,
-                'recommended_styles': recommendations,
-                'processing_time': processing_time,
-                'detection_method': detection_method,
-                'opencv_gemini_agreement': mediapipe_agreement,
-            }
-
-            # Add MediaPipe continuous features
-            if mp_features:
-                data['mediapipe_face_ratio'] = mp_features.face_ratio
-                data['mediapipe_forehead_width'] = mp_features.forehead_width
-                data['mediapipe_cheekbone_width'] = mp_features.cheekbone_width
-                data['mediapipe_jaw_width'] = mp_features.jaw_width
-
-                # Ratios (division by zero protection)
-                if mp_features.cheekbone_width > 0:
-                    data['mediapipe_forehead_ratio'] = mp_features.forehead_width / mp_features.cheekbone_width
-                    data['mediapipe_jaw_ratio'] = mp_features.jaw_width / mp_features.cheekbone_width
-
-                # Skin measurements
-                data['mediapipe_ITA_value'] = mp_features.ITA_value
-                data['mediapipe_hue_value'] = mp_features.hue_value
-
-                # Metadata
-                data['mediapipe_confidence'] = mp_features.confidence
-                data['mediapipe_features_complete'] = True
-
-                logger.info(f"✅ MediaPipe 연속형 변수 포함: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}")
-
-            # Save to DynamoDB
-            analysis_id = save_analysis(data)
-
-            if analysis_id:
-                logger.info(f"✅ DynamoDB 저장 성공 (ID: {analysis_id})")
-                log_structured("database_saved", {
-                    "backend": "dynamodb",
-                    "analysis_id": analysis_id,
-                    "mediapipe_enabled": mp_features is not None,
-                    "mediapipe_agreement": mediapipe_agreement,
-                    "recommendations_count": len(recommendations)
-                })
-                return analysis_id
-            else:
-                logger.error("❌ DynamoDB 저장 실패")
-                return None
-
-        except Exception as e:
-            logger.error(f"❌ DynamoDB 저장 실패: {str(e)}")
-            return None
-
-    # ========== MySQL Backend (Original) ==========
-    else:
-        db = get_db_session()
-        if not db:
-            logger.warning("⚠️ 데이터베이스 연결이 없어 저장을 생략합니다.")
-            return None
-
-        try:
-            gemini_shape = analysis_result.get("analysis", {}).get("face_shape")
-
-            # Calculate MediaPipe agreement
-            mediapipe_agreement = None
-            if mp_features:
-                mediapipe_agreement = (
-                    mp_features.face_shape in gemini_shape or
-                    gemini_shape in mp_features.face_shape
-                )
-
-            recommendations = analysis_result.get("recommendations", [])
-
-            history = AnalysisHistory(
-                image_hash=image_hash,
-                face_shape=gemini_shape,
-                personal_color=analysis_result.get("analysis", {}).get("personal_color"),
-                recommendations=recommendations,
-                recommended_styles=recommendations,
-                processing_time=processing_time,
-                detection_method=detection_method,
-                opencv_gemini_agreement=mediapipe_agreement,
-            )
-
-            # ✅ MediaPipe 연속형 변수 저장
-            if mp_features:
-                # 얼굴 측정값
-                history.mediapipe_face_ratio = mp_features.face_ratio
-                history.mediapipe_forehead_width = mp_features.forehead_width
-                history.mediapipe_cheekbone_width = mp_features.cheekbone_width
-                history.mediapipe_jaw_width = mp_features.jaw_width
-
-                # 비율 계산 (division by zero 방지)
-                if mp_features.cheekbone_width > 0:
-                    history.mediapipe_forehead_ratio = mp_features.forehead_width / mp_features.cheekbone_width
-                    history.mediapipe_jaw_ratio = mp_features.jaw_width / mp_features.cheekbone_width
-
-                # 피부 측정값
-                history.mediapipe_ITA_value = mp_features.ITA_value
-                history.mediapipe_hue_value = mp_features.hue_value
-
-                # 메타데이터
-                history.mediapipe_confidence = mp_features.confidence
-                history.mediapipe_features_complete = True
-
-                logger.info(f"✅ MediaPipe 연속형 변수 저장: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}")
-
-            db.add(history)
-            db.commit()
-            db.refresh(history)
-
-            logger.info(f"✅ MySQL 저장 성공 (ID: {history.id})")
             log_structured("database_saved", {
-                "backend": "mysql",
-                "record_id": history.id,
+                "backend": backend,
+                "analysis_id": analysis_id,
                 "mediapipe_enabled": mp_features is not None,
                 "mediapipe_agreement": mediapipe_agreement,
                 "recommendations_count": len(recommendations)
             })
 
-            db.close()
-            return history.id
+        return analysis_id
 
-        except Exception as e:
-            logger.error(f"❌ MySQL 저장 실패: {str(e)}")
-            db.close()
-            return None
+    except Exception as e:
+        logger.error(f"❌ 데이터베이스 저장 실패: {str(e)}")
+        return None
 
 
 # ========== API Endpoints ==========
 @router.post("/analyze")
 @limiter.limit("10/minute")  # 분당 10회 제한
-async def analyze_face(request: Request, file: UploadFile = File(...)):
+async def analyze_face(
+    request: Request,
+    file: UploadFile = File(...),
+    face_detector: FaceDetectionService = Depends(get_face_detection_service),
+    gemini_service: GeminiAnalysisService = Depends(get_gemini_analysis_service)
+):
     """Face analysis and hairstyle recommendation (v20.2.0: ML integrated)"""
     start_time = time.time()
     image_hash = None
@@ -478,9 +157,9 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
                 "model_used": settings.MODEL_NAME
             }
 
-        # Face detection
+        # Face detection using injected service
         face_detection_start = time.time()
-        face_result = detect_face(image_data)
+        face_result = face_detector.detect_face(image_data)
         face_detection_time = round((time.time() - face_detection_start) * 1000, 2)
 
         if not face_result["has_face"]:
@@ -496,9 +175,9 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
         # Extract MediaPipe features
         mp_features = face_result.get("features", None)
 
-        # Gemini analysis (with MediaPipe hints)
+        # Gemini analysis using injected service (with MediaPipe hints)
         gemini_start = time.time()
-        analysis_result = analyze_with_gemini(image_data, mp_features)
+        analysis_result = gemini_service.analyze_with_gemini(image_data, mp_features)
         gemini_time = round((time.time() - gemini_start) * 1000, 2)
 
         # Use MediaPipe results (for consistency)
@@ -617,7 +296,12 @@ async def analyze_face(request: Request, file: UploadFile = File(...)):
 
 @router.post("/v2/analyze-hybrid")
 @limiter.limit("10/minute")  # 분당 10회 제한
-async def analyze_face_hybrid(request: Request, file: UploadFile = File(...)):
+async def analyze_face_hybrid(
+    request: Request,
+    file: UploadFile = File(...),
+    face_detector: FaceDetectionService = Depends(get_face_detection_service),
+    hybrid_recommender: HybridRecommender = Depends(get_hybrid_service)
+):
     """
     Hybrid face analysis and hairstyle recommendation (Gemini + ML)
 
@@ -644,31 +328,26 @@ async def analyze_face_hybrid(request: Request, file: UploadFile = File(...)):
         image_data = await file.read()
         image_hash = calculate_image_hash(image_data)
 
-        # 1. MediaPipe face analysis
-        if not mediapipe_analyzer:
+        # 1. Face detection using injected service
+        face_result = face_detector.detect_face(image_data)
+
+        if not face_result["has_face"]:
+            raise NoFaceDetectedException()
+
+        mp_features = face_result.get("features")
+        if not mp_features:
             raise HTTPException(
                 status_code=500,
-                detail="MediaPipe 분석기가 초기화되지 않았습니다."
+                detail="MediaPipe 얼굴 분석에 실패했습니다."
             )
-
-        mp_features = mediapipe_analyzer.analyze(image_data)
-
-        if not mp_features:
-            raise NoFaceDetectedException()
 
         face_shape = mp_features.face_shape
         skin_tone = mp_features.skin_tone
 
         logger.info(f"✅ MediaPipe 분석: {face_shape} + {skin_tone}")
 
-        # 2. Hybrid recommendation
-        if not hybrid_service:
-            raise HTTPException(
-                status_code=500,
-                detail="하이브리드 추천 서비스가 초기화되지 않았습니다."
-            )
-
-        recommendation_result = hybrid_service.recommend(
+        # 2. Hybrid recommendation using injected service
+        recommendation_result = hybrid_recommender.recommend(
             image_data, face_shape, skin_tone
         )
 
@@ -678,61 +357,25 @@ async def analyze_face_hybrid(request: Request, file: UploadFile = File(...)):
             encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
             rec["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
 
-        # 4. Save to database
+        # 4. Save to database using Repository pattern
         total_time = round(time.time() - start_time, 2)
-        analysis_id = None
 
-        use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+        # Build analysis result dict for Repository
+        analysis_result_for_db = {
+            "analysis": {
+                "face_shape": face_shape,
+                "personal_color": skin_tone
+            },
+            "recommendations": recommendation_result.get("recommendations", [])
+        }
 
-        if use_dynamodb:
-            # Save to DynamoDB
-            try:
-                from database.dynamodb_connection import save_analysis
-
-                data = {
-                    'user_id': 'anonymous',
-                    'image_hash': image_hash,
-                    'face_shape': face_shape,
-                    'personal_color': skin_tone,
-                    'recommendations': recommendation_result.get("recommendations", []),
-                    'recommended_styles': recommendation_result.get("recommendations", []),
-                    'processing_time': total_time,
-                    'detection_method': 'hybrid',
-                }
-
-                analysis_id = save_analysis(data)
-                logger.info(f"✅ DynamoDB 저장 완료: analysis_id={analysis_id}")
-
-            except Exception as e:
-                logger.error(f"❌ DynamoDB 저장 실패: {str(e)}")
-        else:
-            # Save to MySQL
-            db = get_db_session()
-            if db:
-                try:
-                    new_record = AnalysisHistory(
-                        user_id="anonymous",
-                        image_hash=image_hash,
-                        face_shape=face_shape,
-                        personal_color=skin_tone,
-                        recommendations=recommendation_result,
-                        processing_time=total_time,
-                        detection_method="hybrid",
-                        recommended_styles=recommendation_result.get("recommendations", [])
-                    )
-
-                    db.add(new_record)
-                    db.commit()
-                    db.refresh(new_record)
-
-                    analysis_id = new_record.id
-
-                    logger.info(f"✅ MySQL 저장 완료: analysis_id={analysis_id}")
-
-                    db.close()
-                except Exception as e:
-                    logger.error(f"❌ MySQL 저장 실패: {str(e)}")
-                    db.close()
+        analysis_id = save_to_database(
+            image_hash=image_hash,
+            analysis_result=analysis_result_for_db,
+            processing_time=total_time,
+            detection_method="hybrid",
+            mp_features=mp_features
+        )
 
         logger.info(f"✅ 하이브리드 분석 완료 ({total_time}초)")
 
@@ -780,7 +423,9 @@ async def collect_feedback(
     hairstyle_id: int,
     user_reaction: str,
     ml_prediction: float,
-    user_id: str = "anonymous"
+    user_id: str = "anonymous",
+    collector: FeedbackCollector = Depends(get_feedback_collector),
+    retrain_q: RetrainQueue = Depends(get_retrain_queue)
 ):
     """
     User feedback collection endpoint (v2)
@@ -800,12 +445,6 @@ async def collect_feedback(
         👍 -> 90.0 (user LIKED this combination)
         👎 -> 10.0 (user DISLIKED this combination)
     """
-    if not feedback_collector:
-        raise HTTPException(
-            status_code=500,
-            detail="피드백 수집기가 초기화되지 않았습니다."
-        )
-
     try:
         # Input validation
         if user_reaction not in ["👍", "👎"]:
@@ -814,8 +453,8 @@ async def collect_feedback(
                 detail="user_reaction은 '👍' 또는 '👎'만 가능합니다."
             )
 
-        # Save feedback
-        result = feedback_collector.save_feedback(
+        # Save feedback using injected collector
+        result = collector.save_feedback(
             face_shape=face_shape,
             skin_tone=skin_tone,
             hairstyle_id=hairstyle_id,
@@ -826,9 +465,9 @@ async def collect_feedback(
 
         retrain_job_id = None
 
-        # Check for retrain trigger
-        if result['retrain_triggered'] and retrain_queue:
-            job = retrain_queue.add_job(result['total_feedbacks'])
+        # Check for retrain trigger using injected queue
+        if result['retrain_triggered']:
+            job = retrain_q.add_job(result['total_feedbacks'])
             retrain_job_id = job['job_id']
 
             logger.info(

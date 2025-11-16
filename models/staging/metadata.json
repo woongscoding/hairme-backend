@@ -1,0 +1,22 @@
+{
+  "version": "staging",
+  "model_name": "model.pth",
+  "encoder_name": "encoders.pkl",
+  "created_date": null,
+  "deployed_date": null,
+  "description": "Staging environment for testing new models before production deployment",
+  "metrics": {
+    "final_val_loss": null,
+    "final_val_mae": null,
+    "training_epochs": null,
+    "best_epoch": null
+  },
+  "model_architecture": {
+    "type": "HybridRecommender",
+    "features": ["face_shape", "gender", "age", "skin_tone", "user_preferences"],
+    "embedding_dim": 384,
+    "sentence_transformer": "paraphrase-multilingual-MiniLM-L12-v2"
+  },
+  "changelog": [],
+  "status": "empty"
+}
