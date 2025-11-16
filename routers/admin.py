@@ -11,6 +11,7 @@ Version: 1.0.0
 from fastapi import APIRouter, HTTPException, Depends
 from services.feedback_analytics import get_feedback_analytics
 from services.retrain_queue import get_retrain_queue
+from services.circuit_breaker import get_circuit_breaker_status, reset_circuit_breakers
 from core.auth import verify_admin_api_key
 import logging
 
@@ -147,4 +148,62 @@ async def get_retrain_status(api_key: str = Depends(verify_admin_api_key)):
         raise HTTPException(
             status_code=500,
             detail=f"재학습 상태 조회 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@router.get("/admin/circuit-breaker-status")
+async def get_circuit_status(api_key: str = Depends(verify_admin_api_key)):
+    """
+    Circuit Breaker 상태 조회
+
+    Returns:
+        - gemini_api: Gemini API Circuit Breaker 상태
+            - state: 현재 상태 (closed/open/half-open)
+            - fail_counter: 현재 실패 횟수
+            - fail_max: 최대 허용 실패 횟수
+            - timeout_duration: 타임아웃 시간 (초)
+            - is_open: Circuit이 Open 상태인지 여부
+            - is_closed: Circuit이 Closed 상태인지 여부
+            - is_half_open: Circuit이 Half-Open 상태인지 여부
+    """
+    try:
+        status = get_circuit_breaker_status()
+
+        logger.info(f"⚡ Circuit Breaker 상태 조회: {status}")
+
+        return {
+            "success": True,
+            **status
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Circuit Breaker 상태 조회 실패: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Circuit Breaker 상태 조회 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@router.post("/admin/circuit-breaker-reset")
+async def reset_circuit(api_key: str = Depends(verify_admin_api_key)):
+    """
+    Circuit Breaker 수동 리셋 (관리자 전용)
+
+    모든 Circuit Breaker를 강제로 닫힌 상태로 리셋합니다.
+    """
+    try:
+        reset_circuit_breakers()
+
+        logger.warning(f"⚠️ [ADMIN] Circuit Breaker 수동 리셋 실행됨")
+
+        return {
+            "success": True,
+            "message": "All circuit breakers have been reset"
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Circuit Breaker 리셋 실패: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Circuit Breaker 리셋 중 오류가 발생했습니다: {str(e)}"
         )

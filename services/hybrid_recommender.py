@@ -147,14 +147,31 @@ class HybridRecommendationService:
 
             return result
 
-        except Exception as e:
-            logger.error(f"❌ Gemini API 오류: {str(e)}")
-            # 기본값 반환
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"❌ Gemini 응답 파싱 실패: {str(e)}\n"
+                f"응답 내용: {response.text[:200] if 'response' in locals() else 'N/A'}"
+            )
+            # ML 추천으로 폴백 (Gemini 없이 진행)
             return {
                 "analysis": {
                     "face_shape": face_shape,
                     "personal_color": skin_tone,
-                    "features": "분석 실패"
+                    "features": "Gemini 응답 파싱 실패 (ML 추천만 사용)"
+                },
+                "recommendations": []
+            }
+        except Exception as e:
+            logger.error(
+                f"❌ Gemini API 오류 ({type(e).__name__}): {str(e)}\n"
+                f"얼굴형={face_shape}, 피부톤={skin_tone}"
+            )
+            # ML 추천으로 폴백 (Gemini 없이 진행)
+            return {
+                "analysis": {
+                    "face_shape": face_shape,
+                    "personal_color": skin_tone,
+                    "features": f"Gemini API 오류 ({type(e).__name__}) - ML 추천만 사용"
                 },
                 "recommendations": []
             }

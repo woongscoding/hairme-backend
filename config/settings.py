@@ -41,6 +41,40 @@ class Settings(BaseSettings):
     ML_MODEL_PATH: str = "models/final_model.pth"
     ML_ENCODER_PATH: str = "models/encoders.pkl"
 
+    # ML Model Version Management
+    MODEL_ENVIRONMENT: str = "production"  # production, staging, or archive/vX_YYYY-MM-DD
+    MODEL_BASE_PATH: str = "models"
+
+    @property
+    def active_model_path(self) -> str:
+        """Get the active model path based on MODEL_ENVIRONMENT"""
+        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
+            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/model.pth"
+        elif self.MODEL_ENVIRONMENT.startswith("archive/"):
+            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/model.pt"
+        else:
+            # Fallback to legacy path
+            return self.ML_MODEL_PATH
+
+    @property
+    def active_encoder_path(self) -> str:
+        """Get the active encoder path based on MODEL_ENVIRONMENT"""
+        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
+            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/encoders.pkl"
+        else:
+            # Fallback to legacy path
+            return self.ML_ENCODER_PATH
+
+    @property
+    def model_metadata_path(self) -> str:
+        """Get the metadata file path for the current model environment"""
+        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
+            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/metadata.json"
+        elif self.MODEL_ENVIRONMENT.startswith("archive/"):
+            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/metadata.json"
+        else:
+            return None
+
     # Sentence Transformer Configuration
     SENTENCE_TRANSFORMER_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
 

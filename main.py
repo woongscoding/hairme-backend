@@ -13,6 +13,7 @@ from config.settings import settings
 from core.logging import logger, log_structured
 from core.cache import init_redis
 from core.ml_loader import load_ml_model, load_sentence_transformer
+from core.dependencies import init_services
 from database.connection import init_database
 from database.migration import migrate_database_schema
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -20,9 +21,9 @@ from services.hybrid_recommender import get_hybrid_service
 from services.feedback_collector import get_feedback_collector
 from services.retrain_queue import get_retrain_queue
 from routers.admin import router as admin_router
-from api.endpoints.analyze import router as analyze_router, init_gemini
+from api.endpoints.analyze import router as analyze_router
 from api.endpoints.feedback import router as feedback_router
-import api.endpoints.analyze as analyze_module
+import google.generativeai as genai
 
 
 # ========== Rate Limiter Initialization ==========
@@ -85,12 +86,16 @@ async def startup_event():
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
     # Initialize Gemini API
-    init_gemini()
+    try:
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        logger.info("✅ Gemini API 초기화 완료")
+    except Exception as e:
+        logger.error(f"Gemini API 초기화 실패: {str(e)}")
 
     # Initialize MediaPipe Face Analyzer
+    mediapipe_analyzer = None
     try:
-        analyzer = MediaPipeFaceAnalyzer()
-        analyze_module.mediapipe_analyzer = analyzer
+        mediapipe_analyzer = MediaPipeFaceAnalyzer()
         logger.info("✅ MediaPipe 얼굴 분석기 초기화 완료")
         log_structured("mediapipe_initialized", {
             "status": "success",
@@ -98,7 +103,6 @@ async def startup_event():
         })
     except Exception as e:
         logger.error(f"❌ MediaPipe 초기화 실패: {str(e)}")
-        analyze_module.mediapipe_analyzer = None
         log_structured("mediapipe_initialized", {
             "status": "failed",
             "error": str(e)
@@ -136,10 +140,10 @@ async def startup_event():
         })
 
     # Initialize Hybrid Recommendation Service (Gemini + ML)
+    hybrid_service = None
     try:
         if settings.GEMINI_API_KEY:
-            service = get_hybrid_service(settings.GEMINI_API_KEY)
-            analyze_module.hybrid_service = service
+            hybrid_service = get_hybrid_service(settings.GEMINI_API_KEY)
             logger.info("✅ 하이브리드 추천 서비스 초기화 완료 (Gemini + ML)")
             log_structured("hybrid_service_initialized", {
                 "status": "success",
@@ -148,46 +152,50 @@ async def startup_event():
             })
         else:
             logger.warning("⚠️ GEMINI_API_KEY 없음 - 하이브리드 서비스 비활성화")
-            analyze_module.hybrid_service = None
     except Exception as e:
         logger.error(f"❌ 하이브리드 서비스 초기화 실패: {str(e)}")
-        analyze_module.hybrid_service = None
         log_structured("hybrid_service_initialized", {
             "status": "failed",
             "error": str(e)
         })
 
     # Initialize Feedback Collector
+    feedback_collector = None
     try:
-        collector = get_feedback_collector()
-        analyze_module.feedback_collector = collector
+        feedback_collector = get_feedback_collector()
         logger.info("✅ 피드백 수집기 초기화 완료")
         log_structured("feedback_collector_initialized", {
             "status": "success"
         })
     except Exception as e:
         logger.error(f"❌ 피드백 수집기 초기화 실패: {str(e)}")
-        analyze_module.feedback_collector = None
         log_structured("feedback_collector_initialized", {
             "status": "failed",
             "error": str(e)
         })
 
     # Initialize Retrain Queue
+    retrain_queue = None
     try:
-        queue = get_retrain_queue()
-        analyze_module.retrain_queue = queue
+        retrain_queue = get_retrain_queue()
         logger.info("✅ 재학습 큐 초기화 완료")
         log_structured("retrain_queue_initialized", {
             "status": "success"
         })
     except Exception as e:
         logger.error(f"❌ 재학습 큐 초기화 실패: {str(e)}")
-        analyze_module.retrain_queue = None
         log_structured("retrain_queue_initialized", {
             "status": "failed",
             "error": str(e)
         })
+
+    # ========== Initialize Dependency Injection Services ==========
+    init_services(
+        mediapipe_analyzer=mediapipe_analyzer,
+        hybrid_service=hybrid_service,
+        feedback_collector=feedback_collector,
+        retrain_queue=retrain_queue
+    )
 
     # Initialize Database
     db_initialized = init_database()
@@ -203,13 +211,15 @@ async def startup_event():
 @app.get("/")
 async def root():
     """Root endpoint with service status"""
+    from core.dependencies import _mediapipe_analyzer
+
     return {
         "message": f"{settings.APP_TITLE} - v{settings.APP_VERSION} (MediaPipe 전환 완료)",
         "version": settings.APP_VERSION,
         "model": settings.MODEL_NAME,
         "status": "running",
         "features": {
-            "mediapipe_analysis": "enabled" if analyze_module.mediapipe_analyzer else "disabled",
+            "mediapipe_analysis": "enabled" if _mediapipe_analyzer else "disabled",
             "gemini_analysis": "enabled" if settings.GEMINI_API_KEY else "disabled",
             "redis_cache": "enabled",
             "database": "enabled",
@@ -224,11 +234,13 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint for monitoring"""
+    from core.dependencies import _mediapipe_analyzer
+
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
         "model": settings.MODEL_NAME,
-        "mediapipe_analysis": "enabled" if analyze_module.mediapipe_analyzer else "disabled",
+        "mediapipe_analysis": "enabled" if _mediapipe_analyzer else "disabled",
         "gemini_api": "configured" if settings.GEMINI_API_KEY else "not_configured",
         "redis": "connected",
         "database": "connected",

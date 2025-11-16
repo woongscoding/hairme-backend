@@ -27,9 +27,18 @@ scikit-learn==1.3.0
 pandas==2.1.4
 matplotlib==3.8.2
 seaborn==0.13.1
+sentence-transformers==2.2.2  # For hairstyle embedding generation
 
 # MLOps
 pyyaml==6.0.1
+
+# Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+
+# Circuit Breaker
+pybreaker==1.0.1
 
 # 기타
 pydantic==2.5.3
