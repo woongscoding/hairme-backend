@@ -129,8 +129,8 @@ scripts/merge_all_data.py
 scripts/generate_style_*.py
 scripts/prepare_and_train_final_model.py
 
-# Endpoints (reference only, already in main.py)
-endpoints/
+# Endpoints (old structure, deprecated - ignore only root endpoints/)
+/endpoints/
 
 # Utils backup
 start_server.py
