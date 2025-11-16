@@ -8,9 +8,10 @@ Date: 2025-11-13
 Version: 1.0.0
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from services.feedback_analytics import get_feedback_analytics
 from services.retrain_queue import get_retrain_queue
+from core.auth import verify_admin_api_key
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ router = APIRouter()
 
 
 @router.get("/admin/feedback-stats")
-async def get_feedback_stats():
+async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
     """
     전체 피드백 통계 조회
 
@@ -50,7 +51,7 @@ async def get_feedback_stats():
 
 
 @router.get("/admin/feedback-distribution")
-async def get_feedback_distribution():
+async def get_feedback_distribution(api_key: str = Depends(verify_admin_api_key)):
     """
     얼굴형 및 피부톤별 피드백 분포
 
@@ -78,7 +79,7 @@ async def get_feedback_distribution():
 
 
 @router.get("/admin/top-hairstyles")
-async def get_top_hairstyles(top_n: int = 10):
+async def get_top_hairstyles(top_n: int = 10, api_key: str = Depends(verify_admin_api_key)):
     """
     좋아요/싫어요가 많은 헤어스타일 Top N
 
@@ -109,7 +110,7 @@ async def get_top_hairstyles(top_n: int = 10):
 
 
 @router.get("/admin/retrain-status")
-async def get_retrain_status():
+async def get_retrain_status(api_key: str = Depends(verify_admin_api_key)):
     """
     재학습 작업 상태 조회
 

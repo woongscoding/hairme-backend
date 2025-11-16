@@ -8,10 +8,12 @@ import urllib.parse
 from typing import Optional, Dict, Any, Union
 from datetime import datetime
 
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 from PIL import Image
 import google.generativeai as genai
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from config.settings import settings
 from core.logging import logger, log_structured
@@ -33,6 +35,8 @@ from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 router = APIRouter()
 
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Global variables (initialized in main.py startup)
 mediapipe_analyzer = None
@@ -431,7 +435,8 @@ def save_to_database(
 
 # ========== API Endpoints ==========
 @router.post("/analyze")
-async def analyze_face(file: UploadFile = File(...)):
+@limiter.limit("10/minute")  # 분당 10회 제한
+async def analyze_face(request: Request, file: UploadFile = File(...)):
     """Face analysis and hairstyle recommendation (v20.2.0: ML integrated)"""
     start_time = time.time()
     image_hash = None
@@ -611,7 +616,8 @@ async def analyze_face(file: UploadFile = File(...)):
 
 
 @router.post("/v2/analyze-hybrid")
-async def analyze_face_hybrid(file: UploadFile = File(...)):
+@limiter.limit("10/minute")  # 분당 10회 제한
+async def analyze_face_hybrid(request: Request, file: UploadFile = File(...)):
     """
     Hybrid face analysis and hairstyle recommendation (Gemini + ML)
 
@@ -766,7 +772,9 @@ async def analyze_face_hybrid(file: UploadFile = File(...)):
 
 
 @router.post("/v2/feedback")
+@limiter.limit("20/minute")  # 분당 20회 제한 (피드백은 더 자주 사용)
 async def collect_feedback(
+    request: Request,
     face_shape: str,
     skin_tone: str,
     hairstyle_id: int,

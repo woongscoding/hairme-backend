@@ -10,6 +10,7 @@ class Settings(BaseSettings):
 
     # API Keys
     GEMINI_API_KEY: str
+    ADMIN_API_KEY: Optional[str] = None  # For admin endpoints authentication
 
     # Database Configuration
     DATABASE_URL: Optional[str] = None
@@ -25,8 +26,13 @@ class Settings(BaseSettings):
     CACHE_TTL: int = 86400  # 24 hours in seconds
 
     # Security Settings
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated list
     API_KEY: Optional[str] = None
+
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        """Parse ALLOWED_ORIGINS string into list"""
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     # Gemini Model Configuration
     MODEL_NAME: str = "gemini-flash-latest"
