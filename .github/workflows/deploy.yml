@@ -12,8 +12,8 @@ on:
 
 env:
   AWS_REGION: ap-northeast-2
-  ECR_REPOSITORY: hairme-lambda
-  LAMBDA_FUNCTION_NAME: hairme-analyze
+  ECR_REPOSITORY: hairstyle-api
+  LAMBDA_FUNCTION_NAME: hairme-lambda-proxy
 
 jobs:
   test:
