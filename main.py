@@ -206,6 +206,17 @@ async def health_check():
     }
 
 
+# ========== Lambda Handler ==========
+# For AWS Lambda deployment using Mangum
+try:
+    from mangum import Mangum
+    handler = Mangum(app, lifespan="off")
+    logger.info("✅ Lambda handler initialized")
+except ImportError:
+    logger.warning("⚠️ Mangum not installed - Lambda handler not available")
+    handler = None
+
+
 # ========== Main Entry Point ==========
 if __name__ == "__main__":
     import uvicorn
