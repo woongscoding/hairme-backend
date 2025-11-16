@@ -7,6 +7,7 @@ python-multipart==0.0.6
 sqlalchemy==2.0.25
 pymysql==1.1.0
 cryptography==41.0.7
+boto3==1.35.0  # AWS SDK for DynamoDB migration
 
 # Redis 캐싱
 redis==5.0.1
@@ -33,3 +34,4 @@ pyyaml==6.0.1
 # 기타
 pydantic==2.5.3
 pydantic-settings==2.1.0
+tqdm==4.67.1  # Progress bar for migrations

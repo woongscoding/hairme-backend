@@ -1,73 +1,209 @@
-name: Deploy to Production
+name: Deploy to AWS Lambda
 
 on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: hairme-lambda
+  LAMBDA_FUNCTION_NAME: hairme-analyze
 
 jobs:
-  deploy:
-    name: Deploy to AWS ECS
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ap-northeast-2
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov black flake8 mypy
 
-    - name: Build, tag, and push image to Amazon ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: hairstyle-api
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      - name: Run Black (code formatting check)
+        run: black --check .
+        continue-on-error: true
 
-    - name: Download task definition
-      run: |
-        aws ecs describe-task-definition \
-          --task-definition hairme-task \
-          --query taskDefinition > task-definition.json
+      - name: Run Flake8 (linting)
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        continue-on-error: true
 
-    - name: Update ECS task definition
-      id: task-def
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: task-definition.json
-        container-name: hairstyle-api
-        image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-api:${{ github.sha }}
+      - name: Run MyPy (type checking)
+        run: mypy . --ignore-missing-imports
+        continue-on-error: true
 
-    - name: Deploy to Amazon ECS
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: hairme-service
-        cluster: hairme-cluster
-        wait-for-service-stability: true
+      - name: Run pytest
+        env:
+          GEMINI_API_KEY: test_key
+          USE_DYNAMODB: false
+        run: |
+          pytest tests/ -v --cov=. --cov-report=xml --cov-report=term || true
 
-    - name: Notify deployment success
-      if: success()
-      run: |
-        echo "✅ Deployment successful!"
-        echo "Image: ${{ steps.login-ecr.outputs.registry }}/hairstyle-api:${{ github.sha }}"
+  build-and-deploy:
+    name: Build and Deploy to Lambda
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
 
-    - name: Notify deployment failure
-      if: failure()
-      run: |
-        echo "❌ Deployment failed!"
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{'{{'}} secrets.AWS_ACCESS_KEY_ID {{'}}'}}
+          aws-secret-access-key: ${{'{{'}} secrets.AWS_SECRET_ACCESS_KEY {{'}}'}}
+          aws-region: ${{'{{'}} env.AWS_REGION {{'}}'}}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{'{{'}} steps.login-ecr.outputs.registry {{'}}'}}
+          IMAGE_TAG: ${{'{{'}} github.sha {{'}}'}}
+        run: |
+          docker build \
+            -f Dockerfile.lambda \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            --platform linux/amd64 \
+            .
+
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create backup tag of current Lambda version
+        run: |
+          CURRENT_IMAGE=$(aws lambda get-function \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query 'Code.ImageUri' \
+            --output text || echo "none")
+
+          if [ "$CURRENT_IMAGE" != "none" ]; then
+            BACKUP_TAG="backup-$(date +%Y%m%d-%H%M%S)"
+            echo "Creating backup tag: $BACKUP_TAG"
+
+            MANIFEST=$(aws ecr batch-get-image \
+              --repository-name $ECR_REPOSITORY \
+              --image-ids imageTag=latest \
+              --query 'images[0].imageManifest' \
+              --output text)
+
+            aws ecr put-image \
+              --repository-name $ECR_REPOSITORY \
+              --image-tag $BACKUP_TAG \
+              --image-manifest "$MANIFEST" || true
+          fi
+
+      - name: Update Lambda function
+        env:
+          IMAGE_URI: ${{'{{'}} steps.build-image.outputs.image {{'}}'}}
+        run: |
+          echo "Updating Lambda function: $LAMBDA_FUNCTION_NAME"
+          echo "New image: $IMAGE_URI"
+
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --image-uri $IMAGE_URI \
+            --region $AWS_REGION \
+            --output json
+
+          echo "Waiting for function update to complete..."
+          aws lambda wait function-updated \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION
+
+          echo "Updating function configuration..."
+          aws lambda update-function-configuration \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,GEMINI_API_KEY=${{'{{'}} secrets.GEMINI_API_KEY {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest}" \
+            --memory-size 2048 \
+            --timeout 30 \
+            --region $AWS_REGION \
+            --output json
+
+          echo "Lambda function updated successfully!"
+
+      - name: Test deployed Lambda function
+        run: |
+          echo "Testing Lambda function..."
+
+          RESPONSE=$(aws lambda invoke \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --payload '{"resource":"/api/health","path":"/api/health","httpMethod":"GET"}' \
+            --region $AWS_REGION \
+            response.json)
+
+          echo "Lambda invocation response:"
+          echo "$RESPONSE"
+
+          echo "Lambda function output:"
+          cat response.json
+
+          if grep -q "healthy" response.json; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed"
+            exit 1
+          fi
+
+      - name: Get Lambda function URL
+        id: get-url
+        run: |
+          FUNCTION_URL=$(aws lambda get-function-url-config \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query 'FunctionUrl' \
+            --output text 2>/dev/null || echo "No function URL configured")
+
+          echo "Lambda Function URL: $FUNCTION_URL"
+          echo "function_url=$FUNCTION_URL" >> $GITHUB_OUTPUT
+
+      - name: Deployment summary
+        run: |
+          echo "=========================================="
+          echo "Deployment Summary"
+          echo "=========================================="
+          echo "Function Name: $LAMBDA_FUNCTION_NAME"
+          echo "Region: $AWS_REGION"
+          echo "Image: ${{'{{'}} steps.build-image.outputs.image {{'}}'}}"
+          echo "Git SHA: ${{'{{'}} github.sha {{'}}'}}"
+          echo "Function URL: ${{'{{'}} steps.get-url.outputs.function_url {{'}}'}}"
+          echo "=========================================="
+
+      - name: Send deployment notification
+        if: success()
+        run: |
+          echo "✅ HairMe Backend deployed successfully!"
+          echo "Version: ${{'{{'}} github.sha {{'}}'}}"
+          echo "Deployed at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"

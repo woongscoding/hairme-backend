@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
 
+    # DynamoDB Configuration
+    USE_DYNAMODB: bool = False
+    AWS_REGION: str = "ap-northeast-2"
+    DYNAMODB_TABLE_NAME: str = "hairme-analysis"
+
     # Redis Configuration
     REDIS_URL: Optional[str] = None
     CACHE_TTL: int = 86400  # 24 hours in seconds
@@ -35,6 +40,10 @@ class Settings(BaseSettings):
 
     # Logging Configuration
     LOG_LEVEL: str = "INFO"
+
+    # Environment Settings
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = False
 
     # Application Info
     APP_TITLE: str = "HairMe API"
