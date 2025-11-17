@@ -105,6 +105,71 @@ HairMe Backend is a **serverless** AI-powered hairstyle recommendation service t
 | `POST` | `/api/feedback` | Submit user feedback |
 | `GET` | `/api/stats/feedback` | Get feedback statistics |
 
+### Service Architecture & Dependencies
+
+#### Required Services (서버 시작 필수)
+
+These services must be initialized successfully, or the server will fail to start:
+
+| Service | Description | Failure Behavior |
+|---------|-------------|------------------|
+| **MediaPipe** | 478-point face mesh analysis | `RuntimeError` - Server won't start |
+| **Gemini API** | AI-powered recommendations | `RuntimeError` - Server won't start |
+| **Hybrid Service** | Gemini + ML recommendation engine | `RuntimeError` - Server won't start |
+
+**Circuit Breaker Protection:**
+- Gemini API calls are protected by Circuit Breaker pattern
+- 5 consecutive failures → Circuit OPEN (60s timeout)
+- Fallback: MediaPipe-only analysis during outages
+
+#### Optional Services (서버 시작 가능)
+
+These services are optional and won't prevent server startup if they fail:
+
+| Service | Description | Failure Behavior |
+|---------|-------------|------------------|
+| **ML Model** | PyTorch recommender model | Warning logged - Uses default scores |
+| **Sentence Transformer** | Style embedding for similarity | Warning logged - Proceeds without embedding |
+| **Feedback Collector** | User feedback storage | Warning logged - Feedback disabled |
+| **Retrain Queue** | Model retraining queue | Warning logged - Retraining disabled |
+
+**Health Check:**
+```bash
+curl http://localhost:8000/api/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "version": "20.2.0",
+  "services": {
+    "mediapipe": true,
+    "gemini": true,
+    "hybrid_service": true,
+    "ml_model": true,
+    "sentence_transformer": true,
+    "feedback_collector": true,
+    "retrain_queue": true
+  },
+  "required_services": {
+    "mediapipe": true,
+    "gemini": true,
+    "hybrid_service": true
+  },
+  "optional_services": {
+    "ml_model": true,
+    "sentence_transformer": true,
+    "feedback_collector": true,
+    "retrain_queue": true
+  }
+}
+```
+
+**Status Values:**
+- `"healthy"` - All required services are running
+- `"degraded"` - Some optional services failed (server still functional)
+
 ---
 
 ## 🚀 Quick Start

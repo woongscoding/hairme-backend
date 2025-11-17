@@ -3,13 +3,17 @@
 
 Gemini API + ML 모델을 결합하여 최적의 추천 제공
 
+Circuit Breaker 패턴 적용:
+- Gemini API 호출에 Circuit Breaker 적용 (5회 연속 실패 시 60초간 차단)
+- Circuit OPEN 시 MediaPipe 데이터만 사용한 fallback 제공
+
 Author: HairMe ML Team
 Date: 2025-11-08
-Version: 1.0.0
+Version: 1.1.0
 """
 
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import google.generativeai as genai
 from PIL import Image
 import io
@@ -22,6 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.ml_recommender import get_ml_recommender
 from services.reason_generator import get_reason_generator
+from services.circuit_breaker import gemini_breaker, with_circuit_breaker
 from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
@@ -102,12 +107,41 @@ class HybridRecommendationService:
 
         return prompt
 
+    def _gemini_fallback(self, image_data: bytes, face_shape: str, skin_tone: str) -> Dict[str, Any]:
+        """
+        Gemini API 장애 시 fallback
+
+        Circuit Breaker가 OPEN 상태일 때 MediaPipe 데이터만 사용한 기본 응답 반환
+
+        Args:
+            image_data: 이미지 바이트 (사용하지 않음)
+            face_shape: 얼굴형
+            skin_tone: 피부톤
+
+        Returns:
+            MediaPipe 데이터만 포함한 기본 응답
+        """
+        logger.warning(
+            f"[FALLBACK] Gemini API 사용 불가. MediaPipe 데이터만 사용: "
+            f"얼굴형={face_shape}, 피부톤={skin_tone}"
+        )
+
+        return {
+            "analysis": {
+                "face_shape": face_shape,
+                "personal_color": skin_tone,
+                "features": "Gemini API 일시 중단 - MediaPipe 기반 분석"
+            },
+            "recommendations": []
+        }
+
+    @with_circuit_breaker(gemini_breaker, fallback=lambda self, *args, **kwargs: self._gemini_fallback(*args, **kwargs))
     def _call_gemini(
         self,
         image_data: bytes,
         face_shape: str,
         skin_tone: str
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Gemini API 호출
 
@@ -178,11 +212,11 @@ class HybridRecommendationService:
 
     def _merge_recommendations(
         self,
-        gemini_recommendations: List[Dict],
-        ml_recommendations: List[Dict],
+        gemini_recommendations: List[Dict[str, Any]],
+        ml_recommendations: List[Dict[str, Any]],
         face_shape: str,
         skin_tone: str
-    ) -> List[Dict]:
+    ) -> List[Dict[str, Any]]:
         """
         Gemini와 ML 추천 결과 병합 (중복 제거)
 
@@ -290,7 +324,7 @@ class HybridRecommendationService:
         image_data: bytes,
         face_shape: str,
         skin_tone: str
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         하이브리드 추천 실행
 
@@ -351,9 +385,12 @@ class HybridRecommendationService:
 _hybrid_service_instance = None
 
 
-def get_hybrid_service(gemini_api_key: str) -> HybridRecommendationService:
+def create_hybrid_service(gemini_api_key: str) -> HybridRecommendationService:
     """
-    하이브리드 서비스 싱글톤 인스턴스 가져오기
+    하이브리드 서비스 인스턴스 생성 (팩토리 함수)
+
+    주의: 이 함수는 인스턴스를 생성하는 팩토리 함수입니다.
+    FastAPI 의존성 주입용으로는 core.dependencies.get_hybrid_service()를 사용하세요.
 
     Args:
         gemini_api_key: Gemini API 키
