@@ -112,8 +112,12 @@ def with_circuit_breaker(
                     logger.info(f"[FALLBACK] {breaker.name}: 폴백 함수 실행")
                     return fallback(*args, **kwargs)
 
-                # Re-raise if no fallback
-                raise
+                # Raise custom exception if no fallback
+                from core.exceptions import CircuitBreakerOpenException
+                raise CircuitBreakerOpenException(
+                    service_name=breaker.name,
+                    message=f"{breaker.name} Circuit Breaker가 Open 상태입니다. 잠시 후 다시 시도해주세요."
+                )
 
         return wrapper
     return decorator

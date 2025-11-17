@@ -5,6 +5,7 @@ Version: 20.2.0 (MediaPipe transition complete)
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -14,6 +15,7 @@ from core.logging import logger, log_structured
 from core.cache import init_redis
 from core.ml_loader import load_ml_model, load_sentence_transformer
 from core.dependencies import init_services
+from core.monitoring import init_sentry
 from database.connection import init_database
 from database.migration import migrate_database_schema
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -24,6 +26,14 @@ from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
 from api.endpoints.feedback import router as feedback_router
 import google.generativeai as genai
+
+
+# ========== Initialize Sentry (if configured) ==========
+sentry_enabled = init_sentry()
+if sentry_enabled:
+    logger.info("✅ Sentry error tracking enabled")
+else:
+    logger.info("ℹ️  Sentry not configured - running without error tracking")
 
 
 # ========== Rate Limiter Initialization ==========
@@ -52,6 +62,25 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+# ========== Trusted Host Middleware ==========
+# Prevent Host Header Injection attacks
+allowed_hosts = ["*"]  # Default: allow all
+if settings.ENVIRONMENT == "production":
+    # Production: only allow specific hosts
+    allowed_hosts = [
+        "*.execute-api.ap-northeast-2.amazonaws.com",  # API Gateway
+        "*.lambda-url.ap-northeast-2.on.aws",          # Lambda Function URL
+        "hairme.app",                                   # Custom domain (if configured)
+        "*.hairme.app"                                  # Subdomains
+    ]
+    logger.info(f"🔒 Trusted hosts: {allowed_hosts}")
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=allowed_hosts
+)
+
+
 # ========== CORS Middleware ==========
 app.add_middleware(
     CORSMiddleware,
@@ -60,6 +89,63 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ========== Security Headers Middleware ==========
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """
+    Add security headers to all responses
+
+    Headers added:
+    - Content-Security-Policy: Prevent XSS attacks
+    - X-Frame-Options: Prevent clickjacking
+    - X-Content-Type-Options: Prevent MIME sniffing
+    - X-XSS-Protection: Enable browser XSS protection (legacy)
+    - Strict-Transport-Security: Force HTTPS (production only)
+    - Referrer-Policy: Control referrer information
+    - Permissions-Policy: Restrict browser features
+    """
+    response = await call_next(request)
+
+    # Content Security Policy
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # XSS Protection (legacy browsers)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # HSTS - only in HTTPS/production environments
+    if request.url.scheme == "https" or settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+
+    # Referrer Policy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Permissions Policy (restrict browser features)
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+    )
+
+    # Remove server header for security
+    response.headers.pop("Server", None)
+
+    return response
 
 
 # ========== File Size Limit Middleware ==========
@@ -210,33 +296,66 @@ async def root():
 
 # ========== Health Check Endpoint ==========
 @app.get("/api/health")
-async def health_check():
-    """Health check endpoint with detailed status"""
-    from core.dependencies import _mediapipe_analyzer
+async def health_check(deep: bool = False):
+    """
+    Enhanced health check endpoint with actual service validation
 
-    # 필수 서비스 체크
+    Query parameters:
+    - deep: If true, runs comprehensive checks including Gemini API ping (slower)
+
+    Returns:
+    - status: "healthy", "degraded", or "unhealthy"
+    - startup: Services initialized during startup
+    - checks: Real-time connectivity checks
+    - system: CPU, memory, disk metrics
+    - circuit_breaker: Circuit breaker state
+    """
+    from core.health_check import get_health_check_service
+
+    # Basic startup status
     required_services_ok = all([
         startup_status["mediapipe"],
         startup_status["gemini"],
         startup_status["hybrid_service"]
     ])
 
-    return {
+    base_status = {
         "status": "healthy" if required_services_ok else "degraded",
         "version": settings.APP_VERSION,
-        "services": startup_status,
-        "required_services": {
-            "mediapipe": startup_status["mediapipe"],
-            "gemini": startup_status["gemini"],
-            "hybrid_service": startup_status["hybrid_service"]
-        },
-        "optional_services": {
-            "ml_model": startup_status["ml_model"],
-            "sentence_transformer": startup_status["sentence_transformer"],
-            "feedback_collector": startup_status["feedback_collector"],
-            "retrain_queue": startup_status["retrain_queue"]
+        "environment": settings.ENVIRONMENT,
+        "startup": {
+            "required_services": {
+                "mediapipe": startup_status["mediapipe"],
+                "gemini": startup_status["gemini"],
+                "hybrid_service": startup_status["hybrid_service"]
+            },
+            "optional_services": {
+                "ml_model": startup_status["ml_model"],
+                "sentence_transformer": startup_status["sentence_transformer"],
+                "feedback_collector": startup_status["feedback_collector"],
+                "retrain_queue": startup_status["retrain_queue"]
+            }
         }
     }
+
+    # Run comprehensive health checks
+    health_service = get_health_check_service()
+    comprehensive_result = await health_service.comprehensive_health_check(
+        include_expensive_checks=deep
+    )
+
+    # Merge results
+    base_status.update({
+        "checks": comprehensive_result["checks"],
+        "check_duration_ms": comprehensive_result["check_duration_ms"],
+        "timestamp": comprehensive_result["timestamp"]
+    })
+
+    # Update overall status based on checks
+    if comprehensive_result["status"] == "degraded":
+        base_status["status"] = "degraded"
+
+    return base_status
 
 
 # ========== Lambda Handler ==========

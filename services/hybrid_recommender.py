@@ -13,6 +13,7 @@ Version: 1.1.0
 """
 
 import logging
+import time
 from typing import List, Dict, Optional, Any
 import google.generativeai as genai
 from PIL import Image
@@ -28,6 +29,13 @@ from models.ml_recommender import get_ml_recommender
 from services.reason_generator import get_reason_generator
 from services.circuit_breaker import gemini_breaker, with_circuit_breaker
 from utils.style_preprocessor import normalize_style_name
+from core.monitoring import (
+    add_breadcrumb,
+    set_context,
+    start_span,
+    track_gemini_api_call,
+    capture_exception
+)
 
 logger = logging.getLogger(__name__)
 
@@ -153,15 +161,37 @@ class HybridRecommendationService:
         Returns:
             Gemini 분석 결과
         """
+        # Add Sentry context
+        set_context("gemini_request", {
+            "face_shape": face_shape,
+            "skin_tone": skin_tone,
+            "image_size_kb": len(image_data) / 1024
+        })
+
+        add_breadcrumb(
+            "Starting Gemini API call",
+            category="ai",
+            level="info",
+            data={"face_shape": face_shape, "skin_tone": skin_tone}
+        )
+
+        gemini_start = time.time()
+        success = False
+
         try:
             # 이미지 로드
-            image = Image.open(io.BytesIO(image_data))
+            with start_span("image.load", "Load image from bytes"):
+                image = Image.open(io.BytesIO(image_data))
 
             # 프롬프트 생성
-            prompt = self._create_gemini_prompt(face_shape, skin_tone)
+            with start_span("ai.prompt", "Generate Gemini prompt"):
+                prompt = self._create_gemini_prompt(face_shape, skin_tone)
 
             # API 호출
-            response = self.gemini_model.generate_content([prompt, image])
+            with start_span("ai.inference", "Gemini API call"):
+                response = self.gemini_model.generate_content([prompt, image])
+
+            success = True
 
             # JSON 파싱
             import json
@@ -179,36 +209,65 @@ class HybridRecommendationService:
 
             logger.info(f"✅ Gemini 응답: {len(result.get('recommendations', []))}개 추천")
 
+            # Track performance
+            latency_ms = (time.time() - gemini_start) * 1000
+            track_gemini_api_call(
+                latency_ms=latency_ms,
+                success=True,
+                face_shape=face_shape,
+                skin_tone=skin_tone,
+                recommendations_count=len(result.get('recommendations', []))
+            )
+
             return result
 
         except json.JSONDecodeError as e:
+            latency_ms = (time.time() - gemini_start) * 1000
+            track_gemini_api_call(latency_ms=latency_ms, success=False, error="json_decode_error")
+
             logger.error(
                 f"❌ Gemini 응답 파싱 실패: {str(e)}\n"
                 f"응답 내용: {response.text[:200] if 'response' in locals() else 'N/A'}"
             )
-            # ML 추천으로 폴백 (Gemini 없이 진행)
-            return {
-                "analysis": {
-                    "face_shape": face_shape,
-                    "personal_color": skin_tone,
-                    "features": "Gemini 응답 파싱 실패 (ML 추천만 사용)"
-                },
-                "recommendations": []
-            }
+            from core.exceptions import GeminiInvalidResponseException
+            exc = GeminiInvalidResponseException(f"JSON 파싱 실패: {str(e)}")
+            capture_exception(exc, tags={"component": "gemini_api", "error_type": "json_parse"})
+            raise exc
+
+        except ImportError as e:
+            logger.error(f"❌ 필수 라이브러리 import 실패: {str(e)}")
+            raise
+
+        # Catch specific Google API errors
         except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e).lower()
+
+            # Check for rate limiting
+            if 'quota' in error_msg or 'rate' in error_msg or 'limit' in error_msg:
+                logger.error(f"❌ Gemini API rate limit: {str(e)}")
+                from core.exceptions import GeminiRateLimitException
+                raise GeminiRateLimitException(str(e))
+
+            # Check for authentication errors
+            if 'auth' in error_msg or 'permission' in error_msg or 'api key' in error_msg:
+                logger.error(f"❌ Gemini API 인증 실패: {str(e)}")
+                from core.exceptions import GeminiAuthenticationException
+                raise GeminiAuthenticationException(str(e))
+
+            # Check for network/connection errors
+            if 'connection' in error_msg or 'timeout' in error_msg or 'network' in error_msg:
+                logger.error(f"❌ Gemini API 연결 실패: {str(e)}")
+                from core.exceptions import GeminiAPIException
+                raise GeminiAPIException(f"연결 실패: {str(e)}")
+
+            # Generic Gemini API error
             logger.error(
-                f"❌ Gemini API 오류 ({type(e).__name__}): {str(e)}\n"
+                f"❌ Gemini API 오류 ({error_type}): {str(e)}\n"
                 f"얼굴형={face_shape}, 피부톤={skin_tone}"
             )
-            # ML 추천으로 폴백 (Gemini 없이 진행)
-            return {
-                "analysis": {
-                    "face_shape": face_shape,
-                    "personal_color": skin_tone,
-                    "features": f"Gemini API 오류 ({type(e).__name__}) - ML 추천만 사용"
-                },
-                "recommendations": []
-            }
+            from core.exceptions import GeminiAPIException
+            raise GeminiAPIException(f"{error_type}: {str(e)}")
 
     def _merge_recommendations(
         self,
@@ -257,8 +316,14 @@ class HybridRecommendationService:
                     ml_score = self.ml_recommender.predict_score(
                         face_shape, skin_tone, style_name
                     )
-                except:
-                    pass
+                except (KeyError, ValueError) as e:
+                    # 스타일이 모델에 없거나 잘못된 입력값
+                    logger.warning(f"⚠️ ML 점수 예측 실패 ({style_name}): {type(e).__name__}: {str(e)}")
+                    ml_score = 0.0
+                except Exception as e:
+                    # 예상치 못한 에러
+                    logger.error(f"❌ ML 점수 예측 중 예상치 못한 오류 ({style_name}): {type(e).__name__}: {str(e)}")
+                    ml_score = 0.0
 
             merged.append({
                 "hairstyle_id": hairstyle_id,  # ✅ DB ID 추가

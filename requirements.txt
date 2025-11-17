@@ -45,3 +45,7 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 tqdm==4.67.1  # Progress bar for migrations
 slowapi==0.1.9  # Rate limiting
+psutil==5.9.6  # System metrics (CPU, memory)
+
+# Monitoring & Observability
+sentry-sdk[fastapi]==1.40.0  # Error tracking and performance monitoring
