@@ -17,7 +17,7 @@ from core.dependencies import init_services
 from database.connection import init_database
 from database.migration import migrate_database_schema
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
-from services.hybrid_recommender import get_hybrid_service
+from services.hybrid_recommender import create_hybrid_service
 from services.feedback_collector import get_feedback_collector
 from services.retrain_queue import get_retrain_queue
 from routers.admin import router as admin_router
@@ -28,6 +28,17 @@ import google.generativeai as genai
 
 # ========== Rate Limiter Initialization ==========
 limiter = Limiter(key_func=get_remote_address)
+
+# ========== Service Startup Status Tracking ==========
+startup_status = {
+    "mediapipe": False,
+    "gemini": False,
+    "ml_model": False,
+    "sentence_transformer": False,
+    "hybrid_service": False,
+    "feedback_collector": False,
+    "retrain_queue": False
+}
 
 # ========== FastAPI App Initialization ==========
 app = FastAPI(
@@ -80,51 +91,42 @@ async def startup_event():
     """Initialize all services on server startup"""
     logger.info("🚀 서버 시작 중...")
 
-    # Validate critical configuration
+    # ========== 1. Gemini API 키 검증 (필수) ==========
     if not settings.GEMINI_API_KEY:
         logger.error("❌ GEMINI_API_KEY is not set!")
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
-    # Initialize Gemini API
     try:
         genai.configure(api_key=settings.GEMINI_API_KEY)
+        startup_status["gemini"] = True
         logger.info("✅ Gemini API 초기화 완료")
     except Exception as e:
-        logger.error(f"Gemini API 초기화 실패: {str(e)}")
+        logger.error(f"❌ Gemini API 초기화 실패: {str(e)}")
+        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
 
-    # Initialize MediaPipe Face Analyzer
-    mediapipe_analyzer = None
+    # ========== 2. MediaPipe Face Analyzer (필수) ==========
     try:
         mediapipe_analyzer = MediaPipeFaceAnalyzer()
+        startup_status["mediapipe"] = True
         logger.info("✅ MediaPipe 얼굴 분석기 초기화 완료")
-        log_structured("mediapipe_initialized", {
-            "status": "success",
-            "landmarks": 478
-        })
+        log_structured("mediapipe_initialized", {"status": "success", "landmarks": 478})
     except Exception as e:
         logger.error(f"❌ MediaPipe 초기화 실패: {str(e)}")
-        log_structured("mediapipe_initialized", {
-            "status": "failed",
-            "error": str(e)
-        })
+        raise RuntimeError(f"MediaPipe initialization failed: {str(e)}")
 
-    # Load ML Model
+    # ========== 3. ML Model (선택 - 실패해도 진행) ==========
     ml_loaded = load_ml_model()
+    startup_status["ml_model"] = ml_loaded
     if ml_loaded:
         logger.info("✅ ML 모드: 활성화")
-        log_structured("ml_model_loaded", {
-            "status": "success",
-            "model_path": settings.ML_MODEL_PATH
-        })
+        log_structured("ml_model_loaded", {"status": "success", "model_path": settings.ML_MODEL_PATH})
     else:
         logger.warning("⚠️ ML 모드: 비활성화 (기본 점수 사용)")
-        log_structured("ml_model_loaded", {
-            "status": "failed",
-            "fallback": "default_score"
-        })
+        log_structured("ml_model_loaded", {"status": "failed", "fallback": "default_score"})
 
-    # Load Sentence Transformer
+    # ========== 4. Sentence Transformer (선택 - 실패해도 진행) ==========
     st_loaded = load_sentence_transformer()
+    startup_status["sentence_transformer"] = st_loaded
     if st_loaded:
         logger.info("✅ 스타일 임베딩: 활성화")
         log_structured("sentence_transformer_loaded", {
@@ -133,78 +135,54 @@ async def startup_event():
             "embedding_dim": 384
         })
     else:
-        logger.warning("⚠️ 스타일 임베딩: 비활성화 (임베딩 없이 진행)")
-        log_structured("sentence_transformer_loaded", {
-            "status": "failed",
-            "fallback": "no_embedding"
-        })
+        logger.warning("⚠️ 스타일 임베딩: 비활성화")
 
-    # Initialize Hybrid Recommendation Service (Gemini + ML)
-    hybrid_service = None
+    # ========== 5. Hybrid Service (필수 - Gemini가 있으므로) ==========
     try:
-        if settings.GEMINI_API_KEY:
-            hybrid_service = get_hybrid_service(settings.GEMINI_API_KEY)
-            logger.info("✅ 하이브리드 추천 서비스 초기화 완료 (Gemini + ML)")
-            log_structured("hybrid_service_initialized", {
-                "status": "success",
-                "gemini_model": settings.MODEL_NAME,
-                "ml_model": "hairstyle_recommender.pt"
-            })
-        else:
-            logger.warning("⚠️ GEMINI_API_KEY 없음 - 하이브리드 서비스 비활성화")
+        hybrid_service = create_hybrid_service(settings.GEMINI_API_KEY)
+        startup_status["hybrid_service"] = True
+        logger.info("✅ 하이브리드 추천 서비스 초기화 완료")
     except Exception as e:
         logger.error(f"❌ 하이브리드 서비스 초기화 실패: {str(e)}")
-        log_structured("hybrid_service_initialized", {
-            "status": "failed",
-            "error": str(e)
-        })
+        raise RuntimeError(f"Hybrid service initialization failed: {str(e)}")
 
-    # Initialize Feedback Collector
+    # ========== 6. Feedback Collector (선택) ==========
     feedback_collector = None
     try:
         feedback_collector = get_feedback_collector()
+        startup_status["feedback_collector"] = True
         logger.info("✅ 피드백 수집기 초기화 완료")
-        log_structured("feedback_collector_initialized", {
-            "status": "success"
-        })
     except Exception as e:
         logger.error(f"❌ 피드백 수집기 초기화 실패: {str(e)}")
-        log_structured("feedback_collector_initialized", {
-            "status": "failed",
-            "error": str(e)
-        })
+        # 선택사항이므로 계속 진행
 
-    # Initialize Retrain Queue
+    # ========== 7. Retrain Queue (선택) ==========
     retrain_queue = None
     try:
         retrain_queue = get_retrain_queue()
+        startup_status["retrain_queue"] = True
         logger.info("✅ 재학습 큐 초기화 완료")
-        log_structured("retrain_queue_initialized", {
-            "status": "success"
-        })
     except Exception as e:
         logger.error(f"❌ 재학습 큐 초기화 실패: {str(e)}")
-        log_structured("retrain_queue_initialized", {
-            "status": "failed",
-            "error": str(e)
-        })
+        # 선택사항이므로 계속 진행
 
-    # ========== Initialize Dependency Injection Services ==========
+    # ========== 8. 의존성 주입 초기화 ==========
     init_services(
         mediapipe_analyzer=mediapipe_analyzer,
         hybrid_service=hybrid_service,
-        feedback_collector=feedback_collector,
-        retrain_queue=retrain_queue
+        feedback_collector=feedback_collector if startup_status["feedback_collector"] else None,
+        retrain_queue=retrain_queue if startup_status["retrain_queue"] else None
     )
 
-    # Initialize Database
+    # ========== 9. Database & Cache ==========
     db_initialized = init_database()
     if db_initialized:
-        # Run schema migration
         migrate_database_schema()
 
-    # Initialize Redis Cache
     init_redis()
+
+    # ========== 10. 초기화 상태 로깅 ==========
+    logger.info(f"📊 서비스 초기화 상태: {startup_status}")
 
 
 # ========== Root Endpoint ==========
@@ -233,20 +211,31 @@ async def root():
 # ========== Health Check Endpoint ==========
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint for monitoring"""
+    """Health check endpoint with detailed status"""
     from core.dependencies import _mediapipe_analyzer
 
+    # 필수 서비스 체크
+    required_services_ok = all([
+        startup_status["mediapipe"],
+        startup_status["gemini"],
+        startup_status["hybrid_service"]
+    ])
+
     return {
-        "status": "healthy",
+        "status": "healthy" if required_services_ok else "degraded",
         "version": settings.APP_VERSION,
-        "model": settings.MODEL_NAME,
-        "mediapipe_analysis": "enabled" if _mediapipe_analyzer else "disabled",
-        "gemini_api": "configured" if settings.GEMINI_API_KEY else "not_configured",
-        "redis": "connected",
-        "database": "connected",
-        "feedback_system": "enabled",
-        "ml_model": "enabled",
-        "style_embedding": "enabled"
+        "services": startup_status,
+        "required_services": {
+            "mediapipe": startup_status["mediapipe"],
+            "gemini": startup_status["gemini"],
+            "hybrid_service": startup_status["hybrid_service"]
+        },
+        "optional_services": {
+            "ml_model": startup_status["ml_model"],
+            "sentence_transformer": startup_status["sentence_transformer"],
+            "feedback_collector": startup_status["feedback_collector"],
+            "retrain_queue": startup_status["retrain_queue"]
+        }
     }
 
 
