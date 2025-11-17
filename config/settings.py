@@ -1,15 +1,19 @@
 """Application settings and configuration management using Pydantic Settings"""
 
 import os
+import logging
 from typing import List, Optional
 from pydantic_settings import BaseSettings
+from config.secrets import get_secret_or_env, is_aws_environment
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables"""
 
-    # API Keys
-    GEMINI_API_KEY: str
+    # API Keys (will be overridden by __init__ if in AWS)
+    GEMINI_API_KEY: str = ""
     ADMIN_API_KEY: Optional[str] = None  # For admin endpoints authentication
 
     # Database Configuration
@@ -98,6 +102,88 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
+    def __init__(self, **kwargs):
+        """
+        Initialize settings with AWS Secrets Manager integration
+
+        Priority:
+        1. AWS Secrets Manager (if in AWS environment)
+        2. Environment variables (fallback)
+        3. .env file (fallback)
+        """
+        super().__init__(**kwargs)
+
+        # Only fetch from Secrets Manager if in AWS environment
+        if is_aws_environment():
+            logger.info("🔐 AWS environment detected - loading secrets from Secrets Manager")
+
+            # Fetch GEMINI_API_KEY from Secrets Manager
+            try:
+                gemini_key = get_secret_or_env(
+                    secret_name='hairme-gemini-api-key',
+                    env_var_name='GEMINI_API_KEY',
+                    region_name=self.AWS_REGION,
+                    required=True
+                )
+                if gemini_key:
+                    self.GEMINI_API_KEY = gemini_key
+                    logger.info("✅ GEMINI_API_KEY loaded from Secrets Manager")
+            except Exception as e:
+                logger.error(f"❌ Failed to load GEMINI_API_KEY: {str(e)}")
+
+            # Fetch ADMIN_API_KEY from Secrets Manager
+            try:
+                admin_key = get_secret_or_env(
+                    secret_name='hairme-admin-api-key',
+                    env_var_name='ADMIN_API_KEY',
+                    region_name=self.AWS_REGION,
+                    required=False
+                )
+                if admin_key:
+                    self.ADMIN_API_KEY = admin_key
+                    logger.info("✅ ADMIN_API_KEY loaded from Secrets Manager")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load ADMIN_API_KEY: {str(e)}")
+
+            # Fetch DB_PASSWORD from Secrets Manager (if using MySQL)
+            if not self.USE_DYNAMODB:
+                try:
+                    db_password = get_secret_or_env(
+                        secret_name='hairme-db-password',
+                        env_var_name='DB_PASSWORD',
+                        region_name=self.AWS_REGION,
+                        required=False
+                    )
+                    if db_password:
+                        self.DB_PASSWORD = db_password
+                        logger.info("✅ DB_PASSWORD loaded from Secrets Manager")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load DB_PASSWORD: {str(e)}")
+
+            # Fetch DATABASE_URL from Secrets Manager (if using MySQL)
+            if not self.USE_DYNAMODB and not self.DATABASE_URL:
+                try:
+                    database_url = get_secret_or_env(
+                        secret_name='hairme-database-url',
+                        env_var_name='DATABASE_URL',
+                        region_name=self.AWS_REGION,
+                        required=False
+                    )
+                    if database_url:
+                        self.DATABASE_URL = database_url
+                        logger.info("✅ DATABASE_URL loaded from Secrets Manager")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to load DATABASE_URL: {str(e)}")
+
+        else:
+            logger.info("💻 Local/Dev environment detected - using environment variables/.env file")
+
+        # Validate required secrets
+        if not self.GEMINI_API_KEY:
+            raise ValueError(
+                "GEMINI_API_KEY is required but not found in Secrets Manager or environment variables"
+            )
 
 
 # Singleton instance
