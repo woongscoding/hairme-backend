@@ -27,7 +27,12 @@ def init_redis() -> bool:
         return False
 
     try:
-        redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        redis_client = redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5
+        )
         redis_client.ping()
         logger.info(f"✅ Redis 연결 성공: {settings.REDIS_URL}")
         return True

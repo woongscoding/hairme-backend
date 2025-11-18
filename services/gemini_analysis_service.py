@@ -143,7 +143,8 @@ class GeminiAnalysisService:
 
             response = model.generate_content(
                 [prompt, image],
-                generation_config=generation_config
+                generation_config=generation_config,
+                request_options={"timeout": 30}
             )
 
             # Parse JSON response

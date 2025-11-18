@@ -46,6 +46,7 @@ from decimal import Decimal
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
+    from botocore.config import Config
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -132,8 +133,15 @@ def init_dynamodb() -> bool:
     try:
         logger.info(f"🔌 Connecting to DynamoDB in {aws_region}...")
 
+        # Create config with timeouts
+        config = Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={'max_attempts': 3}
+        )
+
         # Create DynamoDB resource
-        dynamodb_resource = boto3.resource('dynamodb', region_name=aws_region)
+        dynamodb_resource = boto3.resource('dynamodb', region_name=aws_region, config=config)
         dynamodb_table = dynamodb_resource.Table(table_name)
 
         # Verify table exists by describing it
