@@ -40,7 +40,7 @@ def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optiona
         response = client.get_secret_value(SecretId=secret_name)
 
         # Extract secret string
-        secret_value = response.get('SecretString')
+        secret_value: Optional[str] = response.get('SecretString')
 
         logger.info(f"✅ Successfully retrieved secret: {secret_name}")
         return secret_value
@@ -85,13 +85,13 @@ def is_aws_environment() -> bool:
 
     # Check for EC2 instance metadata (this is more expensive, so check last)
     try:
-        import requests
+        import requests  # type: ignore[import-untyped]
         # EC2 metadata service with short timeout
         response = requests.get(
             'http://169.254.169.254/latest/meta-data/',
             timeout=0.1
         )
-        return response.status_code == 200
+        return bool(response.status_code == 200)
     except (ImportError, ModuleNotFoundError):
         # requests not installed
         pass

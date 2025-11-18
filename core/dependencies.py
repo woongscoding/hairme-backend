@@ -6,7 +6,7 @@ from functools import lru_cache
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
 from services.face_detection_service import FaceDetectionService
 from services.gemini_analysis_service import GeminiAnalysisService
-from services.hybrid_recommender import HybridRecommender
+from services.hybrid_recommender import HybridRecommendationService
 from services.feedback_collector import FeedbackCollector
 from services.retrain_queue import RetrainQueue
 from core.logging import logger
@@ -16,7 +16,7 @@ from core.logging import logger
 _mediapipe_analyzer: Optional[MediaPipeFaceAnalyzer] = None
 _face_detection_service: Optional[FaceDetectionService] = None
 _gemini_analysis_service: Optional[GeminiAnalysisService] = None
-_hybrid_service: Optional[HybridRecommender] = None
+_hybrid_service: Optional[HybridRecommendationService] = None
 _feedback_collector: Optional[FeedbackCollector] = None
 _retrain_queue: Optional[RetrainQueue] = None
 
@@ -24,7 +24,7 @@ _retrain_queue: Optional[RetrainQueue] = None
 # ========== Initialization Functions (Called from main.py) ==========
 def init_services(
     mediapipe_analyzer: Optional[MediaPipeFaceAnalyzer] = None,
-    hybrid_service: Optional[HybridRecommender] = None,
+    hybrid_service: Optional[HybridRecommendationService] = None,
     feedback_collector: Optional[FeedbackCollector] = None,
     retrain_queue: Optional[RetrainQueue] = None
 ) -> None:
@@ -94,40 +94,35 @@ def get_gemini_analysis_service() -> GeminiAnalysisService:
 
 
 @lru_cache()
-def get_hybrid_service() -> HybridRecommender:
+def get_hybrid_service() -> HybridRecommendationService:
     """
-    Get HybridRecommender instance
+    Get HybridRecommendationService instance
 
     Returns:
-        HybridRecommender instance
+        HybridRecommendationService instance
 
     Raises:
         RuntimeError: If services not initialized
     """
     if _hybrid_service is None:
         raise RuntimeError(
-            "HybridRecommender not initialized. "
+            "HybridRecommendationService not initialized. "
             "Call init_services() in main.py startup."
         )
     return _hybrid_service
 
 
 @lru_cache()
-def get_feedback_collector() -> FeedbackCollector:
+def get_feedback_collector() -> Optional[FeedbackCollector]:
     """
     Get FeedbackCollector instance
 
     Returns:
-        FeedbackCollector instance
+        FeedbackCollector instance or None if not available
 
-    Raises:
-        RuntimeError: If services not initialized
+    Note:
+        FeedbackCollector is optional. Returns None if initialization failed.
     """
-    if _feedback_collector is None:
-        raise RuntimeError(
-            "FeedbackCollector not initialized. "
-            "Call init_services() in main.py startup."
-        )
     return _feedback_collector
 
 

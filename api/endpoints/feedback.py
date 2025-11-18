@@ -22,14 +22,15 @@ limiter = Limiter(key_func=get_remote_address)
 @router.post("/feedback", response_model=FeedbackResponse)
 @router.post("/feedback/submit", response_model=FeedbackResponse)
 @limiter.limit("20/minute")  # 분당 20회 제한
-async def submit_feedback(http_request: Request, request: FeedbackRequest) -> FeedbackResponse:
+async def submit_feedback(request: Request, feedback_data: FeedbackRequest) -> FeedbackResponse:
     """
     User feedback submission endpoint (supports both /api/feedback and /api/feedback/submit)
 
     Supports both MySQL and DynamoDB backends based on USE_DYNAMODB env variable.
 
     Args:
-        request: FeedbackRequest model with:
+        request: Starlette Request (for SlowAPI rate limiting)
+        feedback_data: FeedbackRequest model with:
             - analysis_id: str or int (UUID for DynamoDB, integer for MySQL)
             - style_index: int (1, 2, or 3)
             - feedback: FeedbackEnum ('good' or 'bad')
@@ -49,19 +50,26 @@ async def submit_feedback(http_request: Request, request: FeedbackRequest) -> Fe
             from database.dynamodb_connection import save_feedback, get_analysis
 
             # Validate analysis exists
-            analysis = get_analysis(str(request.analysis_id))
+            analysis = get_analysis(str(feedback_data.analysis_id))
             if not analysis:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"분석 결과를 찾을 수 없습니다 (ID: {request.analysis_id})"
+                    detail=f"분석 결과를 찾을 수 없습니다 (ID: {feedback_data.analysis_id})"
                 )
+
+            # Normalize feedback value: like->good, dislike->bad
+            normalized_feedback = feedback_data.feedback.value
+            if normalized_feedback == "like":
+                normalized_feedback = "good"
+            elif normalized_feedback == "dislike":
+                normalized_feedback = "bad"
 
             # Save feedback
             success = save_feedback(
-                analysis_id=str(request.analysis_id),
-                style_index=request.style_index,
-                feedback=request.feedback.value,
-                naver_clicked=request.naver_clicked
+                analysis_id=str(feedback_data.analysis_id),
+                style_index=feedback_data.style_index,
+                feedback=normalized_feedback,
+                naver_clicked=feedback_data.naver_clicked
             )
 
             if not success:
@@ -71,23 +79,23 @@ async def submit_feedback(http_request: Request, request: FeedbackRequest) -> Fe
                 )
 
             logger.info(
-                f"✅ 피드백 저장 성공 (DynamoDB): analysis_id={request.analysis_id}, "
-                f"style={request.style_index}, feedback={request.feedback.value}"
+                f"✅ 피드백 저장 성공 (DynamoDB): analysis_id={feedback_data.analysis_id}, "
+                f"style={feedback_data.style_index}, feedback={feedback_data.feedback.value}"
             )
 
             log_structured("feedback_submitted", {
                 "backend": "dynamodb",
-                "analysis_id": str(request.analysis_id),
-                "style_index": request.style_index,
-                "feedback": request.feedback.value,
-                "naver_clicked": request.naver_clicked
+                "analysis_id": str(feedback_data.analysis_id),
+                "style_index": feedback_data.style_index,
+                "feedback": feedback_data.feedback.value,
+                "naver_clicked": feedback_data.naver_clicked
             })
 
             return FeedbackResponse(
                 success=True,
                 message="피드백이 저장되었습니다",
-                analysis_id=request.analysis_id,
-                style_index=request.style_index
+                analysis_id=feedback_data.analysis_id,
+                style_index=feedback_data.style_index
             )
 
         except HTTPException:
@@ -110,37 +118,44 @@ async def submit_feedback(http_request: Request, request: FeedbackRequest) -> Fe
 
         try:
             record = db.query(AnalysisHistory).filter(
-                AnalysisHistory.id == request.analysis_id
+                AnalysisHistory.id == feedback_data.analysis_id
             ).first()
 
             if not record:
                 db.close()
                 raise HTTPException(
                     status_code=404,
-                    detail=f"분석 결과를 찾을 수 없습니다 (ID: {request.analysis_id})"
+                    detail=f"분석 결과를 찾을 수 없습니다 (ID: {feedback_data.analysis_id})"
                 )
 
-            feedback_column = f"style_{request.style_index}_feedback"
-            clicked_column = f"style_{request.style_index}_naver_clicked"
+            feedback_column = f"style_{feedback_data.style_index}_feedback"
+            clicked_column = f"style_{feedback_data.style_index}_naver_clicked"
 
-            # Explicitly convert Enum to string
-            setattr(record, feedback_column, request.feedback.value)
-            setattr(record, clicked_column, request.naver_clicked)
+            # Normalize feedback value: like->good, dislike->bad
+            normalized_feedback = feedback_data.feedback.value
+            if normalized_feedback == "like":
+                normalized_feedback = "good"
+            elif normalized_feedback == "dislike":
+                normalized_feedback = "bad"
+
+            # Store normalized feedback value
+            setattr(record, feedback_column, normalized_feedback)
+            setattr(record, clicked_column, feedback_data.naver_clicked)
             record.feedback_at = datetime.utcnow()
 
             db.commit()
 
             logger.info(
-                f"✅ 피드백 저장 성공 (MySQL): analysis_id={request.analysis_id}, "
-                f"style={request.style_index}, feedback={request.feedback.value}"
+                f"✅ 피드백 저장 성공 (MySQL): analysis_id={feedback_data.analysis_id}, "
+                f"style={feedback_data.style_index}, feedback={feedback_data.feedback.value}"
             )
 
             log_structured("feedback_submitted", {
                 "backend": "mysql",
-                "analysis_id": request.analysis_id,
-                "style_index": request.style_index,
-                "feedback": request.feedback.value,
-                "naver_clicked": request.naver_clicked
+                "analysis_id": feedback_data.analysis_id,
+                "style_index": feedback_data.style_index,
+                "feedback": feedback_data.feedback.value,
+                "naver_clicked": feedback_data.naver_clicked
             })
 
             db.close()
@@ -148,8 +163,8 @@ async def submit_feedback(http_request: Request, request: FeedbackRequest) -> Fe
             return FeedbackResponse(
                 success=True,
                 message="피드백이 저장되었습니다",
-                analysis_id=request.analysis_id,
-                style_index=request.style_index
+                analysis_id=feedback_data.analysis_id,
+                style_index=feedback_data.style_index
             )
 
         except HTTPException:

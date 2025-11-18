@@ -6,9 +6,11 @@ from pydantic import BaseModel, Field
 
 # ========== Enums ==========
 class FeedbackType(str, Enum):
-    """Feedback type enumeration"""
-    LIKE = "like"
-    DISLIKE = "dislike"
+    """Feedback type enumeration - supports multiple formats for backward compatibility"""
+    GOOD = "good"
+    BAD = "bad"
+    LIKE = "like"  # Backward compatibility
+    DISLIKE = "dislike"  # Backward compatibility
 
 
 # ========== Pydantic Models ==========

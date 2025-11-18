@@ -32,7 +32,7 @@ from core.dependencies import (
 )
 from services.face_detection_service import FaceDetectionService
 from services.gemini_analysis_service import GeminiAnalysisService
-from services.hybrid_recommender import HybridRecommender
+from services.hybrid_recommender import HybridRecommendationService
 from services.feedback_collector import FeedbackCollector
 from services.retrain_queue import RetrainQueue
 from models.mediapipe_analyzer import MediaPipeFaceFeatures
@@ -300,7 +300,7 @@ async def analyze_face_hybrid(
     request: Request,
     file: UploadFile = File(...),
     face_detector: FaceDetectionService = Depends(get_face_detection_service),
-    hybrid_recommender: HybridRecommender = Depends(get_hybrid_service)
+    hybrid_recommender: HybridRecommendationService = Depends(get_hybrid_service)
 ):
     """
     Hybrid face analysis and hairstyle recommendation (Gemini + ML)
@@ -344,11 +344,31 @@ async def analyze_face_hybrid(
         face_shape = mp_features.face_shape
         skin_tone = mp_features.skin_tone
 
+        # MediaPipe 실제 측정값 추출 (ML 모델 입력용)
+        face_features = getattr(mp_features, 'face_features', None)
+        skin_features = getattr(mp_features, 'skin_features', None)
+
+        # Null 체크 및 경고
+        if face_features is None or skin_features is None:
+            logger.warning(
+                "⚠️ MediaPipe 측정값이 누락되었습니다. "
+                "라벨 기반 추천으로 fallback합니다. "
+                "ML 모델의 개인화 성능이 제한될 수 있습니다."
+            )
+
         logger.info(f"✅ MediaPipe 분석: {face_shape} + {skin_tone}")
+        if face_features is not None and skin_features is not None:
+            logger.debug(f"  Face features (측정값): {face_features}")
+            logger.debug(f"  Skin features (측정값): {skin_features}")
 
         # 2. Hybrid recommendation using injected service
+        # Train-Inference Mismatch 해결: 실제 측정값 전달
         recommendation_result = hybrid_recommender.recommend(
-            image_data, face_shape, skin_tone
+            image_data=image_data,
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            face_features=face_features,
+            skin_features=skin_features
         )
 
         # 3. Add Naver search URLs

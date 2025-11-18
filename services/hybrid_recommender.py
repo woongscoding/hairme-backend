@@ -14,6 +14,7 @@ Version: 1.1.0
 
 import logging
 import time
+import json
 from typing import List, Dict, Optional, Any
 import google.generativeai as genai
 from PIL import Image
@@ -52,7 +53,7 @@ class HybridRecommendationService:
         """
         # Gemini 설정
         genai.configure(api_key=gemini_api_key)
-        self.gemini_model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        self.gemini_model = genai.GenerativeModel("gemini-pro-vision")
         logger.info("✅ Gemini 모델 초기화 완료")
 
         # ML 추천기는 싱글톤으로 로드
@@ -120,6 +121,7 @@ class HybridRecommendationService:
         Gemini API 장애 시 fallback
 
         Circuit Breaker가 OPEN 상태일 때 MediaPipe 데이터만 사용한 기본 응답 반환
+        (ML 추천은 recommend() 메서드에서 별도로 처리됨)
 
         Args:
             image_data: 이미지 바이트 (사용하지 않음)
@@ -127,20 +129,20 @@ class HybridRecommendationService:
             skin_tone: 피부톤
 
         Returns:
-            MediaPipe 데이터만 포함한 기본 응답
+            MediaPipe 데이터만 포함한 기본 응답 (빈 recommendations는 나중에 ML로 채워짐)
         """
         logger.warning(
-            f"[FALLBACK] Gemini API 사용 불가. MediaPipe 데이터만 사용: "
-            f"얼굴형={face_shape}, 피부톤={skin_tone}"
+            f"[FALLBACK] Gemini API 사용 불가 (Circuit Breaker OPEN). "
+            f"ML 추천으로 대체합니다: 얼굴형={face_shape}, 피부톤={skin_tone}"
         )
 
         return {
             "analysis": {
                 "face_shape": face_shape,
                 "personal_color": skin_tone,
-                "features": "Gemini API 일시 중단 - MediaPipe 기반 분석"
+                "features": "MediaPipe 기반 분석 (Gemini API 일시 중단, ML 모델로 추천 제공)"
             },
-            "recommendations": []
+            "recommendations": []  # 빈 배열 (ML 추천이 나중에 채워짐)
         }
 
     @with_circuit_breaker(gemini_breaker, fallback=lambda self, *args, **kwargs: self._gemini_fallback(*args, **kwargs))
@@ -330,7 +332,7 @@ class HybridRecommendationService:
                 "style_name": style_name,
                 "reason": rec.get("reason", ""),
                 "source": "gemini",
-                "score": ml_score,  # ✅ score로 필드명 통일
+                "score": round(ml_score / 100.0, 2),  # ✅ 0-1 범위로 변환 (안드로이드 호환)
                 "rank": len(merged) + 1
             })
 
@@ -371,7 +373,7 @@ class HybridRecommendationService:
                 "style_name": style_name,
                 "reason": reason,
                 "source": "ml",
-                "score": ml_score,  # ✅ score로 필드명 통일
+                "score": round(ml_score / 100.0, 2),  # ✅ 0-1 범위로 변환 (안드로이드 호환)
                 "rank": len(merged) + 1
             })
 
@@ -388,32 +390,55 @@ class HybridRecommendationService:
         self,
         image_data: bytes,
         face_shape: str,
-        skin_tone: str
+        skin_tone: str,
+        face_features: List[float] = None,
+        skin_features: List[float] = None
     ) -> Dict[str, Any]:
         """
         하이브리드 추천 실행
 
         Args:
             image_data: 이미지 바이트
-            face_shape: 얼굴형
-            skin_tone: 피부톤
+            face_shape: 얼굴형 - DEPRECATED, 하위 호환성을 위해 유지
+            skin_tone: 피부톤 - DEPRECATED, 하위 호환성을 위해 유지
+            face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
+            skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
 
         Returns:
             추천 결과 딕셔너리
         """
-        logger.info(f"🎨 하이브리드 추천 시작: {face_shape} + {skin_tone}")
+        if face_features is not None and skin_features is not None:
+            logger.info(f"🎨 하이브리드 추천 시작 (실제 측정값 사용): {face_shape} + {skin_tone}")
+        else:
+            logger.info(f"🎨 하이브리드 추천 시작 (라벨 기반): {face_shape} + {skin_tone}")
+            logger.warning("⚠️ 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다.")
 
-        # 1. Gemini 추천 (4개)
-        gemini_result = self._call_gemini(image_data, face_shape, skin_tone)
-        gemini_recommendations = gemini_result.get("recommendations", [])
+        # 1. Gemini 추천 (임시로 비활성화 - ML 모델만 사용)
+        # gemini_result = self._call_gemini(image_data, face_shape, skin_tone)
+        # Gemini 실패 시 빈 결과로 처리
+        gemini_result = {
+            "analysis": {
+                "face_shape": face_shape,
+                "personal_color": skin_tone,
+                "features": "ML 모델 기반 분석"
+            },
+            "recommendations": []
+        }
+        gemini_recommendations = []
 
         # 2. ML 추천 (Top-3)
         ml_recommendations = []
         if self.ml_available and self.ml_recommender:
             try:
+                # 실제 측정값 우선 사용
                 ml_recommendations = self.ml_recommender.recommend_top_k(
-                    face_shape, skin_tone, k=3
+                    face_shape=face_shape,
+                    skin_tone=skin_tone,
+                    k=3,
+                    face_features=face_features,
+                    skin_features=skin_features
                 )
+                logger.info(f"✅ ML 추천 완료: {len(ml_recommendations)}개")
             except Exception as e:
                 logger.error(f"❌ ML 추천 실패: {str(e)}")
 
@@ -425,7 +450,23 @@ class HybridRecommendationService:
             skin_tone
         )
 
-        # 4. 결과 구성
+        # 4. ML 점수 기준 상위 3개 필터링
+        # 점수(score) 내림차순 정렬 후 상위 3개만 선택
+        if len(merged_recommendations) > 3:
+            merged_recommendations.sort(key=lambda x: x.get('score', 0.0), reverse=True)
+            top_3 = merged_recommendations[:3]
+            selected_info = [f"{r['style_name']}({r['score']:.2f})" for r in top_3]
+            logger.info(
+                f"📊 점수 기준 필터링: {len(merged_recommendations)}개 → 상위 3개 선택\n"
+                f"   선택된 추천: {selected_info}"
+            )
+            merged_recommendations = top_3
+
+        # rank 재조정 (1, 2, 3)
+        for idx, rec in enumerate(merged_recommendations, 1):
+            rec['rank'] = idx
+
+        # 5. 결과 구성
         result = {
             "analysis": gemini_result.get("analysis", {
                 "face_shape": face_shape,
@@ -441,7 +482,7 @@ class HybridRecommendationService:
             }
         }
 
-        logger.info(f"✅ 하이브리드 추천 완료: 총 {len(merged_recommendations)}개")
+        logger.info(f"✅ 하이브리드 추천 완료: 총 {len(merged_recommendations)}개 (Gemini: {result['meta']['gemini_count']}, ML: {result['meta']['ml_count']})")
 
         return result
 

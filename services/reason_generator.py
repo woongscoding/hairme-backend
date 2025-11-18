@@ -197,17 +197,20 @@ class ReasonGenerator:
         """
         base_reason = self.generate_simple(face_shape, skin_tone, hairstyle)
 
-        # 점수별 신뢰도 표현
-        if ml_score >= 85:
-            confidence = "매우 추천"
+        # 점수별 신뢰도 표현 (더 자연스럽게 수정)
+        if ml_score >= 90:
+            confidence = "★★★ 강력 추천"
+        elif ml_score >= 85:
+            confidence = "★★★ 매우 잘 어울림"
+        elif ml_score >= 80:
+            confidence = "★★☆ 추천"
         elif ml_score >= 75:
-            confidence = "추천"
-        elif ml_score >= 65:
-            confidence = "어울림"
+            confidence = "★★☆ 잘 어울림"
         else:
-            confidence = "괜찮음"
+            confidence = "★☆☆ 추천"
 
-        return f"{base_reason} (AI {confidence})"
+        # "AI"라는 단어를 제거하고 더 자연스럽게 표현
+        return f"{base_reason} {confidence}"
 
     def add_characteristic(self, hairstyle: str, characteristics: List[str]):
         """

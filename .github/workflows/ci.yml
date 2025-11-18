@@ -44,8 +44,8 @@ jobs:
 
     - name: Type check with mypy
       run: |
-        mypy . --ignore-missing-imports --no-strict-optional
-      continue-on-error: true  # Don't fail on type errors yet
+        mypy . --config-file mypy.ini
+      continue-on-error: false  # Fail on type errors in strict mode
 
     - name: Security check with bandit
       run: |

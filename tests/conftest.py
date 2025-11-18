@@ -8,6 +8,7 @@ os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("REDIS_ENABLED", "false")
 os.environ.setdefault("ML_MODEL_PATH", "models/test_model.pt")
+os.environ["TESTING"] = "true"  # Skip .env file loading during tests
 
 import pytest
 import io

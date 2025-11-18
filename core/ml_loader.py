@@ -93,7 +93,8 @@ def load_ml_model() -> bool:
         ml_model = HairstyleRecommender()
         ml_model.load_state_dict(torch.load(
             model_path,
-            map_location=torch.device('cpu')
+            map_location=torch.device('cpu'),
+            weights_only=True
         ))
         ml_model.eval()
 

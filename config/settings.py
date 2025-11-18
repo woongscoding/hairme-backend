@@ -2,7 +2,7 @@
 
 import os
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 from pydantic_settings import BaseSettings
 from config.secrets import get_secret_or_env, is_aws_environment
 
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
             return self.ML_ENCODER_PATH
 
     @property
-    def model_metadata_path(self) -> str:
+    def model_metadata_path(self) -> Optional[str]:
         """Get the metadata file path for the current model environment"""
         if self.MODEL_ENVIRONMENT in ["production", "staging"]:
             return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/metadata.json"
@@ -103,7 +103,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """
         Initialize settings with AWS Secrets Manager integration
 

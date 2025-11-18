@@ -24,6 +24,7 @@ from services.feedback_collector import get_feedback_collector
 from services.retrain_queue import get_retrain_queue
 from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
+from api.endpoints.analyze_improved import router as analyze_improved_router
 from api.endpoints.feedback import router as feedback_router
 import google.generativeai as genai
 
@@ -142,8 +143,11 @@ async def add_security_headers(request: Request, call_next):
         "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
     )
 
-    # Remove server header for security
-    response.headers.pop("Server", None)
+    # Remove server header for security (MutableHeaders doesn't have pop method)
+    # response.headers.pop("Server", None)  # Commented out - not supported
+    # Alternative: Override the Server header instead
+    if "Server" in response.headers:
+        del response.headers["Server"]
 
     return response
 
@@ -168,6 +172,7 @@ async def limit_upload_size(request: Request, call_next):
 # ========== Register Routers ==========
 app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
+app.include_router(analyze_improved_router, prefix="/api", tags=["analysis_improved"])
 app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 
 
