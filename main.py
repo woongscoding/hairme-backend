@@ -24,7 +24,7 @@ from services.feedback_collector import get_feedback_collector
 from services.retrain_queue import get_retrain_queue
 from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
-from api.endpoints.analyze_improved import router as analyze_improved_router
+# from api.endpoints.analyze_improved import router as analyze_improved_router  # Disabled: requires hybrid_recommender_improved
 from api.endpoints.feedback import router as feedback_router
 import google.generativeai as genai
 
@@ -67,13 +67,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Prevent Host Header Injection attacks
 allowed_hosts = ["*"]  # Default: allow all
 if settings.ENVIRONMENT == "production":
-    # Production: only allow specific hosts
-    allowed_hosts = [
-        "*.execute-api.ap-northeast-2.amazonaws.com",  # API Gateway
-        "*.lambda-url.ap-northeast-2.on.aws",          # Lambda Function URL
-        "hairme.app",                                   # Custom domain (if configured)
-        "*.hairme.app"                                  # Subdomains
-    ]
+    # Production: Allow all hosts (TrustedHostMiddleware causes issues with ALB health checks)
+    # TODO: Revisit this once we configure custom domain
+    allowed_hosts = ["*"]
     logger.info(f"🔒 Trusted hosts: {allowed_hosts}")
 
 app.add_middleware(
@@ -172,7 +168,7 @@ async def limit_upload_size(request: Request, call_next):
 # ========== Register Routers ==========
 app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
-app.include_router(analyze_improved_router, prefix="/api", tags=["analysis_improved"])
+# app.include_router(analyze_improved_router, prefix="/api", tags=["analysis_improved"])  # Disabled: requires hybrid_recommender_improved
 app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 
 
