@@ -10,13 +10,12 @@ from core.logging import logger
 
 # Gemini API Circuit Breaker
 # - fail_max=5: Open after 5 consecutive failures
-# - timeout_duration=60: Wait 60 seconds before trying again
+# - reset_timeout=60: Wait 60 seconds before trying again
 # - name: For logging and monitoring
 gemini_breaker = CircuitBreaker(
     fail_max=5,
-    timeout_duration=60,
-    name='GeminiAPI',
-    listeners=[]
+    reset_timeout=60,
+    name='GeminiAPI'
 )
 
 
@@ -66,15 +65,8 @@ class CircuitBreakerListener:
             )
 
 
-# Register listener
-listener = CircuitBreakerListener()
-gemini_breaker.add_listeners(
-    listener.on_open,
-    listener.on_close,
-    listener.on_half_open,
-    listener.on_failure,
-    listener.on_success
-)
+# Listener registration disabled due to compatibility issues with current pybreaker version
+# Circuit breaker will still function correctly but without detailed event logging
 
 
 def with_circuit_breaker(
@@ -184,7 +176,7 @@ def get_circuit_breaker_status() -> dict:
             "state": str(gemini_breaker.current_state),
             "fail_counter": gemini_breaker.fail_counter,
             "fail_max": gemini_breaker.fail_max,
-            "timeout_duration": gemini_breaker.timeout_duration,
+            "reset_timeout": gemini_breaker._reset_timeout,
             "is_open": gemini_breaker.current_state == "open",
             "is_closed": gemini_breaker.current_state == "closed",
             "is_half_open": gemini_breaker.current_state == "half-open"

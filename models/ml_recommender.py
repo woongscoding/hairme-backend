@@ -26,33 +26,150 @@ from utils.style_preprocessor import normalize_style_name
 logger = logging.getLogger(__name__)
 
 
-class RecommendationModel(nn.Module):
-    """PyTorch 추천 모델 (동일한 구조)"""
+class AttentionLayer(nn.Module):
+    """Multi-head self-attention layer"""
 
-    def __init__(self, input_dim: int = 392):
-        super(RecommendationModel, self).__init__()
-
-        hidden_dims = [256, 128, 64]
-        dropout_rates = [0.3, 0.2, 0.0]
-
-        layers = []
-        prev_dim = input_dim
-
-        for hidden_dim, dropout_rate in zip(hidden_dims, dropout_rates):
-            layers.append(nn.Linear(prev_dim, hidden_dim))
-            layers.append(nn.ReLU())
-
-            if dropout_rate > 0:
-                layers.append(nn.Dropout(dropout_rate))
-
-            prev_dim = hidden_dim
-
-        layers.append(nn.Linear(prev_dim, 1))
-
-        self.network = nn.Sequential(*layers)
+    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.network(x)
+        # Self-attention
+        attn_out, _ = self.attention(x, x, x)
+        # Residual connection + layer norm
+        x = self.norm(x + self.dropout(attn_out))
+        return x
+
+
+class RecommendationModel(nn.Module):
+    """
+    연속형 변수 기반 추천 모델 v4
+
+    입력:
+    - face_features: [batch, 6] - MediaPipe 얼굴 측정값
+    - skin_features: [batch, 2] - MediaPipe 피부 측정값
+    - style_emb: [batch, 384] - 헤어스타일 임베딩
+    """
+
+    def __init__(
+        self,
+        face_feat_dim: int = 6,
+        skin_feat_dim: int = 2,
+        style_embed_dim: int = 384,
+        use_attention: bool = True,
+        dropout_rate: float = 0.3
+    ):
+        super().__init__()
+
+        self.face_feat_dim = face_feat_dim
+        self.skin_feat_dim = skin_feat_dim
+        self.style_embed_dim = style_embed_dim
+
+        # Input projection layers
+        self.face_projection = nn.Sequential(
+            nn.Linear(face_feat_dim, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        self.skin_projection = nn.Sequential(
+            nn.Linear(skin_feat_dim, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        # Total dimension after projection
+        self.total_dim = 64 + 32 + style_embed_dim  # 96 + 384 = 480
+
+        # Attention layer
+        self.use_attention = use_attention
+        if use_attention:
+            self.attention = AttentionLayer(
+                embed_dim=self.total_dim,
+                num_heads=8,
+                dropout=0.1
+            )
+
+        # Feature fusion network
+        self.fc1 = nn.Linear(self.total_dim, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.dropout1 = nn.Dropout(dropout_rate)
+
+        self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.dropout2 = nn.Dropout(dropout_rate * 0.7)
+
+        # Residual connection
+        self.residual_proj = nn.Linear(self.total_dim, 128)
+
+        self.fc3 = nn.Linear(128, 64)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.dropout3 = nn.Dropout(dropout_rate * 0.5)
+
+        self.fc4 = nn.Linear(64, 32)
+        self.fc_out = nn.Linear(32, 1)
+
+    def forward(
+        self,
+        face_features: torch.Tensor,
+        skin_features: torch.Tensor,
+        style_emb: torch.Tensor
+    ) -> torch.Tensor:
+        """Forward pass"""
+        # Project features
+        face_proj = self.face_projection(face_features)
+        skin_proj = self.skin_projection(skin_features)
+
+        # Concatenate all features
+        x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
+
+        # Apply attention if enabled
+        if self.use_attention:
+            x_att = x.unsqueeze(1)
+            x_att = self.attention(x_att)
+            x = x_att.squeeze(1)
+
+        # Store for residual
+        residual = self.residual_proj(x)
+
+        # Main network
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = torch.relu(x)
+        x = self.dropout1(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = torch.relu(x)
+        x = self.dropout2(x)
+
+        # Add residual connection
+        x = x + residual
+
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = torch.relu(x)
+        x = self.dropout3(x)
+
+        x = self.fc4(x)
+        x = torch.relu(x)
+
+        x = self.fc_out(x)
+
+        # 스케일링 적용 (학습 시 30~90점 범위)
+        x = (x - 29.0) * 7.5 + 60.0
+        x = torch.clamp(x, min=30.0, max=90.0)
+
+        return x.squeeze(-1)
 
 
 class MLHairstyleRecommender:
@@ -64,7 +181,7 @@ class MLHairstyleRecommender:
 
     def __init__(
         self,
-        model_path: str = "models/hairstyle_recommender.pt",
+        model_path: str = "models/hairstyle_recommender_v4_no_leakage.pt",
         embeddings_path: str = "data_source/style_embeddings.npz"
     ):
         """
@@ -79,30 +196,50 @@ class MLHairstyleRecommender:
         # 1. 모델 로드
         logger.info(f"📂 ML 모델 로딩: {model_path}")
         self.model = RecommendationModel()
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
+
+        # 체크포인트 형식으로 저장된 경우 처리
+        try:
+            checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                # 체크포인트 형식
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                logger.info(f"✅ 체크포인트에서 모델 로드 완료 (epoch: {checkpoint.get('epoch', 'N/A')})")
+            else:
+                # 일반 state_dict 형식
+                self.model.load_state_dict(checkpoint)
+                logger.info(f"✅ 모델 로드 완료")
+        except Exception as e:
+            logger.error(f"❌ 모델 로드 실패: {str(e)}")
+            raise
+
         self.model.to(self.device)
         self.model.eval()  # 추론 모드
-        logger.info(f"✅ 모델 로드 완료 (디바이스: {self.device})")
+        logger.info(f"✅ 모델 준비 완료 (디바이스: {self.device})")
 
         # 2. 헤어스타일 임베딩 로드
         logger.info(f"📂 임베딩 로딩: {embeddings_path}")
-        data = np.load(embeddings_path, allow_pickle=True)
-        self.styles = data['styles'].tolist()  # 헤어스타일명 리스트
-        self.embeddings = data['embeddings']  # (N, 384) 임베딩
-        logger.info(f"✅ 임베딩 로드 완료: {len(self.styles)}개 스타일")
+        try:
+            data = np.load(embeddings_path, allow_pickle=True)
+            self.styles = data['styles'].tolist()  # 헤어스타일명 리스트
+            self.embeddings = data['embeddings']  # (N, 384) 임베딩
+            logger.info(f"✅ 임베딩 로드 완료: {len(self.styles)}개 스타일")
+        except Exception as e:
+            logger.error(f"❌ 임베딩 로드 실패: {str(e)}")
+            raise
 
         # 스타일명 -> 인덱스 매핑
         self.style_to_idx = {style: idx for idx, style in enumerate(self.styles)}
 
     def _encode_face_shape(self, face_shape: str) -> np.ndarray:
-        """얼굴형을 one-hot 인코딩"""
-        vec = np.zeros(4, dtype=np.float32)
+        """얼굴형을 one-hot 인코딩 (6차원 - 모델과 일치)"""
+        vec = np.zeros(6, dtype=np.float32)
 
         # 하트형은 계란형으로 매핑
         if face_shape == "하트형":
             face_shape = "계란형"
             logger.debug("하트형을 계란형으로 매핑")
 
+        # 기본 4가지 얼굴형에 대한 one-hot 인코딩
         if face_shape in self.FACE_SHAPES:
             idx = self.FACE_SHAPES.index(face_shape)
             vec[idx] = 1.0
@@ -110,45 +247,26 @@ class MLHairstyleRecommender:
             logger.warning(f"알 수 없는 얼굴형: {face_shape}, 계란형으로 기본값 사용")
             vec[3] = 1.0  # 계란형
 
+        # 추가 특징 차원 (모델 학습 시 사용됨)
+        vec[4] = 0.5  # 중간 값으로 초기화
+        vec[5] = 0.5  # 중간 값으로 초기화
+
         return vec
 
     def _encode_skin_tone(self, skin_tone: str) -> np.ndarray:
-        """피부톤을 one-hot 인코딩"""
-        vec = np.zeros(4, dtype=np.float32)
+        """피부톤을 one-hot 인코딩 (2차원 - 모델과 일치)"""
+        vec = np.zeros(2, dtype=np.float32)
 
-        if skin_tone in self.SKIN_TONES:
-            idx = self.SKIN_TONES.index(skin_tone)
-            vec[idx] = 1.0
+        # 봄/가을 -> 웜톤(0), 여름/겨울 -> 쿨톤(1)
+        if skin_tone in ["봄웜", "가을웜"]:
+            vec[0] = 1.0  # 웜톤
+        elif skin_tone in ["여름쿨", "겨울쿨"]:
+            vec[1] = 1.0  # 쿨톤
         else:
-            logger.warning(f"알 수 없는 피부톤: {skin_tone}, 봄웜으로 기본값 사용")
-            vec[2] = 1.0  # 봄웜
+            logger.warning(f"알 수 없는 피부톤: {skin_tone}, 웜톤으로 기본값 사용")
+            vec[0] = 1.0  # 웜톤
 
         return vec
-
-    def _create_feature_vector(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        style_embedding: np.ndarray
-    ) -> np.ndarray:
-        """
-        특징 벡터 생성 (392차원)
-
-        Args:
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-            style_embedding: 헤어스타일 임베딩 (384차원)
-
-        Returns:
-            특징 벡터 (392차원)
-        """
-        face_vec = self._encode_face_shape(face_shape)
-        tone_vec = self._encode_skin_tone(skin_tone)
-
-        # 연결: [face(4) + tone(4) + style(384)] = 392
-        feature = np.concatenate([face_vec, tone_vec, style_embedding])
-
-        return feature
 
     def predict_score(
         self,
@@ -178,13 +296,17 @@ class MLHairstyleRecommender:
         idx = self.style_to_idx[normalized_style]
         style_embedding = self.embeddings[idx]
 
-        # 특징 벡터 생성
-        feature = self._create_feature_vector(face_shape, skin_tone, style_embedding)
+        # 개별 특징 벡터 생성
+        face_vec = self._encode_face_shape(face_shape)  # (4,)
+        tone_vec = self._encode_skin_tone(skin_tone)    # (4,)
 
-        # 모델 추론
+        # 모델 추론 - 3개의 개별 텐서로 전달
         with torch.no_grad():
-            feature_tensor = torch.FloatTensor(feature).unsqueeze(0).to(self.device)
-            score_tensor = self.model(feature_tensor)
+            face_tensor = torch.FloatTensor(face_vec).unsqueeze(0).to(self.device)
+            skin_tensor = torch.FloatTensor(tone_vec).unsqueeze(0).to(self.device)
+            style_tensor = torch.FloatTensor(style_embedding).unsqueeze(0).to(self.device)
+
+            score_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             score = score_tensor.cpu().item()
 
         # 0-100 범위로 클리핑
@@ -194,22 +316,53 @@ class MLHairstyleRecommender:
 
     def recommend_top_k(
         self,
-        face_shape: str,
-        skin_tone: str,
-        k: int = 3
+        face_shape: str = None,
+        skin_tone: str = None,
+        k: int = 3,
+        face_features: List[float] = None,
+        skin_features: List[float] = None
     ) -> List[Dict[str, any]]:
         """
         Top-K 헤어스타일 추천
 
         Args:
-            face_shape: 얼굴형 (예: "계란형")
-            skin_tone: 피부톤 (예: "봄웜")
+            face_shape: 얼굴형 (예: "계란형") - DEPRECATED, 하위 호환성을 위해 유지
+            skin_tone: 피부톤 (예: "봄웜") - DEPRECATED, 하위 호환성을 위해 유지
             k: 추천 개수
+            face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
+            skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
 
         Returns:
             추천 리스트 [{"hairstyle": "...", "score": 85.3}, ...]
         """
-        logger.info(f"🤖 ML 추천 시작: {face_shape} + {skin_tone} (Top-{k})")
+        # 실제 측정값 우선 사용, 없으면 라벨 기반 인코딩 (하위 호환성)
+        if face_features is not None and skin_features is not None:
+            logger.info(f"[ML DEBUG] ML 추천 시작 (실제 측정값 사용) - Top-{k}")
+            logger.info(f"[ML DEBUG] Face features: {face_features}")
+            logger.info(f"[ML DEBUG] Skin features: {skin_features}")
+
+            # NumPy 배열로 변환
+            face_vec = np.array(face_features, dtype=np.float32)
+            tone_vec = np.array(skin_features, dtype=np.float32)
+
+            # 차원 검증
+            if face_vec.shape[0] != 6:
+                raise ValueError(f"face_features는 6차원이어야 합니다. 현재: {face_vec.shape[0]}")
+            if tone_vec.shape[0] != 2:
+                raise ValueError(f"skin_features는 2차원이어야 합니다. 현재: {tone_vec.shape[0]}")
+        else:
+            # 하위 호환성: 라벨 기반 인코딩
+            logger.warning(f"[ML DEPRECATED] 라벨 기반 인코딩 사용: {face_shape} + {skin_tone}")
+            logger.warning("[ML DEPRECATED] 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다.")
+
+            if face_shape is None or skin_tone is None:
+                raise ValueError("face_features와 skin_features가 없으면 face_shape과 skin_tone을 제공해야 합니다.")
+
+            face_vec = self._encode_face_shape(face_shape)  # (6,)
+            tone_vec = self._encode_skin_tone(skin_tone)    # (2,)
+
+        logger.info(f"[ML DEBUG] Face vector: {face_vec.tolist()}")
+        logger.info(f"[ML DEBUG] Skin vector: {tone_vec.tolist()}")
 
         # 모든 헤어스타일에 대해 점수 예측
         all_scores = []
@@ -220,43 +373,86 @@ class MLHairstyleRecommender:
 
         for i in range(0, num_styles, batch_size):
             batch_end = min(i + batch_size, num_styles)
+            batch_size_actual = batch_end - i
             batch_embeddings = self.embeddings[i:batch_end]
 
-            # 배치 특징 생성
-            batch_features = []
-            for embedding in batch_embeddings:
-                feature = self._create_feature_vector(face_shape, skin_tone, embedding)
-                batch_features.append(feature)
-
-            batch_features = np.array(batch_features, dtype=np.float32)
-
-            # 배치 추론
+            # 배치 추론 - 3개의 개별 텐서로 전달
             with torch.no_grad():
-                batch_tensor = torch.FloatTensor(batch_features).to(self.device)
-                scores_tensor = self.model(batch_tensor)
+                # 얼굴형과 피부톤은 배치 크기만큼 복제
+                face_batch = np.tile(face_vec, (batch_size_actual, 1))
+                skin_batch = np.tile(tone_vec, (batch_size_actual, 1))
+
+                face_tensor = torch.FloatTensor(face_batch).to(self.device)
+                skin_tensor = torch.FloatTensor(skin_batch).to(self.device)
+                style_tensor = torch.FloatTensor(batch_embeddings).to(self.device)
+
+                # 첫 번째 배치에서만 디버그 정보 출력
+                if i == 0:
+                    logger.info(f"[ML DEBUG] First batch embedding shape: {batch_embeddings.shape}")
+                    logger.info(f"[ML DEBUG] First style embedding std: {batch_embeddings.std():.6f}")
+                    logger.info(f"[ML DEBUG] First 3 styles: {self.styles[i:i+3]}")
+
+                scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
                 scores = scores_tensor.cpu().numpy().flatten()
 
-            # 결과 저장
+                # 첫 번째 배치에서만 점수 디버그
+                if i == 0:
+                    logger.info(f"[ML DEBUG] First batch scores: {scores[:5].tolist()}")
+                    logger.info(f"[ML DEBUG] Scores std: {scores.std():.6f}")
+
+            # 결과 저장 (원본 점수 그대로 저장)
             for j, score in enumerate(scores):
                 style_idx = i + j
                 all_scores.append({
                     "hairstyle_id": style_idx,  # ✅ DB ID 추가
                     "hairstyle": self.styles[style_idx],
-                    "score": max(0.0, min(100.0, float(score)))
+                    "score": float(score),  # 원본 점수 그대로 저장
+                    "original_score": float(score)  # 피드백용 원본 점수 보존
                 })
 
         # 점수 기준 정렬
         all_scores.sort(key=lambda x: x['score'], reverse=True)
 
-        # Top-K 추출
-        top_k_recommendations = all_scores[:k]
+        # 다양성을 위해 상위 20개 중에서 선택
+        top_candidates = all_scores[:min(20, len(all_scores))]
 
-        # 점수 반올림
+        # 얼굴형과 피부톤에 따른 선호도 조정
+        import hashlib
+        # 입력값 기반 시드 생성
+        seed_string = f"{face_shape}_{skin_tone}"
+        seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+
+        # 의사 랜덤 선택 (deterministic)
+        import random
+        random.seed(seed)
+
+        # Top-K 추출 (상위 20개 중 K개를 선택)
+        if len(top_candidates) > k:
+            # 첫 번째는 항상 최고 점수
+            top_k_recommendations = [top_candidates[0]]
+
+            # 나머지는 상위 후보 중 선택
+            remaining_candidates = top_candidates[1:]
+            random.shuffle(remaining_candidates)
+            top_k_recommendations.extend(remaining_candidates[:k-1])
+        else:
+            top_k_recommendations = top_candidates[:k]
+
+        # 점수 보정 없이 원본 점수 사용
+        # 학습 데이터: 추천 90점, 비추천 30점 기반
         for rec in top_k_recommendations:
+            # 원본 점수를 그대로 사용 (0-100 범위 클리핑만)
+            rec['score'] = min(100.0, max(0.0, rec['score']))
             rec['score'] = round(rec['score'], 2)
 
+        # 디버그: Top-K 점수 분포
+        if top_k_recommendations:
+            scores_list = [r['score'] for r in top_k_recommendations]
+            logger.info(f"[ML DEBUG] Top-{k} scores: {scores_list}")
+            logger.info(f"[ML DEBUG] Score range: {min(scores_list):.2f} ~ {max(scores_list):.2f}")
+
         logger.info(
-            f"✅ ML 추천 완료: {[r['hairstyle'] for r in top_k_recommendations]}"
+            f"[ML RESULT] ML 추천 완료: {[r['hairstyle'] for r in top_k_recommendations]}"
         )
 
         return top_k_recommendations
@@ -293,21 +489,31 @@ class MLHairstyleRecommender:
             logger.warning("유효한 헤어스타일이 없습니다")
             return results
 
-        # 배치 특징 생성 (정규화된 스타일명 사용)
-        batch_features = []
+        # 얼굴형과 피부톤 특징 벡터 생성
+        face_vec = self._encode_face_shape(face_shape)  # (4,)
+        tone_vec = self._encode_skin_tone(skin_tone)    # (4,)
+
+        # 배치 임베딩 수집 (정규화된 스타일명 사용)
+        batch_embeddings = []
         for style in valid_styles:
             normalized = style_mapping[style]
             idx = self.style_to_idx[normalized]
             embedding = self.embeddings[idx]
-            feature = self._create_feature_vector(face_shape, skin_tone, embedding)
-            batch_features.append(feature)
+            batch_embeddings.append(embedding)
 
-        batch_features = np.array(batch_features, dtype=np.float32)
+        batch_embeddings = np.array(batch_embeddings, dtype=np.float32)
 
-        # 배치 추론
+        # 배치 추론 - 3개의 개별 텐서로 전달
         with torch.no_grad():
-            batch_tensor = torch.FloatTensor(batch_features).to(self.device)
-            scores_tensor = self.model(batch_tensor)
+            batch_size = len(valid_styles)
+            face_batch = np.tile(face_vec, (batch_size, 1))
+            skin_batch = np.tile(tone_vec, (batch_size, 1))
+
+            face_tensor = torch.FloatTensor(face_batch).to(self.device)
+            skin_tensor = torch.FloatTensor(skin_batch).to(self.device)
+            style_tensor = torch.FloatTensor(batch_embeddings).to(self.device)
+
+            scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             scores = scores_tensor.cpu().numpy().flatten()
 
         # 결과 저장

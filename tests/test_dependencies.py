@@ -15,7 +15,7 @@ from core import dependencies
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
 from services.face_detection_service import FaceDetectionService
 from services.gemini_analysis_service import GeminiAnalysisService
-from services.hybrid_recommender import HybridRecommender
+from services.hybrid_recommender import HybridRecommendationService
 from services.feedback_collector import FeedbackCollector
 from services.retrain_queue import RetrainQueue
 
@@ -47,7 +47,7 @@ class TestDependencies:
     def test_init_services_initializes_all_services(self):
         """Test that init_services initializes all services"""
         mock_analyzer = Mock(spec=MediaPipeFaceAnalyzer)
-        mock_hybrid = Mock(spec=HybridRecommender)
+        mock_hybrid = Mock(spec=HybridRecommendationService)
         mock_feedback = Mock(spec=FeedbackCollector)
         mock_retrain = Mock(spec=RetrainQueue)
 
@@ -98,7 +98,7 @@ class TestDependencies:
 
     def test_get_hybrid_service_after_init(self):
         """Test that get_hybrid_service returns instance after init"""
-        mock_hybrid = Mock(spec=HybridRecommender)
+        mock_hybrid = Mock(spec=HybridRecommendationService)
         init_services(hybrid_service=mock_hybrid)
 
         service = get_hybrid_service()
@@ -109,7 +109,7 @@ class TestDependencies:
         with pytest.raises(RuntimeError) as exc_info:
             get_hybrid_service()
 
-        assert "HybridRecommender not initialized" in str(exc_info.value)
+        assert "HybridRecommendationService not initialized" in str(exc_info.value)
 
     def test_get_feedback_collector_after_init(self):
         """Test that get_feedback_collector returns instance after init"""
@@ -143,7 +143,7 @@ class TestDependencies:
 
     def test_services_cached_with_lru_cache(self):
         """Test that services are cached using lru_cache"""
-        mock_hybrid = Mock(spec=HybridRecommender)
+        mock_hybrid = Mock(spec=HybridRecommendationService)
         init_services(hybrid_service=mock_hybrid)
 
         service1 = get_hybrid_service()

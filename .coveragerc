@@ -10,9 +10,18 @@ omit =
     setup.py
     conftest.py
     */migrations/*
-    */scripts/*
-    */config/*
-    main.py
+    */scripts/generate_*
+    */scripts/train_*
+    */scripts/evaluate_*
+    */scripts/migrate_*
+    */scripts/convert_*
+    */scripts/merge_*
+    */scripts/monitor_*
+    */scripts/collect_*
+    */scripts/validate_*
+    */scripts/compare_*
+    */scripts/detailed_*
+    */scripts/quick_*
 
 [report]
 precision = 2

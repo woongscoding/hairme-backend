@@ -32,6 +32,10 @@ class MediaPipeFaceFeatures:
     ITA_value: float          # 피부톤 ITA 값
     hue_value: float          # 색조 값 (HSV)
 
+    # ML 모델 입력용 특징 벡터 (학습 데이터와 동일한 형식)
+    face_features: list       # [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
+    skin_features: list       # [ITA_value, hue_value] (2차원)
+
     def to_dict(self) -> dict:
         """dict로 변환 (로깅 및 DB 저장용)"""
         return {
@@ -43,7 +47,9 @@ class MediaPipeFaceFeatures:
             "cheekbone_width": self.cheekbone_width,
             "jaw_width": self.jaw_width,
             "ITA_value": self.ITA_value,
-            "hue_value": self.hue_value
+            "hue_value": self.hue_value,
+            "face_features": self.face_features,
+            "skin_features": self.skin_features
         }
 
 
@@ -124,10 +130,26 @@ class MediaPipeFaceAnalyzer:
             # 최종 신뢰도 (얼굴형 신뢰도 기준)
             final_confidence = shape_confidence
 
+            # ML 모델 입력용 특징 벡터 생성 (학습 데이터와 동일한 형식)
+            face_features = [
+                round(measurements['face_ratio'], 3),
+                round(measurements['forehead_width'], 1),
+                round(measurements['cheekbone_width'], 1),
+                round(measurements['jaw_width'], 1),
+                round(measurements['forehead_ratio'], 3),
+                round(measurements['jaw_ratio'], 3)
+            ]
+            skin_features = [
+                round(ita_value, 2),
+                round(hue_value, 2)
+            ]
+
             logger.info(
                 f"✅ MediaPipe 분석 완료: {face_shape} (신뢰도: {final_confidence:.0%}), "
                 f"피부톤: {skin_tone} (ITA: {ita_value:.1f}°)"
             )
+            logger.debug(f"  Face features: {face_features}")
+            logger.debug(f"  Skin features: {skin_features}")
 
             return MediaPipeFaceFeatures(
                 face_shape=face_shape,
@@ -138,7 +160,9 @@ class MediaPipeFaceAnalyzer:
                 cheekbone_width=round(measurements['cheekbone_width'], 1),
                 jaw_width=round(measurements['jaw_width'], 1),
                 ITA_value=round(ita_value, 2),
-                hue_value=round(hue_value, 2)
+                hue_value=round(hue_value, 2),
+                face_features=face_features,
+                skin_features=skin_features
             )
 
         except Exception as e:

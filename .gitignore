@@ -142,9 +142,44 @@ scripts/evaluate_*.py
 scripts/merge_all_data.py
 scripts/generate_style_*.py
 scripts/prepare_and_train_final_model.py
+scripts/create_diverse_embeddings*.py
+scripts/create_dummy_embeddings.py
+scripts/create_style_embeddings.py
+scripts/inspect_training_data.py
+scripts/restore_original_embeddings.py
+scripts/test_*.py
+scripts/validate_backend_implementation.py
+scripts/manual_backend_test.py
+scripts/reset_circuit_breaker.py
+scriptscreate_diverse_embeddings.py
 
 # Endpoints (old structure, deprecated - ignore only root endpoints/)
 /endpoints/
 
 # Utils backup
 start_server.py
+
+# Test files (temporary)
+test_*.py
+test_*.json
+test_*.bat
+fix_embeddings.py
+
+# Batch scripts
+*.bat
+!deploy.bat
+
+# SQLite databases (local only)
+*.db
+
+# Model variations (keep only production model)
+models/ml_recommender_fixed*.py
+models/ml_recommender_improved.py
+services/hybrid_recommender_improved.py
+
+# Config variations
+requirements_fixed.txt
+mypy.ini
+
+# Deployment review docs (temporary analysis)
+DEPLOYMENT_REVIEW_REQUEST.md
