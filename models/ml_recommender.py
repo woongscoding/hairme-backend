@@ -219,7 +219,7 @@ class MLHairstyleRecommender:
         # 2. 헤어스타일 임베딩 로드
         logger.info(f"📂 임베딩 로딩: {embeddings_path}")
         try:
-            data = np.load(embeddings_path, allow_pickle=True)
+            data = np.load(embeddings_path, allow_pickle=False)
             self.styles = data['styles'].tolist()  # 헤어스타일명 리스트
             self.embeddings = data['embeddings']  # (N, 384) 임베딩
             logger.info(f"✅ 임베딩 로드 완료: {len(self.styles)}개 스타일")

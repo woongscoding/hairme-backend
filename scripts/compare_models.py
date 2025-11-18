@@ -22,7 +22,7 @@ print('모델 비교 평가: 기존 vs 리키지 방지')
 print('='*80)
 
 # 데이터 로드
-data = np.load('data_source/ai_face_1000.npz', allow_pickle=True)
+data = np.load('data_source/ai_face_1000.npz', allow_pickle=False)
 print(f'\n데이터: {len(data["scores"]):,}개 샘플')
 
 # 헤어스타일 임베딩

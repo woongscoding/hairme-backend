@@ -86,7 +86,7 @@ print('\n' + '='*80)
 print('🔄 전체 데이터셋 평가')
 print('='*80)
 
-data = np.load('data_source/ai_face_1000.npz', allow_pickle=True)
+data = np.load('data_source/ai_face_1000.npz', allow_pickle=False)
 print(f"총 샘플 수: {len(data['scores']):,}")
 
 # 헤어스타일 임베딩

@@ -86,7 +86,7 @@ def load_training_data(data_path: str) -> Dict:
     """
     logger.info(f"📂 데이터 로딩: {data_path}")
 
-    data = np.load(data_path, allow_pickle=True)
+    data = np.load(data_path, allow_pickle=False)
 
     face_features = data['face_features']  # [N, 6]
     skin_features = data['skin_features']  # [N, 2]

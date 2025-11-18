@@ -42,7 +42,7 @@ def merge_npz_files(input_files, output_file):
         logger.info(f"[{i}/{len(input_files)}] 로딩: {file_path}")
 
         try:
-            data = np.load(file_path, allow_pickle=True)
+            data = np.load(file_path, allow_pickle=False)
 
             # 데이터 추출
             face_features = data['face_features']

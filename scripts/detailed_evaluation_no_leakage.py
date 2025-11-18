@@ -24,7 +24,7 @@ print('='*80)
 
 # 1. 데이터 로드
 print('\n[1/5] 데이터 로딩...')
-data = np.load('data_source/ai_face_1000.npz', allow_pickle=True)
+data = np.load('data_source/ai_face_1000.npz', allow_pickle=False)
 face_features = data['face_features']
 skin_features = data['skin_features']
 hairstyles = data['hairstyles']

@@ -44,7 +44,7 @@ class FeedbackCollector:
     def _load_style_embeddings(self):
         """헤어스타일 임베딩 로드"""
         try:
-            data = np.load(STYLE_EMBEDDINGS_PATH, allow_pickle=True)
+            data = np.load(STYLE_EMBEDDINGS_PATH, allow_pickle=False)
             styles = data['styles'].tolist()
             embeddings = data['embeddings']
 
