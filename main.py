@@ -3,6 +3,7 @@ HairMe Backend - AI-powered Hairstyle Recommendation Service
 Version: 20.2.0 (MediaPipe transition complete)
 """
 
+import os
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -12,21 +13,25 @@ from slowapi.errors import RateLimitExceeded
 
 from config.settings import settings
 from core.logging import logger, log_structured
-from core.cache import init_redis
-from core.ml_loader import load_ml_model, load_sentence_transformer
-from core.dependencies import init_services
 from core.monitoring import init_sentry
-from database.connection import init_database
-from database.migration import migrate_database_schema
-from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
-from services.hybrid_recommender import create_hybrid_service
-from services.feedback_collector import get_feedback_collector
-from services.retrain_queue import get_retrain_queue
+
+# Lambda 환경 감지 - 무거운 import를 지연 로딩
+IS_LAMBDA = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+
+# 경량 import만 즉시 로드
 from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
-# from api.endpoints.analyze_improved import router as analyze_improved_router  # Disabled: requires hybrid_recommender_improved
 from api.endpoints.feedback import router as feedback_router
-import google.generativeai as genai
+
+# 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
+genai = None
+MediaPipeFaceAnalyzer = None
+create_hybrid_service = None
+get_feedback_collector = None
+get_retrain_queue = None
+
+# Lambda initialization flag
+_lambda_initialized = False
 
 
 # ========== Initialize Sentry (if configured) ==========
@@ -148,6 +153,63 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+# ========== Lambda Initialization Helper ==========
+def ensure_lambda_initialization():
+    """Ensure essential services are initialized for Lambda"""
+    global _lambda_initialized
+
+    if _lambda_initialized:
+        return
+
+    if not IS_LAMBDA:
+        return
+
+    logger.info("🔧 Lambda cold start - initializing essential services...")
+
+    # Initialize Gemini API (essential)
+    if not settings.GEMINI_API_KEY:
+        logger.error("❌ GEMINI_API_KEY is not set!")
+        raise RuntimeError("GEMINI_API_KEY environment variable is required")
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        startup_status["gemini"] = True
+        logger.info("✅ Gemini API configured for Lambda")
+    except Exception as e:
+        logger.error(f"❌ Gemini API setup failed: {str(e)}")
+        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
+
+    # Initialize Database & Cache
+    try:
+        from database import init_database
+        from core.cache import init_redis
+
+        db_initialized = init_database()
+        if db_initialized:
+            use_dynamodb = os.environ.get('USE_DYNAMODB', 'false').lower() == 'true'
+            if not use_dynamodb:
+                from database.migration import migrate_database_schema
+                migrate_database_schema()
+
+        init_redis()
+        logger.info("✅ Database and cache initialized for Lambda")
+    except Exception as e:
+        logger.warning(f"⚠️ Database/cache initialization failed: {str(e)}")
+
+    _lambda_initialized = True
+    logger.info("✅ Lambda initialization complete")
+
+
+# ========== Lambda Initialization Middleware ==========
+@app.middleware("http")
+async def lambda_init_middleware(request: Request, call_next):
+    """Ensure Lambda is initialized before processing requests"""
+    if IS_LAMBDA and not _lambda_initialized:
+        ensure_lambda_initialization()
+    return await call_next(request)
+
+
 # ========== File Size Limit Middleware ==========
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
@@ -175,8 +237,8 @@ app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 # ========== Startup Event ==========
 @app.on_event("startup")
 async def startup_event():
-    """Initialize all services on server startup"""
-    logger.info("🚀 서버 시작 중...")
+    """Initialize essential services on server startup"""
+    logger.info("🚀 서버 시작 중 (Lazy Loading 적용됨)...")
 
     # ========== 1. Gemini API 키 검증 (필수) ==========
     if not settings.GEMINI_API_KEY:
@@ -184,92 +246,28 @@ async def startup_event():
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
     try:
+        import google.generativeai as genai
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
-        logger.info("✅ Gemini API 초기화 완료")
+        logger.info("✅ Gemini API 설정 완료")
     except Exception as e:
-        logger.error(f"❌ Gemini API 초기화 실패: {str(e)}")
+        logger.error(f"❌ Gemini API 설정 실패: {str(e)}")
         raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
 
-    # ========== 2. MediaPipe Face Analyzer (필수) ==========
-    try:
-        mediapipe_analyzer = MediaPipeFaceAnalyzer()
-        startup_status["mediapipe"] = True
-        logger.info("✅ MediaPipe 얼굴 분석기 초기화 완료")
-        log_structured("mediapipe_initialized", {"status": "success", "landmarks": 478})
-    except Exception as e:
-        logger.error(f"❌ MediaPipe 초기화 실패: {str(e)}")
-        raise RuntimeError(f"MediaPipe initialization failed: {str(e)}")
+    # ========== 2. Database & Cache ==========
+    from database import init_database  # Uses DynamoDB or MySQL based on USE_DYNAMODB
+    from core.cache import init_redis
 
-    # ========== 3. ML Model (선택 - 실패해도 진행) ==========
-    ml_loaded = load_ml_model()
-    startup_status["ml_model"] = ml_loaded
-    if ml_loaded:
-        logger.info("✅ ML 모드: 활성화")
-        log_structured("ml_model_loaded", {"status": "success", "model_path": settings.ML_MODEL_PATH})
-    else:
-        logger.warning("⚠️ ML 모드: 비활성화 (기본 점수 사용)")
-        log_structured("ml_model_loaded", {"status": "failed", "fallback": "default_score"})
-
-    # ========== 4. Sentence Transformer (선택 - 실패해도 진행) ==========
-    st_loaded = load_sentence_transformer()
-    startup_status["sentence_transformer"] = st_loaded
-    if st_loaded:
-        logger.info("✅ 스타일 임베딩: 활성화")
-        log_structured("sentence_transformer_loaded", {
-            "status": "success",
-            "model": settings.SENTENCE_TRANSFORMER_MODEL,
-            "embedding_dim": 384
-        })
-    else:
-        logger.warning("⚠️ 스타일 임베딩: 비활성화")
-
-    # ========== 5. Hybrid Service (필수 - Gemini가 있으므로) ==========
-    try:
-        hybrid_service = create_hybrid_service(settings.GEMINI_API_KEY)
-        startup_status["hybrid_service"] = True
-        logger.info("✅ 하이브리드 추천 서비스 초기화 완료")
-    except Exception as e:
-        logger.error(f"❌ 하이브리드 서비스 초기화 실패: {str(e)}")
-        raise RuntimeError(f"Hybrid service initialization failed: {str(e)}")
-
-    # ========== 6. Feedback Collector (선택) ==========
-    feedback_collector = None
-    try:
-        feedback_collector = get_feedback_collector()
-        startup_status["feedback_collector"] = True
-        logger.info("✅ 피드백 수집기 초기화 완료")
-    except Exception as e:
-        logger.error(f"❌ 피드백 수집기 초기화 실패: {str(e)}")
-        # 선택사항이므로 계속 진행
-
-    # ========== 7. Retrain Queue (선택) ==========
-    retrain_queue = None
-    try:
-        retrain_queue = get_retrain_queue()
-        startup_status["retrain_queue"] = True
-        logger.info("✅ 재학습 큐 초기화 완료")
-    except Exception as e:
-        logger.error(f"❌ 재학습 큐 초기화 실패: {str(e)}")
-        # 선택사항이므로 계속 진행
-
-    # ========== 8. 의존성 주입 초기화 ==========
-    init_services(
-        mediapipe_analyzer=mediapipe_analyzer,
-        hybrid_service=hybrid_service,
-        feedback_collector=feedback_collector if startup_status["feedback_collector"] else None,
-        retrain_queue=retrain_queue if startup_status["retrain_queue"] else None
-    )
-
-    # ========== 9. Database & Cache ==========
     db_initialized = init_database()
     if db_initialized:
-        migrate_database_schema()
+        use_dynamodb = os.environ.get('USE_DYNAMODB', 'false').lower() == 'true'
+        if not use_dynamodb:
+            from database.migration import migrate_database_schema
+            migrate_database_schema()
 
     init_redis()
 
-    # ========== 10. 초기화 상태 로깅 ==========
-    logger.info(f"📊 서비스 초기화 상태: {startup_status}")
+    logger.info("✅ 기본 서비스 초기화 완료 (AI 모델은 첫 요청 시 로드됩니다)")
 
 
 # ========== Root Endpoint ==========
@@ -363,8 +361,10 @@ async def health_check(deep: bool = False):
 # For AWS Lambda deployment using Mangum
 try:
     from mangum import Mangum
-    handler = Mangum(app, lifespan="off")
-    logger.info("✅ Lambda handler initialized")
+    # lifespan="on" 으로 설정하면 첫 요청 시 startup 이벤트가 실행됨
+    # Lambda init 단계에서는 import만 하고, 무거운 작업은 첫 요청 시 수행
+    handler = Mangum(app, lifespan="on")
+    logger.info("✅ Lambda handler initialized (lifespan=on)")
 except ImportError:
     logger.warning("⚠️ Mangum not installed - Lambda handler not available")
     handler = None

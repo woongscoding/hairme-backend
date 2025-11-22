@@ -6,16 +6,20 @@ MediaPipe 분석 결과 (얼굴형 + 피부톤)로 학습된 ML 모델을 사용
 
 Author: HairMe ML Team
 Date: 2025-11-08
-Version: 1.0.0
+Version: 1.1.0 (Real-time Embedding Support)
 """
 
 import numpy as np
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, TYPE_CHECKING
 import logging
 import sys
+
+# TYPE_CHECKING을 사용하여 런타임에는 import하지 않음
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 # 프로젝트 루트 경로 추가
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -230,6 +234,23 @@ class MLHairstyleRecommender:
         # 스타일명 -> 인덱스 매핑
         self.style_to_idx = {style: idx for idx, style in enumerate(self.styles)}
 
+        # 3. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
+        import os
+        is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+
+        if not is_lambda:
+            logger.info("🔄 실시간 임베딩 모델 로딩 (paraphrase-multilingual-MiniLM-L12-v2)...")
+            try:
+                from sentence_transformers import SentenceTransformer
+                self.sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                logger.info("✅ 실시간 임베딩 모델 준비 완료")
+            except Exception as e:
+                logger.error(f"❌ 실시간 임베딩 모델 로드 실패: {str(e)}")
+                self.sentence_model = None
+        else:
+            logger.info("🔧 Lambda 환경 - 실시간 임베딩 모델 스킵")
+            self.sentence_model = None
+
     def _encode_face_shape(self, face_shape: str) -> np.ndarray:
         """얼굴형을 one-hot 인코딩 (6차원 - 모델과 일치)"""
         vec = np.zeros(6, dtype=np.float32)
@@ -268,6 +289,33 @@ class MLHairstyleRecommender:
 
         return vec
 
+    def _get_style_embedding(self, style_name: str) -> np.ndarray:
+        """
+        스타일 임베딩 가져오기 (DB 조회 또는 실시간 생성)
+
+        Args:
+            style_name: 헤어스타일명 (정규화된 이름 권장)
+
+        Returns:
+            임베딩 벡터 (384,) 또는 None
+        """
+        # 1. DB 조회 (Fast Path)
+        if style_name in self.style_to_idx:
+            idx = self.style_to_idx[style_name]
+            return self.embeddings[idx]
+
+        # 2. 실시간 생성 (Slow Path)
+        if self.sentence_model:
+            logger.info(f"🆕 새로운 스타일 발견: '{style_name}' -> 실시간 임베딩 생성")
+            try:
+                embedding = self.sentence_model.encode(style_name)
+                return embedding
+            except Exception as e:
+                logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
+                return None
+        
+        return None
+
     def predict_score(
         self,
         face_shape: str,
@@ -288,13 +336,16 @@ class MLHairstyleRecommender:
         # 띄어쓰기 정규화 적용
         normalized_style = normalize_style_name(hairstyle)
 
-        if normalized_style not in self.style_to_idx:
-            logger.warning(f"미등록 헤어스타일: '{hairstyle}' (정규화: '{normalized_style}')")
-            return 0.0
+        # 임베딩 가져오기 (DB or 실시간)
+        style_embedding = self._get_style_embedding(normalized_style)
 
-        # 임베딩 가져오기 (정규화된 스타일명 사용)
-        idx = self.style_to_idx[normalized_style]
-        style_embedding = self.embeddings[idx]
+        if style_embedding is None:
+            # 원본 이름으로도 시도
+            style_embedding = self._get_style_embedding(hairstyle)
+            
+            if style_embedding is None:
+                logger.warning(f"임베딩 생성 불가: '{hairstyle}'")
+                return 0.0
 
         # 개별 특징 벡터 생성
         face_vec = self._encode_face_shape(face_shape)  # (4,)
@@ -475,35 +526,36 @@ class MLHairstyleRecommender:
             {헤어스타일: 점수} 딕셔너리
         """
         results = {}
-
-        # 유효한 스타일만 필터링 (정규화 후 확인)
+        
+        # 1. 임베딩 수집 (DB or 실시간)
         valid_styles = []
-        style_mapping = {}  # 원본 -> 정규화 매핑
-        for s in hairstyles:
-            normalized = normalize_style_name(s)
-            if normalized in self.style_to_idx:
-                valid_styles.append(s)
-                style_mapping[s] = normalized
+        batch_embeddings = []
+        
+        for style in hairstyles:
+            normalized = normalize_style_name(style)
+            embedding = self._get_style_embedding(normalized)
+            
+            if embedding is None:
+                # 원본 이름으로도 시도
+                embedding = self._get_style_embedding(style)
+            
+            if embedding is not None:
+                valid_styles.append(style)
+                batch_embeddings.append(embedding)
+            else:
+                logger.warning(f"임베딩 생성 불가로 건너뜀: {style}")
 
         if not valid_styles:
             logger.warning("유효한 헤어스타일이 없습니다")
             return results
 
-        # 얼굴형과 피부톤 특징 벡터 생성
+        # 2. 얼굴형과 피부톤 특징 벡터 생성
         face_vec = self._encode_face_shape(face_shape)  # (4,)
         tone_vec = self._encode_skin_tone(skin_tone)    # (4,)
 
-        # 배치 임베딩 수집 (정규화된 스타일명 사용)
-        batch_embeddings = []
-        for style in valid_styles:
-            normalized = style_mapping[style]
-            idx = self.style_to_idx[normalized]
-            embedding = self.embeddings[idx]
-            batch_embeddings.append(embedding)
-
         batch_embeddings = np.array(batch_embeddings, dtype=np.float32)
 
-        # 배치 추론 - 3개의 개별 텐서로 전달
+        # 3. 배치 추론 - 3개의 개별 텐서로 전달
         with torch.no_grad():
             batch_size = len(valid_styles)
             face_batch = np.tile(face_vec, (batch_size, 1))
@@ -516,7 +568,7 @@ class MLHairstyleRecommender:
             scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             scores = scores_tensor.cpu().numpy().flatten()
 
-        # 결과 저장
+        # 4. 결과 저장
         for style, score in zip(valid_styles, scores):
             results[style] = round(max(0.0, min(100.0, float(score))), 2)
 
