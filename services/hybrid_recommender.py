@@ -26,8 +26,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from models.ml_recommender import get_ml_recommender
-from services.reason_generator import get_reason_generator
+# Lazy imports to avoid Lambda cold start issues
+# from models.ml_recommender import get_ml_recommender  # Moved to __init__
 from services.circuit_breaker import gemini_breaker, with_circuit_breaker
 from utils.style_preprocessor import normalize_style_name
 from core.monitoring import (
@@ -37,6 +37,7 @@ from core.monitoring import (
     track_gemini_api_call,
     capture_exception
 )
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -53,24 +54,27 @@ class HybridRecommendationService:
         """
         # Gemini 설정
         genai.configure(api_key=gemini_api_key)
-        self.gemini_model = genai.GenerativeModel("gemini-pro-vision")
-        logger.info("✅ Gemini 모델 초기화 완료")
+        self.gemini_model = genai.GenerativeModel(settings.MODEL_NAME)
+        logger.info(f"✅ Gemini 모델 초기화 완료: {settings.MODEL_NAME}")
 
-        # ML 추천기는 싱글톤으로 로드
+        # ML 추천기는 싱글톤으로 로드 (Lazy import)
         try:
+            from models.ml_recommender import get_ml_recommender
             self.ml_recommender = get_ml_recommender()
             self.ml_available = True
+            logger.info("✅ ML 추천기 로드 성공")
         except Exception as e:
-            logger.error(f"❌ ML 추천기 로드 실패: {str(e)}")
+            logger.warning(f"⚠️ ML 추천기 로드 실패 (Gemini-only mode): {str(e)}")
             self.ml_recommender = None
             self.ml_available = False
 
-        # 추천 이유 생성기 로드
+        # 추천 이유 생성기 로드 (Lazy import)
         try:
+            from services.reason_generator import get_reason_generator
             self.reason_generator = get_reason_generator()
             logger.info("✅ 추천 이유 생성기 초기화 완료")
         except Exception as e:
-            logger.error(f"❌ 추천 이유 생성기 로드 실패: {str(e)}")
+            logger.warning(f"⚠️ 추천 이유 생성기 로드 실패: {str(e)}")
             self.reason_generator = None
 
     def _create_gemini_prompt(
@@ -392,10 +396,11 @@ class HybridRecommendationService:
         face_shape: str,
         skin_tone: str,
         face_features: List[float] = None,
-        skin_features: List[float] = None
+        skin_features: List[float] = None,
+        gender: str = None
     ) -> Dict[str, Any]:
         """
-        하이브리드 추천 실행
+        하이브리드 추천 실행 (성별 필터링 적용)
 
         Args:
             image_data: 이미지 바이트
@@ -403,6 +408,7 @@ class HybridRecommendationService:
             skin_tone: 피부톤 - DEPRECATED, 하위 호환성을 위해 유지
             face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
             skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
+            gender: 성별 ("male", "female", "neutral") - MediaPipe로 추론된 값
 
         Returns:
             추천 결과 딕셔너리
@@ -426,17 +432,18 @@ class HybridRecommendationService:
         }
         gemini_recommendations = []
 
-        # 2. ML 추천 (Top-3)
+        # 2. ML 추천 (Top-3, 성별 필터링 적용)
         ml_recommendations = []
         if self.ml_available and self.ml_recommender:
             try:
-                # 실제 측정값 우선 사용
+                # 실제 측정값 우선 사용 + 성별 필터링
                 ml_recommendations = self.ml_recommender.recommend_top_k(
                     face_shape=face_shape,
                     skin_tone=skin_tone,
                     k=3,
                     face_features=face_features,
-                    skin_features=skin_features
+                    skin_features=skin_features,
+                    gender=gender
                 )
                 logger.info(f"✅ ML 추천 완료: {len(ml_recommendations)}개")
             except Exception as e:

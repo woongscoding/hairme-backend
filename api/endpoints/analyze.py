@@ -3,9 +3,23 @@
 import os
 import time
 import urllib.parse
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends
+if TYPE_CHECKING:
+    from services.face_detection_service import FaceDetectionService
+    from services.gemini_analysis_service import GeminiAnalysisService
+    from services.hybrid_recommender import HybridRecommendationService
+    from services.feedback_collector import FeedbackCollector
+    from services.retrain_queue import RetrainQueue
+    from models.mediapipe_analyzer import MediaPipeFaceFeatures
+
+from models.mediapipe_analyzer import MediaPipeFaceFeatures  # Keep this if used at runtime?
+# Wait, MediaPipeFaceFeatures is a dataclass, it might be lightweight.
+# But models.mediapipe_analyzer imports logging, dataclasses, typing, math.
+# It does NOT import mediapipe at top level anymore.
+# So importing MediaPipeFaceFeatures is fine.
+
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends, Form
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -30,12 +44,6 @@ from core.dependencies import (
     get_feedback_collector,
     get_retrain_queue
 )
-from services.face_detection_service import FaceDetectionService
-from services.gemini_analysis_service import GeminiAnalysisService
-from services.hybrid_recommender import HybridRecommendationService
-from services.feedback_collector import FeedbackCollector
-from services.retrain_queue import RetrainQueue
-from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 
 router = APIRouter()
@@ -113,8 +121,8 @@ def save_to_database(
 async def analyze_face(
     request: Request,
     file: UploadFile = File(...),
-    face_detector: FaceDetectionService = Depends(get_face_detection_service),
-    gemini_service: GeminiAnalysisService = Depends(get_gemini_analysis_service)
+    face_detector: 'FaceDetectionService' = Depends(get_face_detection_service),
+    gemini_service: 'GeminiAnalysisService' = Depends(get_gemini_analysis_service)
 ):
     """Face analysis and hairstyle recommendation (v20.2.0: ML integrated)"""
     start_time = time.time()
@@ -181,10 +189,12 @@ async def analyze_face(
         gemini_time = round((time.time() - gemini_start) * 1000, 2)
 
         # Use MediaPipe results (for consistency)
+        gender = None  # 성별 정보 추출 (NEW)
         if mp_features:
             face_shape = mp_features.face_shape
             skin_tone = mp_features.skin_tone
-            logger.info(f"✅ MediaPipe 결과 채택: {face_shape} / {skin_tone} (일관성 보장)")
+            gender = mp_features.gender  # 성별 추론 결과
+            logger.info(f"✅ MediaPipe 결과 채택: {face_shape} / {skin_tone} / 성별: {gender} (일관성 보장)")
 
             # Log Gemini results for comparison
             gemini_face_shape = analysis_result.get("analysis", {}).get("face_shape")
@@ -194,6 +204,7 @@ async def analyze_face(
             # Update analysis result with MediaPipe values
             analysis_result["analysis"]["face_shape"] = face_shape
             analysis_result["analysis"]["personal_color"] = skin_tone
+            analysis_result["analysis"]["gender"] = gender  # 성별 정보 추가
         else:
             # Use Gemini results if MediaPipe failed
             face_shape = analysis_result.get("analysis", {}).get("face_shape")
@@ -204,10 +215,22 @@ async def analyze_face(
         for idx, recommendation in enumerate(analysis_result.get("recommendations", []), 1):
             style_name = recommendation.get("style_name", "")
 
+            # ✅ hairstyle_id 찾기 (ML 모델에서)
+            from core.ml_loader import ml_recommender
+            hairstyle_id = None
+            if ml_recommender is not None:
+                from utils.style_preprocessor import normalize_style_name
+                normalized_name = normalize_style_name(style_name)
+                hairstyle_id = ml_recommender.style_to_idx.get(normalized_name)
+            recommendation['hairstyle_id'] = hairstyle_id
+
             # ML confidence score
             ml_score = predict_ml_score(face_shape, skin_tone, style_name)
             recommendation['ml_confidence'] = ml_score
             recommendation['confidence_level'] = get_confidence_level(ml_score)
+
+            # ✅ score 필드 추가 (안드로이드 앱 호환성)
+            recommendation['score'] = round(ml_score / 100.0, 2)  # 0-1 범위로 변환
 
             # Style embedding (Sentence Transformer)
             if sentence_transformer is not None:
@@ -238,6 +261,19 @@ async def analyze_face(
             mp_features=mp_features
         )
 
+        # Warn if database save failed but continue with response
+        if analysis_id is None:
+            logger.warning(
+                "⚠️ 데이터베이스 저장 실패 - 분석은 성공했지만 피드백을 저장할 수 없습니다. "
+                f"image_hash: {image_hash[:16]}"
+            )
+            log_structured("database_save_failed", {
+                "image_hash": image_hash[:16],
+                "face_shape": face_shape,
+                "personal_color": skin_tone,
+                "warning": "feedback_disabled"
+            })
+
         log_structured("analysis_complete", {
             "image_hash": image_hash[:16],
             "processing_time": total_time,
@@ -246,7 +282,8 @@ async def analyze_face(
             "mediapipe_enabled": mp_features is not None,
             "face_shape": face_shape,
             "personal_color": skin_tone,
-            "analysis_id": analysis_id
+            "analysis_id": analysis_id,
+            "database_saved": analysis_id is not None
         })
 
         return {
@@ -261,7 +298,8 @@ async def analyze_face(
                 "mediapipe_analysis": "enabled" if mp_features else "failed"
             },
             "cached": False,
-            "model_used": settings.MODEL_NAME
+            "model_used": settings.MODEL_NAME,
+            "feedback_enabled": analysis_id is not None  # ✅ NEW: Android can check this
         }
 
     except (NoFaceDetectedException, MultipleFacesException, InvalidFileFormatException) as e:
@@ -276,7 +314,9 @@ async def analyze_face(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"분석 중 오류 발생: {str(e)}")
+        import traceback
+        tb_str = traceback.format_exc()
+        logger.error(f"분석 중 오류 발생: {str(e)}\n{tb_str}")
 
         log_structured("analysis_error", {
             "error_type": "internal_error",
@@ -289,7 +329,8 @@ async def analyze_face(
             content={
                 "success": False,
                 "error": "internal_error",
-                "message": f"분석 중 오류가 발생했습니다: {str(e)}"
+                "message": f"분석 중 오류가 발생했습니다: {str(e)}",
+                "traceback": tb_str
             }
         )
 
@@ -299,16 +340,20 @@ async def analyze_face(
 async def analyze_face_hybrid(
     request: Request,
     file: UploadFile = File(...),
-    face_detector: FaceDetectionService = Depends(get_face_detection_service),
-    hybrid_recommender: HybridRecommendationService = Depends(get_hybrid_service)
+    gender: str = Form("male"),  # 성별 파라미터 추가 (기본값: male)
+    face_detector: 'FaceDetectionService' = Depends(get_face_detection_service),
+    hybrid_recommender: 'HybridRecommendationService' = Depends(get_hybrid_service)
 ):
     """
     Hybrid face analysis and hairstyle recommendation (Gemini + ML)
 
+    v26 변경사항:
+    - gender 파라미터 추가 (성별 기반 헤어스타일 필터링)
+
     Flow:
     1. Analyze face shape + skin tone with MediaPipe
     2. Get 4 recommendations from Gemini API
-    3. Get Top-3 recommendations from ML model
+    3. Get Top-3 recommendations from ML model (gender 필터링 적용)
     4. Return up to 7 recommendations after deduplication
     """
     start_time = time.time()
@@ -363,12 +408,14 @@ async def analyze_face_hybrid(
 
         # 2. Hybrid recommendation using injected service
         # Train-Inference Mismatch 해결: 실제 측정값 전달
+        # v26: gender 파라미터 추가
         recommendation_result = hybrid_recommender.recommend(
             image_data=image_data,
             face_shape=face_shape,
             skin_tone=skin_tone,
             face_features=face_features,
-            skin_features=skin_features
+            skin_features=skin_features,
+            gender=gender  # 성별 파라미터 전달
         )
 
         # 3. Add Naver search URLs
@@ -384,7 +431,8 @@ async def analyze_face_hybrid(
         analysis_result_for_db = {
             "analysis": {
                 "face_shape": face_shape,
-                "personal_color": skin_tone
+                "personal_color": skin_tone,
+                "features": f"MediaPipe로 분석된 {face_shape}, {skin_tone} 특징"
             },
             "recommendations": recommendation_result.get("recommendations", [])
         }
@@ -396,6 +444,20 @@ async def analyze_face_hybrid(
             detection_method="hybrid",
             mp_features=mp_features
         )
+
+        # Warn if database save failed but continue with response
+        if analysis_id is None:
+            logger.warning(
+                "⚠️ 데이터베이스 저장 실패 - 분석은 성공했지만 피드백을 저장할 수 없습니다. "
+                f"image_hash: {image_hash[:16]}"
+            )
+            log_structured("database_save_failed", {
+                "image_hash": image_hash[:16],
+                "face_shape": face_shape,
+                "skin_tone": skin_tone,
+                "method": "hybrid",
+                "warning": "feedback_disabled"
+            })
 
         logger.info(f"✅ 하이브리드 분석 완료 ({total_time}초)")
 
@@ -410,7 +472,8 @@ async def analyze_face_hybrid(
                 "skin_tone": skin_tone,
                 "confidence": mp_features.confidence
             },
-            "model_used": "gemini-1.5-flash-latest + hairstyle_recommender.pt"
+            "model_used": "gemini-1.5-flash-latest + hairstyle_recommender.pt",
+            "feedback_enabled": analysis_id is not None  # ✅ NEW: Android can check this
         }
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
@@ -444,8 +507,8 @@ async def collect_feedback(
     user_reaction: str,
     ml_prediction: float,
     user_id: str = "anonymous",
-    collector: FeedbackCollector = Depends(get_feedback_collector),
-    retrain_q: RetrainQueue = Depends(get_retrain_queue)
+    collector: 'FeedbackCollector' = Depends(get_feedback_collector),
+    retrain_q: 'RetrainQueue' = Depends(get_retrain_queue)
 ):
     """
     User feedback collection endpoint (v2)
