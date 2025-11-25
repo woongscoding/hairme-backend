@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, TYPE_CHECKING
 import logging
 import sys
+from difflib import SequenceMatcher
 
 # TYPE_CHECKING을 사용하여 런타임에는 import하지 않음
 if TYPE_CHECKING:
@@ -289,6 +290,25 @@ class MLHairstyleRecommender:
 
         return vec
 
+    def _is_similar_style(self, style_a: str, style_b: str, threshold: float = 0.8) -> bool:
+        """
+        두 스타일명의 유사도 계산 (0~1)
+
+        Args:
+            style_a: 첫 번째 스타일명
+            style_b: 두 번째 스타일명
+            threshold: 유사도 임계값 (기본 0.8 = 80%)
+
+        Returns:
+            threshold 이상이면 True (유사한 스타일)
+
+        Examples:
+            - "55가르마" vs "64가르마" → 0.83 → True (유사함)
+            - "55가르마" vs "단발머리" → 0.13 → False (다름)
+        """
+        ratio = SequenceMatcher(None, style_a, style_b).ratio()
+        return ratio >= threshold
+
     def _get_style_embedding(self, style_name: str) -> np.ndarray:
         """
         스타일 임베딩 가져오기 (DB 조회 또는 실시간 생성)
@@ -313,7 +333,7 @@ class MLHairstyleRecommender:
             except Exception as e:
                 logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
                 return None
-        
+
         return None
 
     def predict_score(
@@ -464,30 +484,45 @@ class MLHairstyleRecommender:
         # 점수 기준 정렬
         all_scores.sort(key=lambda x: x['score'], reverse=True)
 
-        # 다양성을 위해 상위 20개 중에서 선택
-        top_candidates = all_scores[:min(20, len(all_scores))]
+        # 유사도 기반 다양성 필터링 (80% 이상 유사한 스타일 제외)
+        top_k_recommendations = []
+        similarity_threshold = 0.8
+        max_candidates = min(100, len(all_scores))  # 상위 100개까지 탐색
 
-        # 얼굴형과 피부톤에 따른 선호도 조정
-        import hashlib
-        # 입력값 기반 시드 생성
-        seed_string = f"{face_shape}_{skin_tone}"
-        seed = int(hashlib.md5(seed_string.encode()).hexdigest()[:8], 16)
+        logger.info(f"[DIVERSITY] 다양성 필터링 시작 (threshold={similarity_threshold})")
 
-        # 의사 랜덤 선택 (deterministic)
-        import random
-        random.seed(seed)
+        for candidate in all_scores[:max_candidates]:
+            if len(top_k_recommendations) >= k:
+                break
 
-        # Top-K 추출 (상위 20개 중 K개를 선택)
-        if len(top_candidates) > k:
-            # 첫 번째는 항상 최고 점수
-            top_k_recommendations = [top_candidates[0]]
+            candidate_style = candidate['hairstyle']
 
-            # 나머지는 상위 후보 중 선택
-            remaining_candidates = top_candidates[1:]
-            random.shuffle(remaining_candidates)
-            top_k_recommendations.extend(remaining_candidates[:k-1])
-        else:
-            top_k_recommendations = top_candidates[:k]
+            # 이미 선택된 스타일과 유사도 체크
+            is_duplicate = False
+            for selected in top_k_recommendations:
+                selected_style = selected['hairstyle']
+                if self._is_similar_style(candidate_style, selected_style, similarity_threshold):
+                    logger.debug(
+                        f"[DIVERSITY] 유사한 스타일 제외: '{candidate_style}' "
+                        f"(유사: '{selected_style}')"
+                    )
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                top_k_recommendations.append(candidate)
+                logger.info(
+                    f"[DIVERSITY] 선택 ({len(top_k_recommendations)}/{k}): "
+                    f"'{candidate_style}' (점수: {candidate['score']:.2f})"
+                )
+
+        # k개를 채우지 못한 경우 경고
+        if len(top_k_recommendations) < k:
+            logger.warning(
+                f"[DIVERSITY] 다양한 스타일 {k}개를 찾지 못함 "
+                f"(실제: {len(top_k_recommendations)}개). "
+                f"threshold를 낮추거나 데이터를 확인하세요."
+            )
 
         # 점수 보정 없이 원본 점수 사용
         # 학습 데이터: 추천 90점, 비추천 30점 기반
