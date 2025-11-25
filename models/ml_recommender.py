@@ -171,8 +171,9 @@ class RecommendationModel(nn.Module):
         x = self.fc_out(x)
 
         # 스케일링 적용 (학습 시 30~90점 범위)
+        # 클램핑 제거 - 원본 점수를 유지하여 Top-K 내에서 Min-Max 정규화 가능하게 함
         x = (x - 29.0) * 7.5 + 60.0
-        x = torch.clamp(x, min=30.0, max=90.0)
+        # 참고: 클램핑은 recommend_top_k에서 Min-Max 정규화 후 적용
 
         return x.squeeze(-1)
 
@@ -187,7 +188,8 @@ class MLHairstyleRecommender:
     def __init__(
         self,
         model_path: str = "models/hairstyle_recommender_v4_no_leakage.pt",
-        embeddings_path: str = "data_source/style_embeddings.npz"
+        embeddings_path: str = "data_source/style_embeddings.npz",
+        gender_metadata_path: str = "data_source/hairstyle_gender.json"
     ):
         """
         초기화
@@ -195,6 +197,7 @@ class MLHairstyleRecommender:
         Args:
             model_path: 학습된 모델 경로
             embeddings_path: 헤어스타일 임베딩 경로
+            gender_metadata_path: 헤어스타일 성별 메타데이터 경로
         """
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -235,7 +238,23 @@ class MLHairstyleRecommender:
         # 스타일명 -> 인덱스 매핑
         self.style_to_idx = {style: idx for idx, style in enumerate(self.styles)}
 
-        # 3. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
+        # 3. 성별 메타데이터 로드 (NEW)
+        logger.info(f"📂 성별 메타데이터 로딩: {gender_metadata_path}")
+        try:
+            import json
+            import os
+            if os.path.exists(gender_metadata_path):
+                with open(gender_metadata_path, 'r', encoding='utf-8') as f:
+                    self.gender_metadata = json.load(f)
+                logger.info(f"✅ 성별 메타데이터 로드 완료: {len(self.gender_metadata)}개 스타일")
+            else:
+                logger.warning(f"⚠️ 성별 메타데이터 파일 없음 - 성별 필터링 비활성화")
+                self.gender_metadata = {}
+        except Exception as e:
+            logger.error(f"❌ 성별 메타데이터 로드 실패: {str(e)}")
+            self.gender_metadata = {}
+
+        # 4. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
         import os
         is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
 
@@ -290,21 +309,21 @@ class MLHairstyleRecommender:
 
         return vec
 
-    def _is_similar_style(self, style_a: str, style_b: str, threshold: float = 0.8) -> bool:
+    def _is_similar_style(self, style_a: str, style_b: str, threshold: float = 0.65) -> bool:
         """
         두 스타일명의 유사도 계산 (0~1)
 
         Args:
             style_a: 첫 번째 스타일명
             style_b: 두 번째 스타일명
-            threshold: 유사도 임계값 (기본 0.8 = 80%)
+            threshold: 유사도 임계값 (기본 0.65 = 65%)
 
         Returns:
             threshold 이상이면 True (유사한 스타일)
 
         Examples:
-            - "55가르마" vs "64가르마" → 0.83 → True (유사함)
-            - "55가르마" vs "단발머리" → 0.13 → False (다름)
+            - "가르마 스타일 (5:5 또는 6:4)" vs "가르마 스타일 (6:4 또는 7:3)" → 0.74 → True (유사함)
+            - "가르마 스타일" vs "가일 컷" → 0.25 → False (다름)
         """
         ratio = SequenceMatcher(None, style_a, style_b).ratio()
         return ratio >= threshold
@@ -391,10 +410,11 @@ class MLHairstyleRecommender:
         skin_tone: str = None,
         k: int = 3,
         face_features: List[float] = None,
-        skin_features: List[float] = None
+        skin_features: List[float] = None,
+        gender: str = None
     ) -> List[Dict[str, any]]:
         """
-        Top-K 헤어스타일 추천
+        Top-K 헤어스타일 추천 (성별 필터링 적용)
 
         Args:
             face_shape: 얼굴형 (예: "계란형") - DEPRECATED, 하위 호환성을 위해 유지
@@ -402,6 +422,7 @@ class MLHairstyleRecommender:
             k: 추천 개수
             face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
             skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
+            gender: 성별 ("male", "female", "neutral") - MediaPipe로 추론된 값
 
         Returns:
             추천 리스트 [{"hairstyle": "...", "score": 85.3}, ...]
@@ -484,9 +505,36 @@ class MLHairstyleRecommender:
         # 점수 기준 정렬
         all_scores.sort(key=lambda x: x['score'], reverse=True)
 
-        # 유사도 기반 다양성 필터링 (80% 이상 유사한 스타일 제외)
+        # 성별 필터링 (NEW)
+        if gender and self.gender_metadata:
+            logger.info(f"[GENDER] 성별 필터링 시작 (gender={gender})")
+            filtered_scores = []
+            for item in all_scores:
+                style_name = item['hairstyle']
+                style_gender = self.gender_metadata.get(style_name, "unisex")
+
+                # 성별 매칭 로직:
+                # - neutral (애매한 경우): 모든 스타일 추천
+                # - male: male + unisex 추천
+                # - female: female + unisex 추천
+                if gender == "neutral":
+                    filtered_scores.append(item)
+                elif gender == "male" and style_gender in ["male", "unisex"]:
+                    filtered_scores.append(item)
+                elif gender == "female" and style_gender in ["female", "unisex"]:
+                    filtered_scores.append(item)
+
+            logger.info(
+                f"[GENDER] 필터링 완료: {len(all_scores)}개 → {len(filtered_scores)}개 "
+                f"(제외: {len(all_scores) - len(filtered_scores)}개)"
+            )
+            all_scores = filtered_scores
+        else:
+            logger.info("[GENDER] 성별 필터링 비활성화 (gender 미제공 또는 메타데이터 없음)")
+
+        # 유사도 기반 다양성 필터링 (65% 이상 유사한 스타일 제외)
         top_k_recommendations = []
-        similarity_threshold = 0.8
+        similarity_threshold = 0.65
         max_candidates = min(100, len(all_scores))  # 상위 100개까지 탐색
 
         logger.info(f"[DIVERSITY] 다양성 필터링 시작 (threshold={similarity_threshold})")
@@ -524,17 +572,42 @@ class MLHairstyleRecommender:
                 f"threshold를 낮추거나 데이터를 확인하세요."
             )
 
-        # 점수 보정 없이 원본 점수 사용
-        # 학습 데이터: 추천 90점, 비추천 30점 기반
-        for rec in top_k_recommendations:
-            # 원본 점수를 그대로 사용 (0-100 범위 클리핑만)
-            rec['score'] = min(100.0, max(0.0, rec['score']))
-            rec['score'] = round(rec['score'], 2)
+        # Min-Max 정규화를 사용한 점수 스케일링
+        # Top-K 내에서 점수를 75~95점 범위로 정규화하여 차별화된 점수 제공
+        if len(top_k_recommendations) >= 2:
+            raw_scores = [rec['original_score'] for rec in top_k_recommendations]
+            min_raw = min(raw_scores)
+            max_raw = max(raw_scores)
+
+            # 점수 차이가 있는 경우에만 정규화
+            if max_raw > min_raw:
+                # 목표 범위: 75 ~ 95점
+                target_min, target_max = 75.0, 95.0
+
+                logger.info(f"[SCORE NORM] Raw scores: {raw_scores}")
+                logger.info(f"[SCORE NORM] Raw range: {min_raw:.2f} ~ {max_raw:.2f}")
+
+                for rec in top_k_recommendations:
+                    raw = rec['original_score']
+                    # Min-Max 정규화: (raw - min) / (max - min) * (target_max - target_min) + target_min
+                    normalized = (raw - min_raw) / (max_raw - min_raw) * (target_max - target_min) + target_min
+                    rec['score'] = round(normalized, 2)
+
+                logger.info(f"[SCORE NORM] Normalized scores: {[r['score'] for r in top_k_recommendations]}")
+            else:
+                # 모든 점수가 동일한 경우 (드물지만) 중간값 사용
+                for i, rec in enumerate(top_k_recommendations):
+                    rec['score'] = round(95.0 - i * 3, 2)  # 95, 92, 89...
+                logger.info(f"[SCORE NORM] Same scores - using fallback: {[r['score'] for r in top_k_recommendations]}")
+        elif len(top_k_recommendations) == 1:
+            # 1개만 있는 경우
+            top_k_recommendations[0]['score'] = 90.0
+            logger.info("[SCORE NORM] Single recommendation - set to 90.0")
 
         # 디버그: Top-K 점수 분포
         if top_k_recommendations:
             scores_list = [r['score'] for r in top_k_recommendations]
-            logger.info(f"[ML DEBUG] Top-{k} scores: {scores_list}")
+            logger.info(f"[ML DEBUG] Top-{k} final scores: {scores_list}")
             logger.info(f"[ML DEBUG] Score range: {min(scores_list):.2f} ~ {max(scores_list):.2f}")
 
         logger.info(
