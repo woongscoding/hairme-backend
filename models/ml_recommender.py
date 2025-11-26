@@ -6,7 +6,12 @@ MediaPipe 분석 결과 (얼굴형 + 피부톤)로 학습된 ML 모델을 사용
 
 Author: HairMe ML Team
 Date: 2025-11-08
-Version: 1.1.0 (Real-time Embedding Support)
+Version: 1.2.0 (Normalized Label Support - v5)
+
+v1.2.0 변경사항:
+- 라벨 정규화 모델(v5) 지원 추가
+- 모델 출력 역변환 로직 (0~1 → 10~95)
+- Sigmoid 출력층 지원
 """
 
 import numpy as np
@@ -29,6 +34,99 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
+
+# ========== 라벨 정규화 상수 (v5 모델용) ==========
+LABEL_MIN = 10.0   # 원본 점수 최소값
+LABEL_MAX = 95.0   # 원본 점수 최대값
+LABEL_RANGE = LABEL_MAX - LABEL_MIN  # 85
+
+
+# ========== 학습 데이터 특징 통계 (입력 스케일링용) ==========
+# ai_face_1000.npz에서 추출한 통계 (5910 샘플)
+FACE_FEATURE_STATS = {
+    0: {"min": 0.99, "max": 1.51, "mean": 1.20, "std": 0.06},   # face_ratio
+    1: {"min": 301.10, "max": 495.30, "mean": 458.13, "std": 14.31},  # forehead_width (pixel)
+    2: {"min": 421.40, "max": 641.00, "mean": 561.34, "std": 19.73},  # cheekbone_width (pixel)
+    3: {"min": 333.90, "max": 524.10, "mean": 447.70, "std": 19.82},  # jaw_width (pixel)
+    4: {"min": 0.71, "max": 0.89, "mean": 0.82, "std": 0.02},   # forehead_ratio
+    5: {"min": 0.73, "max": 0.86, "mean": 0.80, "std": 0.02},   # jaw_ratio
+}
+
+SKIN_FEATURE_STATS = {
+    0: {"min": 50.53, "max": 89.26, "mean": 79.91, "std": 3.90},  # ITA_value
+    1: {"min": 5.96, "max": 142.39, "mean": 12.09, "std": 10.97},  # hue_value
+}
+
+
+def denormalize_score(normalized: float) -> float:
+    """0~1 점수를 원본 스케일로 역변환 (10~95)"""
+    return normalized * LABEL_RANGE + LABEL_MIN
+
+
+def scale_input_features(
+    face_features: np.ndarray,
+    skin_features: np.ndarray
+) -> tuple:
+    """
+    추론 입력을 학습 데이터 분포에 맞게 스케일링
+
+    문제:
+    - 학습 데이터: 얼굴 너비 300-600 픽셀 (고해상도 이미지)
+    - 실제 추론: 얼굴 너비 70-150 픽셀 (다양한 해상도)
+    - 이 스케일 불일치로 인해 OOD(Out-of-Distribution) 예측 발생
+
+    해결책:
+    - 픽셀 기반 특징(forehead, cheekbone, jaw width)을 학습 데이터 평균 스케일로 변환
+    - 비율 기반 특징(face_ratio, forehead_ratio, jaw_ratio)은 스케일 불변이므로 그대로 유지
+
+    Args:
+        face_features: [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio]
+        skin_features: [ITA_value, hue_value]
+
+    Returns:
+        (scaled_face_features, scaled_skin_features)
+    """
+    face_scaled = face_features.copy()
+    skin_scaled = skin_features.copy()
+
+    # 얼굴 특징 스케일링
+    # - 인덱스 0, 4, 5: 비율 특징 (스케일 불변) - 스케일링 필요 없음
+    # - 인덱스 1, 2, 3: 픽셀 너비 특징 (스케일 의존) - 스케일링 필요
+
+    # 입력 이미지의 스케일 추정 (cheekbone_width 기준)
+    input_cheekbone = face_features[2]
+    train_cheekbone_mean = FACE_FEATURE_STATS[2]["mean"]  # 561.34
+
+    # 스케일 팩터 계산 (입력을 학습 데이터 스케일로 변환)
+    if input_cheekbone > 0:
+        scale_factor = train_cheekbone_mean / input_cheekbone
+    else:
+        scale_factor = 1.0
+
+    # 픽셀 기반 특징만 스케일링 (인덱스 1, 2, 3)
+    face_scaled[1] = face_features[1] * scale_factor  # forehead_width
+    face_scaled[2] = face_features[2] * scale_factor  # cheekbone_width
+    face_scaled[3] = face_features[3] * scale_factor  # jaw_width
+
+    # 스케일링된 값이 학습 데이터 범위 내에 있도록 클리핑
+    for idx in [1, 2, 3]:
+        min_val = FACE_FEATURE_STATS[idx]["min"]
+        max_val = FACE_FEATURE_STATS[idx]["max"]
+        face_scaled[idx] = np.clip(face_scaled[idx], min_val, max_val)
+
+    # 비율 특징도 학습 데이터 범위 내에 있도록 클리핑
+    for idx in [0, 4, 5]:
+        min_val = FACE_FEATURE_STATS[idx]["min"]
+        max_val = FACE_FEATURE_STATS[idx]["max"]
+        face_scaled[idx] = np.clip(face_scaled[idx], min_val, max_val)
+
+    # 피부 특징 클리핑 (이미 스케일 불변)
+    for idx in [0, 1]:
+        min_val = SKIN_FEATURE_STATS[idx]["min"]
+        max_val = SKIN_FEATURE_STATS[idx]["max"]
+        skin_scaled[idx] = np.clip(skin_scaled[idx], min_val, max_val)
+
+    return face_scaled, skin_scaled
 
 
 class AttentionLayer(nn.Module):
@@ -178,6 +276,126 @@ class RecommendationModel(nn.Module):
         return x.squeeze(-1)
 
 
+class NormalizedRecommendationModel(nn.Module):
+    """
+    정규화된 라벨 기반 추천 모델 v5
+
+    핵심 특징:
+    - 출력층에 Sigmoid 활성화 함수 사용 (0~1 출력 보장)
+    - 추론 시 역변환 필요 (0~1 → 10~95)
+
+    입력:
+    - face_features: [batch, 6] - MediaPipe 얼굴 측정값
+    - skin_features: [batch, 2] - MediaPipe 피부 측정값
+    - style_emb: [batch, 384] - 헤어스타일 임베딩
+    """
+
+    def __init__(
+        self,
+        face_feat_dim: int = 6,
+        skin_feat_dim: int = 2,
+        style_embed_dim: int = 384,
+        use_attention: bool = True,
+        dropout_rate: float = 0.3
+    ):
+        super().__init__()
+
+        self.face_feat_dim = face_feat_dim
+        self.skin_feat_dim = skin_feat_dim
+        self.style_embed_dim = style_embed_dim
+
+        # Input projection layers
+        self.face_projection = nn.Sequential(
+            nn.Linear(face_feat_dim, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        self.skin_projection = nn.Sequential(
+            nn.Linear(skin_feat_dim, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        self.total_dim = 64 + 32 + style_embed_dim  # 480
+
+        self.use_attention = use_attention
+        if use_attention:
+            self.attention = AttentionLayer(
+                embed_dim=self.total_dim,
+                num_heads=8,
+                dropout=0.1
+            )
+
+        self.fc1 = nn.Linear(self.total_dim, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.dropout1 = nn.Dropout(dropout_rate)
+
+        self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.dropout2 = nn.Dropout(dropout_rate * 0.7)
+
+        self.residual_proj = nn.Linear(self.total_dim, 128)
+
+        self.fc3 = nn.Linear(128, 64)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.dropout3 = nn.Dropout(dropout_rate * 0.5)
+
+        self.fc4 = nn.Linear(64, 32)
+        self.fc_out = nn.Linear(32, 1)
+
+        # Sigmoid 활성화 함수 - 출력을 0~1로 제한
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(
+        self,
+        face_features: torch.Tensor,
+        skin_features: torch.Tensor,
+        style_emb: torch.Tensor
+    ) -> torch.Tensor:
+        """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
+        face_proj = self.face_projection(face_features)
+        skin_proj = self.skin_projection(skin_features)
+
+        x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
+
+        if self.use_attention:
+            x_att = x.unsqueeze(1)
+            x_att = self.attention(x_att)
+            x = x_att.squeeze(1)
+
+        residual = self.residual_proj(x)
+
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = torch.relu(x)
+        x = self.dropout1(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = torch.relu(x)
+        x = self.dropout2(x)
+
+        x = x + residual
+
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = torch.relu(x)
+        x = self.dropout3(x)
+
+        x = self.fc4(x)
+        x = torch.relu(x)
+
+        x = self.fc_out(x)
+
+        # Sigmoid로 0~1 출력 보장
+        x = self.sigmoid(x)
+
+        return x.squeeze(-1)
+
+
 class MLHairstyleRecommender:
     """ML 기반 헤어스타일 추천기"""
 
@@ -187,7 +405,7 @@ class MLHairstyleRecommender:
 
     def __init__(
         self,
-        model_path: str = "models/hairstyle_recommender_v4_no_leakage.pt",
+        model_path: str = "models/hairstyle_recommender_v5_normalized.pt",
         embeddings_path: str = "data_source/style_embeddings.npz",
         gender_metadata_path: str = "data_source/hairstyle_gender.json"
     ):
@@ -203,17 +421,31 @@ class MLHairstyleRecommender:
 
         # 1. 모델 로드
         logger.info(f"📂 ML 모델 로딩: {model_path}")
-        self.model = RecommendationModel()
 
         # 체크포인트 형식으로 저장된 경우 처리
         try:
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+
+            # 정규화 모델(v5) 여부 확인
+            if isinstance(checkpoint, dict) and 'config' in checkpoint:
+                config = checkpoint['config']
+                self.is_normalized_model = config.get('normalized', False)
+                logger.info(f"  - 정규화 모델 여부: {self.is_normalized_model}")
+            else:
+                self.is_normalized_model = False
+
+            # 모델 클래스 선택
+            if self.is_normalized_model:
+                self.model = NormalizedRecommendationModel()
+                logger.info("  - 사용 모델: NormalizedRecommendationModel (v5 - Sigmoid 출력)")
+            else:
+                self.model = RecommendationModel()
+                logger.info("  - 사용 모델: RecommendationModel (v4)")
+
             if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                # 체크포인트 형식
                 self.model.load_state_dict(checkpoint['model_state_dict'])
                 logger.info(f"✅ 체크포인트에서 모델 로드 완료 (epoch: {checkpoint.get('epoch', 'N/A')})")
             else:
-                # 일반 state_dict 형식
                 self.model.load_state_dict(checkpoint)
                 logger.info(f"✅ 모델 로드 완료")
         except Exception as e:
@@ -309,9 +541,36 @@ class MLHairstyleRecommender:
 
         return vec
 
+    # 스타일 카테고리 키워드 (같은 카테고리는 유사한 스타일로 간주)
+    # 주의: 더 구체적인 키워드가 먼저 와야 함
+    STYLE_CATEGORY_KEYWORDS = [
+        ["쉼표머리", "쉼표 머리", "comma"],  # 쉼표머리 계열 (먼저 체크)
+        ["히피머리", "히피", "hippie"],  # 히피 계열
+        ["가르마", "센터", "사이드"],  # 가르마 계열
+        ["시스루", "풀뱅"],  # 시스루/풀뱅 계열
+        ["레이어드", "레이어"],  # 레이어드 계열
+        ["숏컷", "숏헤어", "짧은", "short"],  # 숏컷 계열
+        ["롱 스타일", "롱헤어", "긴머리", "장발", "long"],  # 롱 계열
+        ["투블럭", "투블록", "언더컷"],  # 투블럭 계열
+        ["댄디", "포마드", "슬릭백"],  # 댄디 계열
+        ["보브", "단발", "bob"],  # 보브/단발 계열
+        ["머쉬룸", "버섯"],  # 머쉬룸 계열
+        ["펌", "웨이브", "컬", "perm"],  # 펌 계열
+        ["심플", "자연", "내추럴"],  # 심플/자연 계열
+    ]
+
+    def _get_style_category(self, style_name: str) -> int:
+        """스타일명에서 카테고리 추출 (0-based index, -1이면 카테고리 없음)"""
+        style_lower = style_name.lower()
+        for idx, keywords in enumerate(self.STYLE_CATEGORY_KEYWORDS):
+            for keyword in keywords:
+                if keyword in style_lower:
+                    return idx
+        return -1
+
     def _is_similar_style(self, style_a: str, style_b: str, threshold: float = 0.65) -> bool:
         """
-        두 스타일명의 유사도 계산 (0~1)
+        두 스타일명의 유사도 계산 (문자열 유사도 + 카테고리 기반)
 
         Args:
             style_a: 첫 번째 스타일명
@@ -321,12 +580,24 @@ class MLHairstyleRecommender:
         Returns:
             threshold 이상이면 True (유사한 스타일)
 
-        Examples:
-            - "가르마 스타일 (5:5 또는 6:4)" vs "가르마 스타일 (6:4 또는 7:3)" → 0.74 → True (유사함)
-            - "가르마 스타일" vs "가일 컷" → 0.25 → False (다름)
+        로직:
+            1. 문자열 유사도가 threshold 이상이면 유사함
+            2. 같은 카테고리 키워드를 포함하면 유사함 (예: "센터 가르마" vs "가르마 스타일")
         """
+        # 1. 문자열 유사도 체크
         ratio = SequenceMatcher(None, style_a, style_b).ratio()
-        return ratio >= threshold
+        if ratio >= threshold:
+            return True
+
+        # 2. 카테고리 기반 체크 (같은 카테고리면 유사함)
+        cat_a = self._get_style_category(style_a)
+        cat_b = self._get_style_category(style_b)
+
+        if cat_a >= 0 and cat_a == cat_b:
+            logger.debug(f"[DIVERSITY] 같은 카테고리: '{style_a}' vs '{style_b}' (category={cat_a})")
+            return True
+
+        return False
 
     def _get_style_embedding(self, style_name: str) -> np.ndarray:
         """
@@ -399,8 +670,15 @@ class MLHairstyleRecommender:
             score_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             score = score_tensor.cpu().item()
 
-        # 0-100 범위로 클리핑
-        score = max(0.0, min(100.0, score))
+        # 정규화 모델(v5)인 경우 역변환 적용 (0~1 → 10~95)
+        if self.is_normalized_model:
+            score = denormalize_score(score)
+
+        # 10-95 범위로 클리핑 (정규화 모델) 또는 0-100 (기존 모델)
+        if self.is_normalized_model:
+            score = max(LABEL_MIN, min(LABEL_MAX, score))
+        else:
+            score = max(0.0, min(100.0, score))
 
         return round(score, 2)
 
@@ -430,8 +708,8 @@ class MLHairstyleRecommender:
         # 실제 측정값 우선 사용, 없으면 라벨 기반 인코딩 (하위 호환성)
         if face_features is not None and skin_features is not None:
             logger.info(f"[ML DEBUG] ML 추천 시작 (실제 측정값 사용) - Top-{k}")
-            logger.info(f"[ML DEBUG] Face features: {face_features}")
-            logger.info(f"[ML DEBUG] Skin features: {skin_features}")
+            logger.info(f"[ML DEBUG] Face features (원본): {face_features}")
+            logger.info(f"[ML DEBUG] Skin features (원본): {skin_features}")
 
             # NumPy 배열로 변환
             face_vec = np.array(face_features, dtype=np.float32)
@@ -442,6 +720,11 @@ class MLHairstyleRecommender:
                 raise ValueError(f"face_features는 6차원이어야 합니다. 현재: {face_vec.shape[0]}")
             if tone_vec.shape[0] != 2:
                 raise ValueError(f"skin_features는 2차원이어야 합니다. 현재: {tone_vec.shape[0]}")
+
+            # 입력 스케일링 적용 (학습 데이터 분포에 맞게 변환)
+            face_vec, tone_vec = scale_input_features(face_vec, tone_vec)
+            logger.info(f"[ML DEBUG] Face features (스케일링 후): {face_vec.tolist()}")
+            logger.info(f"[ML DEBUG] Skin features (스케일링 후): {tone_vec.tolist()}")
         else:
             # 하위 호환성: 라벨 기반 인코딩
             logger.warning(f"[ML DEPRECATED] 라벨 기반 인코딩 사용: {face_shape} + {skin_tone}")
@@ -487,18 +770,24 @@ class MLHairstyleRecommender:
                 scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
                 scores = scores_tensor.cpu().numpy().flatten()
 
+                # 정규화 모델(v5)인 경우 역변환 적용 (0~1 → 10~95)
+                if self.is_normalized_model:
+                    scores = scores * LABEL_RANGE + LABEL_MIN
+
                 # 첫 번째 배치에서만 점수 디버그
                 if i == 0:
                     logger.info(f"[ML DEBUG] First batch scores: {scores[:5].tolist()}")
                     logger.info(f"[ML DEBUG] Scores std: {scores.std():.6f}")
+                    if self.is_normalized_model:
+                        logger.info(f"[ML DEBUG] 정규화 모델 - 역변환 적용됨 (0~1 → {LABEL_MIN}~{LABEL_MAX})")
 
-            # 결과 저장 (원본 점수 그대로 저장)
+            # 결과 저장
             for j, score in enumerate(scores):
                 style_idx = i + j
                 all_scores.append({
-                    "hairstyle_id": style_idx,  # ✅ DB ID 추가
+                    "hairstyle_id": style_idx,  # DB ID 추가
                     "hairstyle": self.styles[style_idx],
-                    "score": float(score),  # 원본 점수 그대로 저장
+                    "score": float(score),  # 역변환된 점수 (10~95 범위)
                     "original_score": float(score)  # 피드백용 원본 점수 보존
                 })
 
@@ -507,11 +796,17 @@ class MLHairstyleRecommender:
 
         # 성별 필터링 (NEW)
         if gender and self.gender_metadata:
-            logger.info(f"[GENDER] 성별 필터링 시작 (gender={gender})")
+            logger.info(f"[GENDER] 성별 필터링 시작 (gender={gender}, metadata_count={len(self.gender_metadata)})")
             filtered_scores = []
+            debug_count = 0
             for item in all_scores:
                 style_name = item['hairstyle']
                 style_gender = self.gender_metadata.get(style_name, "unisex")
+
+                # 처음 5개 스타일은 디버깅용 로깅
+                if debug_count < 5:
+                    logger.debug(f"[GENDER DEBUG] {style_name}: {style_gender} (score={item['score']:.2f})")
+                    debug_count += 1
 
                 # 성별 매칭 로직:
                 # - neutral (애매한 경우): 모든 스타일 추천
@@ -530,7 +825,12 @@ class MLHairstyleRecommender:
             )
             all_scores = filtered_scores
         else:
-            logger.info("[GENDER] 성별 필터링 비활성화 (gender 미제공 또는 메타데이터 없음)")
+            if not gender:
+                logger.warning("[GENDER] 성별 필터링 비활성화 - gender 파라미터가 비어있음!")
+            elif not self.gender_metadata:
+                logger.warning("[GENDER] 성별 필터링 비활성화 - metadata가 로드되지 않음!")
+            else:
+                logger.info("[GENDER] 성별 필터링 비활성화")
 
         # 유사도 기반 다양성 필터링 (65% 이상 유사한 스타일 제외)
         top_k_recommendations = []
@@ -572,16 +872,22 @@ class MLHairstyleRecommender:
                 f"threshold를 낮추거나 데이터를 확인하세요."
             )
 
-        # Min-Max 정규화를 사용한 점수 스케일링
-        # Top-K 내에서 점수를 75~95점 범위로 정규화하여 차별화된 점수 제공
-        if len(top_k_recommendations) >= 2:
+        # 점수 스케일링 처리
+        # - v5 정규화 모델: 이미 10~95 범위이므로 원본 점수 그대로 사용
+        # - v4 기존 모델: Min-Max 정규화로 75~95 범위로 스케일링
+        if self.is_normalized_model:
+            # v5 정규화 모델: 원본 점수 그대로 사용 (이미 10~95 범위)
+            logger.info(f"[SCORE] v5 정규화 모델 - 원본 점수 사용")
+            for rec in top_k_recommendations:
+                rec['score'] = round(rec['original_score'], 2)
+        elif len(top_k_recommendations) >= 2:
+            # v4 기존 모델: Min-Max 정규화를 사용한 점수 스케일링
+            # Top-K 내에서 점수를 75~95점 범위로 정규화
             raw_scores = [rec['original_score'] for rec in top_k_recommendations]
             min_raw = min(raw_scores)
             max_raw = max(raw_scores)
 
-            # 점수 차이가 있는 경우에만 정규화
             if max_raw > min_raw:
-                # 목표 범위: 75 ~ 95점
                 target_min, target_max = 75.0, 95.0
 
                 logger.info(f"[SCORE NORM] Raw scores: {raw_scores}")
@@ -589,18 +895,15 @@ class MLHairstyleRecommender:
 
                 for rec in top_k_recommendations:
                     raw = rec['original_score']
-                    # Min-Max 정규화: (raw - min) / (max - min) * (target_max - target_min) + target_min
                     normalized = (raw - min_raw) / (max_raw - min_raw) * (target_max - target_min) + target_min
                     rec['score'] = round(normalized, 2)
 
                 logger.info(f"[SCORE NORM] Normalized scores: {[r['score'] for r in top_k_recommendations]}")
             else:
-                # 모든 점수가 동일한 경우 (드물지만) 중간값 사용
                 for i, rec in enumerate(top_k_recommendations):
-                    rec['score'] = round(95.0 - i * 3, 2)  # 95, 92, 89...
+                    rec['score'] = round(95.0 - i * 3, 2)
                 logger.info(f"[SCORE NORM] Same scores - using fallback: {[r['score'] for r in top_k_recommendations]}")
         elif len(top_k_recommendations) == 1:
-            # 1개만 있는 경우
             top_k_recommendations[0]['score'] = 90.0
             logger.info("[SCORE NORM] Single recommendation - set to 90.0")
 
@@ -676,9 +979,17 @@ class MLHairstyleRecommender:
             scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             scores = scores_tensor.cpu().numpy().flatten()
 
+        # 정규화 모델(v5)인 경우 역변환 적용 (0~1 → 10~95)
+        if self.is_normalized_model:
+            scores = scores * LABEL_RANGE + LABEL_MIN
+
         # 4. 결과 저장
         for style, score in zip(valid_styles, scores):
-            results[style] = round(max(0.0, min(100.0, float(score))), 2)
+            if self.is_normalized_model:
+                score_clipped = max(LABEL_MIN, min(LABEL_MAX, float(score)))
+            else:
+                score_clipped = max(0.0, min(100.0, float(score)))
+            results[style] = round(score_clipped, 2)
 
         return results
 
