@@ -5,12 +5,12 @@ MediaPipe Face Mesh를 사용한 고정밀 얼굴 분석기
 - ITA + HSV 기반 피부톤 분석 (정확도 85%+)
 """
 
-import cv2
-import numpy as np
-import mediapipe as mp
+# import cv2  # Lazy loaded
+# import numpy as np  # Lazy loaded
+# import mediapipe as mp  # Lazy loaded
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import math
 
 # 로거 초기화
@@ -36,6 +36,10 @@ class MediaPipeFaceFeatures:
     face_features: list       # [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
     skin_features: list       # [ITA_value, hue_value] (2차원)
 
+    # 성별 추론 (NEW)
+    gender: str = "neutral"   # "male", "female", "neutral" (추론 실패 시)
+    gender_confidence: float = 0.0  # 성별 추론 신뢰도
+
     def to_dict(self) -> dict:
         """dict로 변환 (로깅 및 DB 저장용)"""
         return {
@@ -49,7 +53,9 @@ class MediaPipeFaceFeatures:
             "ITA_value": self.ITA_value,
             "hue_value": self.hue_value,
             "face_features": self.face_features,
-            "skin_features": self.skin_features
+            "skin_features": self.skin_features,
+            "gender": self.gender,
+            "gender_confidence": self.gender_confidence
         }
 
 
@@ -73,6 +79,7 @@ class MediaPipeFaceAnalyzer:
 
     def __init__(self):
         """MediaPipe Face Mesh 초기화"""
+        import mediapipe as mp
         self.face_mesh = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=True,
             max_num_faces=1,
@@ -93,6 +100,9 @@ class MediaPipeFaceAnalyzer:
             MediaPipeFaceFeatures 또는 None (실패 시)
         """
         try:
+            import cv2
+            import numpy as np
+            
             # 이미지 디코딩
             nparr = np.frombuffer(image_data, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -144,9 +154,13 @@ class MediaPipeFaceAnalyzer:
                 round(hue_value, 2)
             ]
 
+            # 성별 추론 (NEW)
+            gender, gender_confidence = self._infer_gender(measurements)
+
             logger.info(
                 f"✅ MediaPipe 분석 완료: {face_shape} (신뢰도: {final_confidence:.0%}), "
-                f"피부톤: {skin_tone} (ITA: {ita_value:.1f}°)"
+                f"피부톤: {skin_tone} (ITA: {ita_value:.1f}°), "
+                f"성별: {gender} (신뢰도: {gender_confidence:.0%})"
             )
             logger.debug(f"  Face features: {face_features}")
             logger.debug(f"  Skin features: {skin_features}")
@@ -162,7 +176,9 @@ class MediaPipeFaceAnalyzer:
                 ITA_value=round(ita_value, 2),
                 hue_value=round(hue_value, 2),
                 face_features=face_features,
-                skin_features=skin_features
+                skin_features=skin_features,
+                gender=gender,
+                gender_confidence=round(gender_confidence, 2)
             )
 
         except Exception as e:
@@ -225,44 +241,63 @@ class MediaPipeFaceAnalyzer:
             'jaw_ratio': jaw_ratio
         }
 
-        # ========== 얼굴형 분류 로직 ==========
+        # ========== 얼굴형 분류 로직 (개선됨 - 균형잡힌 분류) ==========
         confidence = 0.0
 
-        if face_ratio > 1.4:
-            # 긴형: 얼굴이 세로로 길다
+        # 1순위: 극단적인 비율 먼저 체크
+        if face_ratio > 1.45:
+            # 긴형: 얼굴이 세로로 매우 길다
             face_shape = "긴형"
-            # 비율이 높을수록 신뢰도 증가
-            confidence = min(0.7 + (face_ratio - 1.4) * 0.5, 0.95)
+            confidence = min(0.7 + (face_ratio - 1.45) * 0.5, 0.95)
 
-        elif face_ratio < 1.0:
+        elif face_ratio < 0.95:
             # 둥근형: 얼굴이 가로로 넓다
             face_shape = "둥근형"
-            confidence = min(0.7 + (1.0 - face_ratio) * 0.5, 0.95)
+            confidence = min(0.7 + (0.95 - face_ratio) * 0.5, 0.95)
 
-        elif forehead_ratio < 0.85 and jaw_ratio < 0.80:
-            # 하트형: 이마와 턱이 광대보다 좁다
+        # 2순위: 하트형 체크 (이마와 턱이 모두 좁음)
+        elif forehead_ratio < 0.82 and jaw_ratio < 0.75:
             face_shape = "하트형"
-            # 이마와 턱이 좁을수록 신뢰도 증가
             narrowness = (1.0 - forehead_ratio) + (1.0 - jaw_ratio)
             confidence = min(0.65 + narrowness * 0.3, 0.90)
 
-        elif abs(forehead_ratio - jaw_ratio) > 0.15:
-            # 각진형: 이마/턱 차이가 크거나, 턱이 각져있음
+        # 3순위: 각진형 체크 (턱이 넓거나 이마/턱 차이가 큼)
+        elif jaw_ratio > 0.95 or abs(forehead_ratio - jaw_ratio) > 0.18:
             face_shape = "각진형"
-            difference = abs(forehead_ratio - jaw_ratio)
-            confidence = min(0.65 + difference * 0.4, 0.88)
+            if jaw_ratio > 0.95:
+                confidence = min(0.70 + (jaw_ratio - 0.95) * 2, 0.90)
+            else:
+                difference = abs(forehead_ratio - jaw_ratio)
+                confidence = min(0.65 + difference * 0.4, 0.88)
 
-        elif 1.0 <= face_ratio <= 1.4 and abs(forehead_ratio - jaw_ratio) < 0.12:
-            # 계란형: 비율이 균형잡힘
+        # 4순위: 긴형 (약간 긴 경우도 포함)
+        elif face_ratio > 1.35:
+            face_shape = "긴형"
+            confidence = min(0.65 + (face_ratio - 1.35) * 0.4, 0.88)
+
+        # 5순위: 둥근형 (약간 둥근 경우도 포함)
+        elif face_ratio < 1.05:
+            face_shape = "둥근형"
+            confidence = min(0.65 + (1.05 - face_ratio) * 0.4, 0.88)
+
+        # 6순위: 계란형 (균형잡힌 경우만)
+        elif 1.05 <= face_ratio <= 1.35 and abs(forehead_ratio - jaw_ratio) < 0.15:
             face_shape = "계란형"
-            # 균형이 좋을수록 신뢰도 증가
             balance_score = 1.0 - abs(forehead_ratio - jaw_ratio) * 3
-            confidence = min(0.75 + balance_score * 0.15, 0.92)
+            confidence = min(0.70 + balance_score * 0.15, 0.90)
 
+        # 나머지: 가장 가까운 타입으로 분류
         else:
-            # 애매한 경우 - 계란형 기본값
-            face_shape = "계란형"
-            confidence = 0.60
+            # face_ratio 기준으로 가장 가까운 타입 선택
+            if face_ratio > 1.20:
+                face_shape = "긴형"
+                confidence = 0.55
+            elif face_ratio < 1.10:
+                face_shape = "둥근형"
+                confidence = 0.55
+            else:
+                face_shape = "각진형"  # 기본값을 각진형으로 변경
+                confidence = 0.55
 
         logger.debug(
             f"얼굴형 측정: ratio={face_ratio:.2f}, "
@@ -271,10 +306,9 @@ class MediaPipeFaceAnalyzer:
         )
 
         return face_shape, confidence, measurements
-
     def _analyze_skin_tone(
         self,
-        image: np.ndarray,
+        image: Any,
         landmarks,
         image_shape: Tuple[int, int]
     ) -> Tuple[str, float, float]:
@@ -303,6 +337,8 @@ class MediaPipeFaceAnalyzer:
             skin_points.append(get_point(idx))
 
         # 마스크 생성
+        import cv2
+        import numpy as np
         mask = np.zeros((h, w), dtype=np.uint8)
         skin_points_np = np.array(skin_points, dtype=np.int32)
         cv2.fillConvexPoly(mask, cv2.convexHull(skin_points_np), 255)
@@ -337,34 +373,65 @@ class MediaPipeFaceAnalyzer:
         hsv_pixels = hsv[mask > 0]
         hue_mean = np.mean(hsv_pixels[:, 0])  # 0~179
 
-        # ========== 피부톤 분류 ==========
+        # ========== 피부톤 분류 (재개선 - 4계절 균형) ==========
         # ITA 기준:
         # - ITA > 41°: 밝은 피부
         # - 28° < ITA ≤ 41°: 중간 피부
         # - ITA ≤ 28°: 어두운 피부
 
-        # Hue 기준:
-        # - Hue < 15: 웜톤 (노란기/주황기)
-        # - Hue ≥ 15: 쿨톤 (붉은기/분홍기)
+        # Hue 기준 (한국인 피부톤 균형 조정):
+        # - Hue < 10: 매우 강한 웜톤
+        # - 10 ≤ Hue < 16: 웜톤
+        # - 16 ≤ Hue < 20: 중립~약간 쿨
+        # - Hue ≥ 20: 쿨톤
 
-        if ita > 41:
+        # b값 (노란기/푸른기)도 고려
+        is_warm = b_mean > 5  # b > 5이면 노란기가 강함 (웜톤)
+        is_very_warm = b_mean > 10
+
+        if ita > 42:
+            # 매우 밝은 피부
+            if hue_mean < 10 and is_very_warm:
+                skin_tone = "봄웜"  # 매우 밝고 노란기 강함
+            elif hue_mean < 16:
+                if is_warm:
+                    skin_tone = "봄웜"  # 밝고 약간 노란기
+                else:
+                    skin_tone = "여름쿨"  # 밝고 중립
+            else:
+                skin_tone = "여름쿨"  # 밝고 쿨톤
+        elif ita > 32:
             # 밝은 피부
-            if hue_mean < 15:
-                skin_tone = "봄웜"  # 밝고 따뜻함
+            if hue_mean < 10 and is_very_warm:
+                skin_tone = "봄웜"  # 밝고 노란기 강함
+            elif hue_mean < 16:
+                if is_warm:
+                    skin_tone = "가을웜"  # 밝고~중간, 웜톤
+                else:
+                    skin_tone = "여름쿨"  # 밝고 중립~쿨
+            elif hue_mean < 20:
+                skin_tone = "여름쿨"  # 밝고 쿨톤
             else:
-                skin_tone = "여름쿨"  # 밝고 차가움
-        elif ita > 28:
+                skin_tone = "여름쿨"  # 밝고 쿨톤
+        elif ita > 22:
             # 중간 피부
-            if hue_mean < 15:
-                skin_tone = "가을웜"  # 중간이고 따뜻함
+            if hue_mean < 12 and is_warm:
+                skin_tone = "가을웜"  # 중간이고 웜톤
+            elif hue_mean < 18:
+                if is_warm:
+                    skin_tone = "가을웜"  # 중간이고 약간 웜
+                else:
+                    skin_tone = "여름쿨"  # 중간이고 중립~쿨
             else:
-                skin_tone = "여름쿨"  # 중간이고 차가움
+                skin_tone = "여름쿨"  # 중간이고 쿨톤
         else:
             # 어두운 피부
-            if hue_mean < 15:
-                skin_tone = "가을웜"  # 어둡고 따뜻함
+            if hue_mean < 14 and is_warm:
+                skin_tone = "가을웜"  # 어둡고 웜톤
+            elif hue_mean < 18:
+                skin_tone = "가을웜"  # 어둡고 중립~웜
             else:
-                skin_tone = "겨울쿨"  # 어둡고 차가움
+                skin_tone = "겨울쿨"  # 어둡고 쿨톤
 
         logger.debug(
             f"피부톤 분석: L={L_mean:.1f}, b={b_mean:.1f}, "
@@ -372,6 +439,90 @@ class MediaPipeFaceAnalyzer:
         )
 
         return skin_tone, ita, hue_mean
+
+    def _infer_gender(self, measurements: dict) -> Tuple[str, float]:
+        """
+        얼굴 측정값으로 성별 추론 (휴리스틱 기반)
+
+        Args:
+            measurements: 얼굴 측정값 dict
+
+        Returns:
+            (gender, confidence) - ("male" | "female" | "neutral", 0.0~1.0)
+
+        참고:
+        - 남성: 턱이 넓고 각진 얼굴, forehead_ratio가 높음
+        - 여성: 턱이 좁고 부드러운 얼굴, jaw_ratio가 낮음
+        - 이 방법은 100% 정확하지 않으므로 신뢰도를 함께 반환
+        """
+        jaw_ratio = measurements.get('jaw_ratio', 1.0)
+        forehead_ratio = measurements.get('forehead_ratio', 1.0)
+        face_ratio = measurements.get('face_ratio', 1.0)
+
+        # 점수 계산 (0~1 범위로 정규화)
+        # 남성 점수: 턱이 넓고, 이마가 넓고, 얼굴이 각진 경우 높음
+        male_score = 0.0
+        female_score = 0.0
+
+        # 턱 비율 (jaw_ratio)
+        # 남성: jaw_ratio > 0.90 (턱이 광대만큼 넓음)
+        # 여성: jaw_ratio < 0.85 (턱이 광대보다 좁음)
+        if jaw_ratio > 0.90:
+            male_score += 0.4
+        elif jaw_ratio < 0.85:
+            female_score += 0.4
+        else:
+            # 중간 범위 (0.85~0.90)
+            neutral_score = 0.3
+            male_score += neutral_score * (jaw_ratio - 0.85) / 0.05
+            female_score += neutral_score * (0.90 - jaw_ratio) / 0.05
+
+        # 이마 비율 (forehead_ratio)
+        # 남성: forehead_ratio > 0.95 (이마가 광대만큼 넓음)
+        # 여성: forehead_ratio < 0.90 (이마가 광대보다 좁음)
+        if forehead_ratio > 0.95:
+            male_score += 0.3
+        elif forehead_ratio < 0.90:
+            female_score += 0.3
+        else:
+            neutral_score = 0.2
+            male_score += neutral_score * (forehead_ratio - 0.90) / 0.05
+            female_score += neutral_score * (0.95 - forehead_ratio) / 0.05
+
+        # 얼굴 비율 (face_ratio)
+        # 남성: face_ratio가 중간 (1.0~1.3)
+        # 여성: face_ratio가 약간 높거나 낮음 (하트형/계란형이 많음)
+        if 1.0 <= face_ratio <= 1.3:
+            male_score += 0.2
+        else:
+            female_score += 0.2
+
+        # 정규화 (0~1 범위)
+        total = male_score + female_score
+        if total > 0:
+            male_score /= total
+            female_score /= total
+
+        # 결정
+        confidence_threshold = 0.55  # 55% 이상이면 확정
+
+        if male_score >= confidence_threshold:
+            gender = "male"
+            confidence = male_score
+        elif female_score >= confidence_threshold:
+            gender = "female"
+            confidence = female_score
+        else:
+            # 애매한 경우 neutral (남녀 공용 헤어스타일 추천)
+            gender = "neutral"
+            confidence = 0.5
+
+        logger.debug(
+            f"성별 추론: jaw_ratio={jaw_ratio:.2f}, forehead_ratio={forehead_ratio:.2f}, "
+            f"male_score={male_score:.2f}, female_score={female_score:.2f} → {gender} ({confidence:.0%})"
+        )
+
+        return gender, confidence
 
     def __del__(self):
         """리소스 정리"""

@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from services.face_detection_service import FaceDetectionService
     from services.gemini_analysis_service import GeminiAnalysisService
-    from services.hybrid_recommender import HybridRecommendationService
+    from services.hybrid_recommender import MLRecommendationService
     from services.feedback_collector import FeedbackCollector
     from services.retrain_queue import RetrainQueue
     from models.mediapipe_analyzer import MediaPipeFaceFeatures
@@ -342,19 +342,14 @@ async def analyze_face_hybrid(
     file: UploadFile = File(...),
     gender: str = Form("male"),  # 성별 파라미터 추가 (기본값: male)
     face_detector: 'FaceDetectionService' = Depends(get_face_detection_service),
-    hybrid_recommender: 'HybridRecommendationService' = Depends(get_hybrid_service)
+    ml_recommender: 'MLRecommendationService' = Depends(get_hybrid_service)
 ):
     """
-    Hybrid face analysis and hairstyle recommendation (Gemini + ML)
-
-    v26 변경사항:
-    - gender 파라미터 추가 (성별 기반 헤어스타일 필터링)
+    ML 기반 헤어스타일 추천 (v2)
 
     Flow:
-    1. Analyze face shape + skin tone with MediaPipe
-    2. Get 4 recommendations from Gemini API
-    3. Get Top-3 recommendations from ML model (gender 필터링 적용)
-    4. Return up to 7 recommendations after deduplication
+    1. MediaPipe로 얼굴형 + 피부톤 분석
+    2. ML 모델로 Top-3 헤어스타일 추천 (성별 필터링 적용)
     """
     start_time = time.time()
 
@@ -367,14 +362,21 @@ async def analyze_face_hybrid(
         if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
             raise InvalidFileFormatException()
 
-        logger.info(f"🎨 하이브리드 분석 시작: {file.filename}")
+        logger.info(f"🎨 하이브리드 분석 시작: {file.filename}, gender={gender}")
 
         # Read image
         image_data = await file.read()
         image_hash = calculate_image_hash(image_data)
 
+        # 디버깅: 이미지 해시 로깅 (다른 사진인데 같은 해시가 나오는지 확인)
+        logger.info(f"[IMAGE HASH] {image_hash[:16]}... (size: {len(image_data)} bytes)")
+
         # 1. Face detection using injected service
+        import time as time_module
+        face_detection_start = time_module.time()
         face_result = face_detector.detect_face(image_data)
+        face_detection_time = time_module.time() - face_detection_start
+        logger.info(f"[TIMING] Face detection: {face_detection_time:.2f}s")
 
         if not face_result["has_face"]:
             raise NoFaceDetectedException()
@@ -406,22 +408,38 @@ async def analyze_face_hybrid(
             logger.debug(f"  Face features (측정값): {face_features}")
             logger.debug(f"  Skin features (측정값): {skin_features}")
 
-        # 2. Hybrid recommendation using injected service
-        # Train-Inference Mismatch 해결: 실제 측정값 전달
-        # v26: gender 파라미터 추가
-        recommendation_result = hybrid_recommender.recommend(
+        # 2. ML recommendation using injected service
+        ml_start = time_module.time()
+        recommendation_result = ml_recommender.recommend(
             image_data=image_data,
             face_shape=face_shape,
             skin_tone=skin_tone,
             face_features=face_features,
             skin_features=skin_features,
-            gender=gender  # 성별 파라미터 전달
+            gender=gender
         )
+        ml_time = time_module.time() - ml_start
+        logger.info(f"[TIMING] ML recommendation: {ml_time:.2f}s")
 
-        # 3. Add Naver search URLs
-        for rec in recommendation_result.get("recommendations", []):
+        # 3. Add Naver search URLs (with gender prefix for better results)
+        logger.info(f"[SEARCH URL] Adding search URLs with gender={gender}")
+        for idx, rec in enumerate(recommendation_result.get("recommendations", [])):
             style_name = rec.get("style_name", "")
-            encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
+
+            # 성별 접두사 추가 (남성용/여성용 헤어스타일 구분)
+            if gender == "male":
+                search_query = f"남자 {style_name} 헤어스타일"
+            elif gender == "female":
+                search_query = f"여자 {style_name} 헤어스타일"
+            else:
+                # neutral이거나 성별 미제공 시 성별 없이 검색
+                search_query = f"{style_name} 헤어스타일"
+
+            # 첫 번째 추천 스타일의 검색어를 로깅
+            if idx == 0:
+                logger.info(f"[SEARCH URL DEBUG] First style: '{style_name}' -> query: '{search_query}'")
+
+            encoded_query = urllib.parse.quote(search_query)
             rec["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
 
         # 4. Save to database using Repository pattern
@@ -441,7 +459,7 @@ async def analyze_face_hybrid(
             image_hash=image_hash,
             analysis_result=analysis_result_for_db,
             processing_time=total_time,
-            detection_method="hybrid",
+            detection_method="ml",
             mp_features=mp_features
         )
 
@@ -455,25 +473,25 @@ async def analyze_face_hybrid(
                 "image_hash": image_hash[:16],
                 "face_shape": face_shape,
                 "skin_tone": skin_tone,
-                "method": "hybrid",
+                "method": "ml",
                 "warning": "feedback_disabled"
             })
 
-        logger.info(f"✅ 하이브리드 분석 완료 ({total_time}초)")
+        logger.info(f"✅ ML 분석 완료 ({total_time}초)")
 
         return {
             "success": True,
             "analysis_id": analysis_id,
             "data": recommendation_result,
             "processing_time": total_time,
-            "method": "hybrid",
+            "method": "ml",
             "mediapipe_features": {
                 "face_shape": face_shape,
                 "skin_tone": skin_tone,
                 "confidence": mp_features.confidence
             },
-            "model_used": "gemini-1.5-flash-latest + hairstyle_recommender.pt",
-            "feedback_enabled": analysis_id is not None  # ✅ NEW: Android can check this
+            "model_used": "hairstyle_recommender_v5_normalized.pt",
+            "feedback_enabled": analysis_id is not None
         }
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
@@ -488,7 +506,7 @@ async def analyze_face_hybrid(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ 하이브리드 분석 오류: {str(e)}")
+        logger.error(f"❌ ML 분석 오류: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(

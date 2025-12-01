@@ -19,9 +19,15 @@ RUN yum install -y \
 # Install CPU-only PyTorch first (separate layer to cache it)
 RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
 
+# Install sentencepiece from pre-built wheel first (avoids build issues)
+RUN pip install --no-cache-dir sentencepiece --prefer-binary
+
 # Copy requirements and install other Python dependencies
-COPY requirements.txt ${LAMBDA_TASK_ROOT}/
+COPY requirements-lambda.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
+
+# Install sentence-transformers separately (after sentencepiece is installed)
+RUN pip install --no-cache-dir sentence-transformers==2.2.2
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/

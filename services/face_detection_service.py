@@ -4,7 +4,7 @@ import io
 import json
 from typing import Dict, Any, Optional
 from PIL import Image
-import google.generativeai as genai
+# import google.generativeai as genai  # Lazy loaded
 
 from config.settings import settings
 from core.logging import logger, log_structured
@@ -43,6 +43,7 @@ class FaceDetectionService:
             image = Image.open(io.BytesIO(image_data))
             image.thumbnail((256, 256))
 
+            import google.generativeai as genai
             model = genai.GenerativeModel(settings.MODEL_NAME)
             prompt = """이미지에 사람 얼굴이 있나요?
 

@@ -47,7 +47,7 @@ set -u  # Exit on undefined variable
 # Default values
 FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-hairme-analyze}"
 AWS_REGION="${AWS_REGION:-ap-northeast-2}"
-MEMORY_SIZE=2048
+MEMORY_SIZE=1536
 TIMEOUT=30
 NO_BACKUP=false
 DRY_RUN=false
@@ -414,6 +414,7 @@ EOF
                 LOG_LEVEL=INFO,
                 MODEL_NAME=gemini-1.5-flash-latest
             }" \
+
             --region "$AWS_REGION"
 
         log_success "Lambda function created"

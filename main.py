@@ -22,11 +22,11 @@ IS_LAMBDA = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
 from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
 from api.endpoints.feedback import router as feedback_router
+from api.endpoints.synthesis import router as synthesis_router
 
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
 MediaPipeFaceAnalyzer = None
-create_hybrid_service = None
 get_feedback_collector = None
 get_retrain_queue = None
 
@@ -49,9 +49,7 @@ limiter = Limiter(key_func=get_remote_address)
 startup_status = {
     "mediapipe": False,
     "gemini": False,
-    "ml_model": False,
-    "sentence_transformer": False,
-    "hybrid_service": False,
+    "ml_service": False,
     "feedback_collector": False,
     "retrain_queue": False
 }
@@ -232,6 +230,7 @@ app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
 # app.include_router(analyze_improved_router, prefix="/api", tags=["analysis_improved"])  # Disabled: requires hybrid_recommender_improved
 app.include_router(feedback_router, prefix="/api", tags=["feedback"])
+app.include_router(synthesis_router, prefix="/api/v2", tags=["synthesis"])
 
 
 # ========== Startup Event ==========
@@ -314,8 +313,7 @@ async def health_check(deep: bool = False):
     # Basic startup status
     required_services_ok = all([
         startup_status["mediapipe"],
-        startup_status["gemini"],
-        startup_status["hybrid_service"]
+        startup_status["ml_service"]
     ])
 
     base_status = {
@@ -325,12 +323,10 @@ async def health_check(deep: bool = False):
         "startup": {
             "required_services": {
                 "mediapipe": startup_status["mediapipe"],
-                "gemini": startup_status["gemini"],
-                "hybrid_service": startup_status["hybrid_service"]
+                "ml_service": startup_status["ml_service"]
             },
             "optional_services": {
-                "ml_model": startup_status["ml_model"],
-                "sentence_transformer": startup_status["sentence_transformer"],
+                "gemini": startup_status["gemini"],
                 "feedback_collector": startup_status["feedback_collector"],
                 "retrain_queue": startup_status["retrain_queue"]
             }
