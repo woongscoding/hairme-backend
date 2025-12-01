@@ -1,24 +1,15 @@
 """
-하이브리드 헤어스타일 추천 서비스
+ML 기반 헤어스타일 추천 서비스
 
-Gemini API + ML 모델을 결합하여 최적의 추천 제공
-
-Circuit Breaker 패턴 적용:
-- Gemini API 호출에 Circuit Breaker 적용 (5회 연속 실패 시 60초간 차단)
-- Circuit OPEN 시 MediaPipe 데이터만 사용한 fallback 제공
+MediaPipe 얼굴 분석 + ML 모델을 사용한 추천 제공
 
 Author: HairMe ML Team
 Date: 2025-11-08
-Version: 1.1.0
+Version: 2.0.0 (ML-only mode)
 """
 
 import logging
-import time
-import json
 from typing import List, Dict, Optional, Any
-import google.generativeai as genai
-from PIL import Image
-import io
 import sys
 from pathlib import Path
 
@@ -26,47 +17,27 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Lazy imports to avoid Lambda cold start issues
-# from models.ml_recommender import get_ml_recommender  # Moved to __init__
-from services.circuit_breaker import gemini_breaker, with_circuit_breaker
 from utils.style_preprocessor import normalize_style_name
-from core.monitoring import (
-    add_breadcrumb,
-    set_context,
-    start_span,
-    track_gemini_api_call,
-    capture_exception
-)
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-class HybridRecommendationService:
-    """Gemini + ML 하이브리드 추천 서비스"""
+class MLRecommendationService:
+    """ML 기반 헤어스타일 추천 서비스"""
 
-    def __init__(self, gemini_api_key: str):
-        """
-        초기화
-
-        Args:
-            gemini_api_key: Gemini API 키
-        """
-        # Gemini 설정
-        genai.configure(api_key=gemini_api_key)
-        self.gemini_model = genai.GenerativeModel(settings.MODEL_NAME)
-        logger.info(f"✅ Gemini 모델 초기화 완료: {settings.MODEL_NAME}")
-
-        # ML 추천기는 싱글톤으로 로드 (Lazy import)
+    def __init__(self):
+        """초기화"""
+        # ML 추천기 로드 (Lazy import)
         try:
             from models.ml_recommender import get_ml_recommender
             self.ml_recommender = get_ml_recommender()
             self.ml_available = True
             logger.info("✅ ML 추천기 로드 성공")
         except Exception as e:
-            logger.warning(f"⚠️ ML 추천기 로드 실패 (Gemini-only mode): {str(e)}")
+            logger.error(f"❌ ML 추천기 로드 실패: {str(e)}")
             self.ml_recommender = None
             self.ml_available = False
+            raise
 
         # 추천 이유 생성기 로드 (Lazy import)
         try:
@@ -77,277 +48,28 @@ class HybridRecommendationService:
             logger.warning(f"⚠️ 추천 이유 생성기 로드 실패: {str(e)}")
             self.reason_generator = None
 
-    def _create_gemini_prompt(
+    def _build_recommendations(
         self,
-        face_shape: str,
-        skin_tone: str
-    ) -> str:
-        """
-        Gemini API용 프롬프트 생성
-
-        Args:
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-
-        Returns:
-            프롬프트 문자열
-        """
-        prompt = f"""이 사람의 얼굴을 분석하고 헤어스타일을 추천해주세요.
-
-**MediaPipe 분석 결과:**
-- 얼굴형: {face_shape}
-- 피부톤: {skin_tone}
-
-다음 형식의 JSON으로만 응답:
-{{
-  "analysis": {{
-    "face_shape": "{face_shape}",
-    "personal_color": "{skin_tone}",
-    "features": "이목구비 특징 (30자 이내)"
-  }},
-  "recommendations": [
-    {{"style_name": "스타일명 (15자 이내)", "reason": "추천 이유 (30자 이내)"}},
-    {{"style_name": "스타일명 (15자 이내)", "reason": "추천 이유 (30자 이내)"}},
-    {{"style_name": "스타일명 (15자 이내)", "reason": "추천 이유 (30자 이내)"}},
-    {{"style_name": "스타일명 (15자 이내)", "reason": "추천 이유 (30자 이내)"}}
-  ]
-}}
-
-중요:
-- 4개의 헤어스타일을 추천하세요
-- 한국에서 실제로 사용하는 자연스러운 표현 사용
-- 얼굴형과 피부톤에 가장 잘 어울리는 스타일 추천"""
-
-        return prompt
-
-    def _gemini_fallback(self, image_data: bytes, face_shape: str, skin_tone: str) -> Dict[str, Any]:
-        """
-        Gemini API 장애 시 fallback
-
-        Circuit Breaker가 OPEN 상태일 때 MediaPipe 데이터만 사용한 기본 응답 반환
-        (ML 추천은 recommend() 메서드에서 별도로 처리됨)
-
-        Args:
-            image_data: 이미지 바이트 (사용하지 않음)
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-
-        Returns:
-            MediaPipe 데이터만 포함한 기본 응답 (빈 recommendations는 나중에 ML로 채워짐)
-        """
-        logger.warning(
-            f"[FALLBACK] Gemini API 사용 불가 (Circuit Breaker OPEN). "
-            f"ML 추천으로 대체합니다: 얼굴형={face_shape}, 피부톤={skin_tone}"
-        )
-
-        return {
-            "analysis": {
-                "face_shape": face_shape,
-                "personal_color": skin_tone,
-                "features": "MediaPipe 기반 분석 (Gemini API 일시 중단, ML 모델로 추천 제공)"
-            },
-            "recommendations": []  # 빈 배열 (ML 추천이 나중에 채워짐)
-        }
-
-    @with_circuit_breaker(gemini_breaker, fallback=lambda self, *args, **kwargs: self._gemini_fallback(*args, **kwargs))
-    def _call_gemini(
-        self,
-        image_data: bytes,
-        face_shape: str,
-        skin_tone: str
-    ) -> Dict[str, Any]:
-        """
-        Gemini API 호출
-
-        Args:
-            image_data: 이미지 바이트
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-
-        Returns:
-            Gemini 분석 결과
-        """
-        # Add Sentry context
-        set_context("gemini_request", {
-            "face_shape": face_shape,
-            "skin_tone": skin_tone,
-            "image_size_kb": len(image_data) / 1024
-        })
-
-        add_breadcrumb(
-            "Starting Gemini API call",
-            category="ai",
-            level="info",
-            data={"face_shape": face_shape, "skin_tone": skin_tone}
-        )
-
-        gemini_start = time.time()
-        success = False
-
-        try:
-            # 이미지 로드
-            with start_span("image.load", "Load image from bytes"):
-                image = Image.open(io.BytesIO(image_data))
-
-            # 프롬프트 생성
-            with start_span("ai.prompt", "Generate Gemini prompt"):
-                prompt = self._create_gemini_prompt(face_shape, skin_tone)
-
-            # API 호출
-            with start_span("ai.inference", "Gemini API call"):
-                response = self.gemini_model.generate_content([prompt, image])
-
-            success = True
-
-            # JSON 파싱
-            import json
-            raw_text = response.text.strip()
-
-            # 마크다운 코드 블록 제거
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            if raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-
-            result = json.loads(raw_text.strip())
-
-            logger.info(f"✅ Gemini 응답: {len(result.get('recommendations', []))}개 추천")
-
-            # Track performance
-            latency_ms = (time.time() - gemini_start) * 1000
-            track_gemini_api_call(
-                latency_ms=latency_ms,
-                success=True,
-                face_shape=face_shape,
-                skin_tone=skin_tone,
-                recommendations_count=len(result.get('recommendations', []))
-            )
-
-            return result
-
-        except json.JSONDecodeError as e:
-            latency_ms = (time.time() - gemini_start) * 1000
-            track_gemini_api_call(latency_ms=latency_ms, success=False, error="json_decode_error")
-
-            logger.error(
-                f"❌ Gemini 응답 파싱 실패: {str(e)}\n"
-                f"응답 내용: {response.text[:200] if 'response' in locals() else 'N/A'}"
-            )
-            from core.exceptions import GeminiInvalidResponseException
-            exc = GeminiInvalidResponseException(f"JSON 파싱 실패: {str(e)}")
-            capture_exception(exc, tags={"component": "gemini_api", "error_type": "json_parse"})
-            raise exc
-
-        except ImportError as e:
-            logger.error(f"❌ 필수 라이브러리 import 실패: {str(e)}")
-            raise
-
-        # Catch specific Google API errors
-        except Exception as e:
-            error_type = type(e).__name__
-            error_msg = str(e).lower()
-
-            # Check for rate limiting
-            if 'quota' in error_msg or 'rate' in error_msg or 'limit' in error_msg:
-                logger.error(f"❌ Gemini API rate limit: {str(e)}")
-                from core.exceptions import GeminiRateLimitException
-                raise GeminiRateLimitException(str(e))
-
-            # Check for authentication errors
-            if 'auth' in error_msg or 'permission' in error_msg or 'api key' in error_msg:
-                logger.error(f"❌ Gemini API 인증 실패: {str(e)}")
-                from core.exceptions import GeminiAuthenticationException
-                raise GeminiAuthenticationException(str(e))
-
-            # Check for network/connection errors
-            if 'connection' in error_msg or 'timeout' in error_msg or 'network' in error_msg:
-                logger.error(f"❌ Gemini API 연결 실패: {str(e)}")
-                from core.exceptions import GeminiAPIException
-                raise GeminiAPIException(f"연결 실패: {str(e)}")
-
-            # Generic Gemini API error
-            logger.error(
-                f"❌ Gemini API 오류 ({error_type}): {str(e)}\n"
-                f"얼굴형={face_shape}, 피부톤={skin_tone}"
-            )
-            from core.exceptions import GeminiAPIException
-            raise GeminiAPIException(f"{error_type}: {str(e)}")
-
-    def _merge_recommendations(
-        self,
-        gemini_recommendations: List[Dict[str, Any]],
         ml_recommendations: List[Dict[str, Any]],
         face_shape: str,
         skin_tone: str
     ) -> List[Dict[str, Any]]:
         """
-        Gemini와 ML 추천 결과 병합 (중복 제거)
+        ML 추천 결과를 응답 형식으로 변환
 
         Args:
-            gemini_recommendations: Gemini 추천 리스트
             ml_recommendations: ML 추천 리스트
             face_shape: 얼굴형
             skin_tone: 피부톤
 
         Returns:
-            병합된 추천 리스트 (최대 7개)
+            추천 리스트
         """
-        merged = []
+        result = []
         seen_styles = set()
 
-        # 1. Gemini 추천 추가 (최대 4개)
-        for rec in gemini_recommendations:
-            style_name = rec.get("style_name", "").strip()
-
-            if not style_name:
-                continue
-
-            # 띄어쓰기 정규화 적용 (중복 검사용)
-            normalized_name = normalize_style_name(style_name)
-
-            if normalized_name in seen_styles:
-                continue
-
-            # hairstyle_id 찾기 (정규화된 이름으로)
-            hairstyle_id = None
-            if self.ml_available and self.ml_recommender:
-                hairstyle_id = self.ml_recommender.style_to_idx.get(normalized_name)
-
-            # ML 점수 추가 (정규화된 이름 사용)
-            ml_score = 0.0
-            if self.ml_available and self.ml_recommender:
-                try:
-                    ml_score = self.ml_recommender.predict_score(
-                        face_shape, skin_tone, style_name
-                    )
-                except (KeyError, ValueError) as e:
-                    # 스타일이 모델에 없거나 잘못된 입력값
-                    logger.warning(f"⚠️ ML 점수 예측 실패 ({style_name}): {type(e).__name__}: {str(e)}")
-                    ml_score = 0.0
-                except Exception as e:
-                    # 예상치 못한 에러
-                    logger.error(f"❌ ML 점수 예측 중 예상치 못한 오류 ({style_name}): {type(e).__name__}: {str(e)}")
-                    ml_score = 0.0
-
-            merged.append({
-                "hairstyle_id": hairstyle_id,  # ✅ DB ID 추가
-                "style_name": style_name,
-                "reason": rec.get("reason", ""),
-                "source": "gemini",
-                "score": round(ml_score / 100.0, 2),  # ✅ 0-1 범위로 변환 (안드로이드 호환)
-                "rank": len(merged) + 1
-            })
-
-            seen_styles.add(normalized_name)
-
-        # 2. ML 추천 추가 (중복 제외, 최대 3개)
         for rec in ml_recommendations:
-            if len(merged) >= 7:  # 최대 7개
-                break
-
-            hairstyle_id = rec.get("hairstyle_id")  # ✅ ML에서 ID 가져오기
+            hairstyle_id = rec.get("hairstyle_id")
             style_name = rec.get("hairstyle", "").strip()
             ml_score = rec.get("score", 0.0)
 
@@ -372,23 +94,20 @@ class HybridRecommendationService:
             else:
                 reason = f"ML 모델 추천 (점수: {ml_score:.1f})"
 
-            merged.append({
-                "hairstyle_id": hairstyle_id,  # ✅ DB ID 추가
+            result.append({
+                "hairstyle_id": hairstyle_id,
                 "style_name": style_name,
                 "reason": reason,
                 "source": "ml",
-                "score": round(ml_score / 100.0, 2),  # ✅ 0-1 범위로 변환 (안드로이드 호환)
-                "rank": len(merged) + 1
+                "score": round(ml_score / 100.0, 2),  # 0-1 범위로 변환 (안드로이드 호환)
+                "rank": len(result) + 1
             })
 
             seen_styles.add(normalized_name)
 
-        logger.info(
-            f"✅ 추천 병합 완료: Gemini {len(gemini_recommendations)}개 + "
-            f"ML {len(ml_recommendations)}개 → 최종 {len(merged)}개"
-        )
+        logger.info(f"✅ ML 추천 결과: {len(result)}개")
 
-        return merged
+        return result
 
     def recommend(
         self,
@@ -400,43 +119,29 @@ class HybridRecommendationService:
         gender: str = None
     ) -> Dict[str, Any]:
         """
-        하이브리드 추천 실행 (성별 필터링 적용)
+        ML 기반 헤어스타일 추천
 
         Args:
-            image_data: 이미지 바이트
-            face_shape: 얼굴형 - DEPRECATED, 하위 호환성을 위해 유지
-            skin_tone: 피부톤 - DEPRECATED, 하위 호환성을 위해 유지
+            image_data: 이미지 바이트 (현재 사용 안함, 호환성 유지)
+            face_shape: 얼굴형
+            skin_tone: 피부톤
             face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
             skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
-            gender: 성별 ("male", "female", "neutral") - MediaPipe로 추론된 값
+            gender: 성별 ("male", "female", "neutral")
 
         Returns:
             추천 결과 딕셔너리
         """
         if face_features is not None and skin_features is not None:
-            logger.info(f"🎨 하이브리드 추천 시작 (실제 측정값 사용): {face_shape} + {skin_tone}")
+            logger.info(f"🎨 ML 추천 시작 (실제 측정값 사용): {face_shape} + {skin_tone}")
         else:
-            logger.info(f"🎨 하이브리드 추천 시작 (라벨 기반): {face_shape} + {skin_tone}")
+            logger.info(f"🎨 ML 추천 시작 (라벨 기반): {face_shape} + {skin_tone}")
             logger.warning("⚠️ 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다.")
 
-        # 1. Gemini 추천 (임시로 비활성화 - ML 모델만 사용)
-        # gemini_result = self._call_gemini(image_data, face_shape, skin_tone)
-        # Gemini 실패 시 빈 결과로 처리
-        gemini_result = {
-            "analysis": {
-                "face_shape": face_shape,
-                "personal_color": skin_tone,
-                "features": "ML 모델 기반 분석"
-            },
-            "recommendations": []
-        }
-        gemini_recommendations = []
-
-        # 2. ML 추천 (Top-3, 성별 필터링 적용)
+        # ML 추천 (Top-3, 성별 필터링 적용)
         ml_recommendations = []
         if self.ml_available and self.ml_recommender:
             try:
-                # 실제 측정값 우선 사용 + 성별 필터링
                 ml_recommendations = self.ml_recommender.recommend_top_k(
                     face_shape=face_shape,
                     skin_tone=skin_tone,
@@ -449,73 +154,70 @@ class HybridRecommendationService:
             except Exception as e:
                 logger.error(f"❌ ML 추천 실패: {str(e)}")
 
-        # 3. 병합 (중복 제거)
-        merged_recommendations = self._merge_recommendations(
-            gemini_recommendations,
+        # 추천 결과 변환
+        recommendations = self._build_recommendations(
             ml_recommendations,
             face_shape,
             skin_tone
         )
 
-        # 4. ML 점수 기준 상위 3개 필터링
-        # 점수(score) 내림차순 정렬 후 상위 3개만 선택
-        if len(merged_recommendations) > 3:
-            merged_recommendations.sort(key=lambda x: x.get('score', 0.0), reverse=True)
-            top_3 = merged_recommendations[:3]
-            selected_info = [f"{r['style_name']}({r['score']:.2f})" for r in top_3]
-            logger.info(
-                f"📊 점수 기준 필터링: {len(merged_recommendations)}개 → 상위 3개 선택\n"
-                f"   선택된 추천: {selected_info}"
-            )
-            merged_recommendations = top_3
-
         # rank 재조정 (1, 2, 3)
-        for idx, rec in enumerate(merged_recommendations, 1):
+        for idx, rec in enumerate(recommendations, 1):
             rec['rank'] = idx
 
-        # 5. 결과 구성
+        # 결과 구성
         result = {
-            "analysis": gemini_result.get("analysis", {
+            "analysis": {
                 "face_shape": face_shape,
                 "personal_color": skin_tone,
-                "features": "자동 분석"
-            }),
-            "recommendations": merged_recommendations,
+                "features": "ML 모델 기반 분석"
+            },
+            "recommendations": recommendations,
             "meta": {
-                "total_count": len(merged_recommendations),
-                "gemini_count": len([r for r in merged_recommendations if r["source"] == "gemini"]),
-                "ml_count": len([r for r in merged_recommendations if r["source"] == "ml"]),
-                "method": "hybrid"
+                "total_count": len(recommendations),
+                "ml_count": len(recommendations),
+                "method": "ml"
             }
         }
 
-        logger.info(f"✅ 하이브리드 추천 완료: 총 {len(merged_recommendations)}개 (Gemini: {result['meta']['gemini_count']}, ML: {result['meta']['ml_count']})")
+        logger.info(f"✅ ML 추천 완료: 총 {len(recommendations)}개")
 
         return result
 
 
+# ========== 하위 호환성을 위한 별칭 ==========
+HybridRecommendationService = MLRecommendationService
+
+
 # ========== 싱글톤 인스턴스 ==========
-_hybrid_service_instance = None
+_ml_service_instance = None
 
 
-def create_hybrid_service(gemini_api_key: str) -> HybridRecommendationService:
+def get_ml_recommendation_service() -> MLRecommendationService:
     """
-    하이브리드 서비스 인스턴스 생성 (팩토리 함수)
-
-    주의: 이 함수는 인스턴스를 생성하는 팩토리 함수입니다.
-    FastAPI 의존성 주입용으로는 core.dependencies.get_hybrid_service()를 사용하세요.
-
-    Args:
-        gemini_api_key: Gemini API 키
+    ML 추천 서비스 싱글톤 인스턴스 가져오기
 
     Returns:
-        HybridRecommendationService 인스턴스
+        MLRecommendationService 인스턴스
     """
-    global _hybrid_service_instance
+    global _ml_service_instance
 
-    if _hybrid_service_instance is None:
-        logger.info("🔧 하이브리드 추천 서비스 초기화 중...")
-        _hybrid_service_instance = HybridRecommendationService(gemini_api_key)
-        logger.info("✅ 하이브리드 추천 서비스 준비 완료")
+    if _ml_service_instance is None:
+        logger.info("🔧 ML 추천 서비스 초기화 중...")
+        _ml_service_instance = MLRecommendationService()
+        logger.info("✅ ML 추천 서비스 준비 완료")
 
-    return _hybrid_service_instance
+    return _ml_service_instance
+
+
+def create_hybrid_service(gemini_api_key: str = None) -> MLRecommendationService:
+    """
+    ML 추천 서비스 인스턴스 생성 (하위 호환성)
+
+    Args:
+        gemini_api_key: 사용 안함 (하위 호환성 유지)
+
+    Returns:
+        MLRecommendationService 인스턴스
+    """
+    return get_ml_recommendation_service()

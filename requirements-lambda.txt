@@ -1,0 +1,52 @@
+# Lambda deployment requirements
+# Based on working 11/27 deployment + hairstyle synthesis
+
+# FastAPI 및 웹 프레임워크
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# 데이터베이스
+sqlalchemy==2.0.25
+pymysql==1.1.0
+cryptography==41.0.7
+boto3==1.35.0
+
+# Redis 캐싱
+redis==5.0.1
+
+# Google Gemini AI
+google-generativeai==0.3.2
+google-genai==1.0.0
+
+# 이미지 처리
+pillow==10.2.0
+opencv-python-headless==4.9.0.80
+numpy==1.26.3
+mediapipe==0.10.9
+
+# ML/데이터 분석
+scikit-learn==1.3.0
+pandas==2.1.4
+matplotlib==3.8.2
+seaborn==0.13.1
+# sentence-transformers는 Dockerfile에서 별도 설치 (sentencepiece 빌드 이슈 회피)
+
+# MLOps
+pyyaml==6.0.1
+
+# Circuit Breaker
+pybreaker==1.0.1
+
+# Lambda Handler
+mangum==0.17.0
+
+# 기타
+pydantic==2.5.3
+pydantic-settings==2.1.0
+tqdm==4.67.1
+slowapi==0.1.9
+psutil==5.9.6
+
+# Monitoring & Observability
+sentry-sdk[fastapi]==1.40.0

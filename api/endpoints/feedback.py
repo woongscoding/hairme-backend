@@ -42,6 +42,14 @@ async def submit_feedback(request: Request, feedback_data: FeedbackRequest) -> F
     Raises:
         HTTPException: 404 if analysis not found, 500 for database errors
     """
+    # ========== Validate analysis_id is not None/null ==========
+    if feedback_data.analysis_id is None:
+        logger.error("❌ 피드백 요청 실패: analysis_id가 null입니다")
+        raise HTTPException(
+            status_code=400,
+            detail="분석 ID가 제공되지 않았습니다. 앱을 재시작하고 다시 분석을 실행해주세요."
+        )
+
     use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
 
     # ========== DynamoDB Backend ==========

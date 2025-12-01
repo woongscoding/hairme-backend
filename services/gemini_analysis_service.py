@@ -4,11 +4,11 @@ import io
 import json
 from typing import Dict, Any, Optional
 from PIL import Image
-import google.generativeai as genai
+# import google.generativeai as genai  # Lazy loaded
 from fastapi import HTTPException
 from pybreaker import CircuitBreakerError
 
-from config.settings import settings
+# from config.settings import settings  # Lazy loaded inside methods
 from core.logging import logger
 from models.mediapipe_analyzer import MediaPipeFaceFeatures
 from services.circuit_breaker import gemini_breaker, gemini_api_fallback
@@ -134,6 +134,8 @@ class GeminiAnalysisService:
                 logger.warning("⚠️ MediaPipe 특징 없음, 기본 프롬프트 사용")
 
             # Call Gemini API
+            import google.generativeai as genai
+            from config.settings import settings
             model = genai.GenerativeModel(settings.MODEL_NAME)
 
             # Use temperature=0 for consistent responses
@@ -143,8 +145,7 @@ class GeminiAnalysisService:
 
             response = model.generate_content(
                 [prompt, image],
-                generation_config=generation_config,
-                request_options={"timeout": 30}
+                generation_config=generation_config
             )
 
             # Parse JSON response

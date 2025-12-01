@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
     from services.face_detection_service import FaceDetectionService
     from services.gemini_analysis_service import GeminiAnalysisService
-    from services.hybrid_recommender import HybridRecommendationService
+    from services.hybrid_recommender import MLRecommendationService
     from services.feedback_collector import FeedbackCollector
     from services.retrain_queue import RetrainQueue
 from core.logging import logger
@@ -17,7 +17,7 @@ from core.logging import logger
 _mediapipe_analyzer: Optional['MediaPipeFaceAnalyzer'] = None
 _face_detection_service: Optional['FaceDetectionService'] = None
 _gemini_analysis_service: Optional['GeminiAnalysisService'] = None
-_hybrid_service: Optional['HybridRecommendationService'] = None
+_hybrid_service: Optional['MLRecommendationService'] = None
 _feedback_collector: Optional['FeedbackCollector'] = None
 _retrain_queue: Optional['RetrainQueue'] = None
 
@@ -25,7 +25,7 @@ _retrain_queue: Optional['RetrainQueue'] = None
 # ========== Initialization Functions (Called from main.py) ==========
 def init_services(
     mediapipe_analyzer: Optional['MediaPipeFaceAnalyzer'] = None,
-    hybrid_service: Optional['HybridRecommendationService'] = None,
+    hybrid_service: Optional['MLRecommendationService'] = None,
     feedback_collector: Optional['FeedbackCollector'] = None,
     retrain_queue: Optional['RetrainQueue'] = None
 ) -> None:
@@ -103,50 +103,28 @@ def get_gemini_analysis_service() -> 'GeminiAnalysisService':
 
 
 @lru_cache()
-def get_hybrid_service() -> 'HybridRecommendationService':
+def get_hybrid_service() -> 'MLRecommendationService':
     """
-    Get HybridRecommendationService instance (Lazy Initialization)
+    Get MLRecommendationService instance (Lazy Initialization)
     """
     global _hybrid_service
     if _hybrid_service is None:
-        logger.info("🐢 Lazy initializing HybridRecommendationService...")
+        logger.info("🐢 Lazy initializing MLRecommendationService...")
         try:
-            from services.hybrid_recommender import create_hybrid_service
-            from config.settings import settings
-            import os
+            from services.hybrid_recommender import get_ml_recommendation_service
 
-            # Lambda 환경에서는 ML 모델 로딩 스킵 (Gemini만 사용)
-            is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
-
-            if not is_lambda:
-                # 로컬 환경에서만 ML 모델 로드 시도
-                try:
-                    from core.ml_loader import load_ml_model, load_sentence_transformer
-                    ml_loaded = load_ml_model()
-                    st_loaded = load_sentence_transformer()
-                    logger.info(f"ML models loaded: ML={ml_loaded}, ST={st_loaded}")
-
-                    # Update startup status
-                    import main
-                    main.startup_status["ml_model"] = ml_loaded
-                    main.startup_status["sentence_transformer"] = st_loaded
-                except Exception as e:
-                    logger.warning(f"⚠️ ML models couldn't be loaded: {e}")
-            else:
-                logger.info("🔧 Lambda environment detected - using Gemini-only mode")
-
-            _hybrid_service = create_hybrid_service(settings.GEMINI_API_KEY)
+            _hybrid_service = get_ml_recommendation_service()
 
             # Update startup status
             import main
-            main.startup_status["hybrid_service"] = True
+            main.startup_status["ml_service"] = True
 
-            logger.info("✅ HybridRecommendationService initialized successfully")
+            logger.info("✅ MLRecommendationService initialized successfully")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize HybridRecommendationService: {e}")
+            logger.error(f"❌ Failed to initialize MLRecommendationService: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            raise RuntimeError(f"Failed to initialize hybrid service: {e}")
+            raise RuntimeError(f"Failed to initialize ML service: {e}")
     return _hybrid_service
 
 
