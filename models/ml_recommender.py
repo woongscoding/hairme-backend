@@ -130,7 +130,12 @@ def scale_input_features(
 
 
 class AttentionLayer(nn.Module):
-    """Multi-head self-attention layer"""
+    """
+    Multi-head self-attention layer for multi-token inputs
+
+    Note: 이 레이어는 여러 토큰 간의 상호작용을 학습합니다.
+    단일 토큰에 적용하면 identity 연산이 되므로, 최소 2개 이상의 토큰이 필요합니다.
+    """
 
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
@@ -144,11 +149,96 @@ class AttentionLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Self-attention
+        # Self-attention across multiple tokens
         attn_out, _ = self.attention(x, x, x)
         # Residual connection + layer norm
         x = self.norm(x + self.dropout(attn_out))
         return x
+
+
+class MultiTokenAttentionLayer(nn.Module):
+    """
+    3-Token Cross-Attention Layer
+
+    face_proj, skin_proj, style_emb를 3개의 개별 토큰으로 구성하여
+    토큰 간의 상호작용을 학습합니다.
+
+    구조:
+    - Token 1: face_proj (projected to token_dim)
+    - Token 2: skin_proj (projected to token_dim)
+    - Token 3: style_emb (projected to token_dim)
+    - Self-attention으로 3개 토큰 간 관계 학습
+    - 3개 토큰을 concat하여 출력
+    """
+
+    def __init__(
+        self,
+        face_dim: int = 64,
+        skin_dim: int = 32,
+        style_dim: int = 384,
+        token_dim: int = 128,  # 통일된 토큰 차원
+        num_heads: int = 4,
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        self.token_dim = token_dim
+
+        # 각 입력을 동일한 token_dim으로 projection
+        self.face_to_token = nn.Linear(face_dim, token_dim)
+        self.skin_to_token = nn.Linear(skin_dim, token_dim)
+        self.style_to_token = nn.Linear(style_dim, token_dim)
+
+        # Multi-head self-attention (3 tokens)
+        self.attention = nn.MultiheadAttention(
+            embed_dim=token_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.norm1 = nn.LayerNorm(token_dim)
+
+        # Feed-forward network
+        self.ffn = nn.Sequential(
+            nn.Linear(token_dim, token_dim * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(token_dim * 2, token_dim)
+        )
+        self.norm2 = nn.LayerNorm(token_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        face_proj: torch.Tensor,  # (batch, 64)
+        skin_proj: torch.Tensor,  # (batch, 32)
+        style_emb: torch.Tensor   # (batch, 384)
+    ) -> torch.Tensor:
+        """
+        Returns:
+            (batch, token_dim * 3) - 3개 토큰의 concat 결과
+        """
+        batch_size = face_proj.size(0)
+
+        # 각 특징을 token_dim으로 projection
+        face_token = self.face_to_token(face_proj)   # (batch, token_dim)
+        skin_token = self.skin_to_token(skin_proj)   # (batch, token_dim)
+        style_token = self.style_to_token(style_emb) # (batch, token_dim)
+
+        # 3개 토큰으로 시퀀스 구성: (batch, 3, token_dim)
+        tokens = torch.stack([face_token, skin_token, style_token], dim=1)
+
+        # Self-attention across 3 tokens
+        attn_out, _ = self.attention(tokens, tokens, tokens)
+        tokens = self.norm1(tokens + self.dropout(attn_out))
+
+        # Feed-forward network
+        ffn_out = self.ffn(tokens)
+        tokens = self.norm2(tokens + self.dropout(ffn_out))
+
+        # 3개 토큰을 flatten하여 반환: (batch, token_dim * 3)
+        output = tokens.reshape(batch_size, -1)
+
+        return output
 
 
 class RecommendationModel(nn.Module):
@@ -159,6 +249,11 @@ class RecommendationModel(nn.Module):
     - face_features: [batch, 6] - MediaPipe 얼굴 측정값
     - skin_features: [batch, 2] - MediaPipe 피부 측정값
     - style_emb: [batch, 384] - 헤어스타일 임베딩
+
+    Note:
+    - use_attention=True는 기존 체크포인트 호환성을 위해 유지
+    - 단일 토큰 attention은 실질적으로 LayerNorm+Dropout과 동일 (identity에 가까움)
+    - 새로운 학습 시에는 RecommendationModelV6 사용 권장
     """
 
     def __init__(
@@ -166,7 +261,7 @@ class RecommendationModel(nn.Module):
         face_feat_dim: int = 6,
         skin_feat_dim: int = 2,
         style_embed_dim: int = 384,
-        use_attention: bool = True,
+        use_attention: bool = True,  # 기존 체크포인트 호환성 유지
         dropout_rate: float = 0.3
     ):
         super().__init__()
@@ -193,7 +288,9 @@ class RecommendationModel(nn.Module):
         # Total dimension after projection
         self.total_dim = 64 + 32 + style_embed_dim  # 96 + 384 = 480
 
-        # Attention layer
+        # Attention layer (단일 토큰 - 실질적으로 LayerNorm+Dropout)
+        # WARNING: 이 구조는 의미 없는 attention 적용임
+        # 새로운 모델에서는 MultiTokenAttentionLayer 사용 권장
         self.use_attention = use_attention
         if use_attention:
             self.attention = AttentionLayer(
@@ -235,7 +332,7 @@ class RecommendationModel(nn.Module):
         # Concatenate all features
         x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
 
-        # Apply attention if enabled
+        # Apply attention if enabled (단일 토큰이므로 실질적으로 LayerNorm)
         if self.use_attention:
             x_att = x.unsqueeze(1)
             x_att = self.attention(x_att)
@@ -288,6 +385,11 @@ class NormalizedRecommendationModel(nn.Module):
     - face_features: [batch, 6] - MediaPipe 얼굴 측정값
     - skin_features: [batch, 2] - MediaPipe 피부 측정값
     - style_emb: [batch, 384] - 헤어스타일 임베딩
+
+    Note:
+    - use_attention=True는 기존 체크포인트 호환성을 위해 유지
+    - 단일 토큰 attention은 실질적으로 LayerNorm+Dropout과 동일 (identity에 가까움)
+    - 새로운 학습 시에는 RecommendationModelV6 사용 권장
     """
 
     def __init__(
@@ -295,7 +397,7 @@ class NormalizedRecommendationModel(nn.Module):
         face_feat_dim: int = 6,
         skin_feat_dim: int = 2,
         style_embed_dim: int = 384,
-        use_attention: bool = True,
+        use_attention: bool = True,  # 기존 체크포인트 호환성 유지
         dropout_rate: float = 0.3
     ):
         super().__init__()
@@ -321,6 +423,9 @@ class NormalizedRecommendationModel(nn.Module):
 
         self.total_dim = 64 + 32 + style_embed_dim  # 480
 
+        # Attention layer (단일 토큰 - 실질적으로 LayerNorm+Dropout)
+        # WARNING: 이 구조는 의미 없는 attention 적용임
+        # 새로운 모델에서는 MultiTokenAttentionLayer 사용 권장
         self.use_attention = use_attention
         if use_attention:
             self.attention = AttentionLayer(
@@ -361,6 +466,7 @@ class NormalizedRecommendationModel(nn.Module):
 
         x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
 
+        # Apply attention if enabled (단일 토큰이므로 실질적으로 LayerNorm)
         if self.use_attention:
             x_att = x.unsqueeze(1)
             x_att = self.attention(x_att)
@@ -396,6 +502,140 @@ class NormalizedRecommendationModel(nn.Module):
         return x.squeeze(-1)
 
 
+class RecommendationModelV6(nn.Module):
+    """
+    Multi-Token Attention 기반 추천 모델 v6
+
+    v4/v5의 문제점 해결:
+    - 기존: 단일 토큰(480차원)에 self-attention → 사실상 identity
+    - 개선: 3개 토큰(face, skin, style) 간 cross-attention → 의미 있는 상호작용 학습
+
+    구조:
+    1. Input Projection: face(6→64), skin(2→32)
+    2. Multi-Token Attention: 3개 토큰을 128차원으로 통일 후 attention
+    3. Feature Fusion: attention 출력(384) → MLP → score
+
+    입력:
+    - face_features: [batch, 6] - MediaPipe 얼굴 측정값
+    - skin_features: [batch, 2] - MediaPipe 피부 측정값
+    - style_emb: [batch, 384] - 헤어스타일 임베딩
+
+    출력:
+    - normalized score: 0~1 (Sigmoid)
+    """
+
+    def __init__(
+        self,
+        face_feat_dim: int = 6,
+        skin_feat_dim: int = 2,
+        style_embed_dim: int = 384,
+        token_dim: int = 128,
+        num_heads: int = 4,
+        dropout_rate: float = 0.3
+    ):
+        super().__init__()
+
+        self.face_feat_dim = face_feat_dim
+        self.skin_feat_dim = skin_feat_dim
+        self.style_embed_dim = style_embed_dim
+
+        # Input projection layers (attention 이전)
+        self.face_projection = nn.Sequential(
+            nn.Linear(face_feat_dim, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        self.skin_projection = nn.Sequential(
+            nn.Linear(skin_feat_dim, 32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate * 0.5)
+        )
+
+        # Multi-Token Attention Layer (3개 토큰 간 상호작용)
+        self.multi_token_attention = MultiTokenAttentionLayer(
+            face_dim=64,
+            skin_dim=32,
+            style_dim=style_embed_dim,
+            token_dim=token_dim,
+            num_heads=num_heads,
+            dropout=dropout_rate * 0.3
+        )
+
+        # Attention 출력 차원: token_dim * 3 = 384
+        attention_out_dim = token_dim * 3
+
+        # Feature fusion network
+        self.fc1 = nn.Linear(attention_out_dim, 256)
+        self.bn1 = nn.BatchNorm1d(256)
+        self.dropout1 = nn.Dropout(dropout_rate)
+
+        self.fc2 = nn.Linear(256, 128)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.dropout2 = nn.Dropout(dropout_rate * 0.7)
+
+        # Residual connection
+        self.residual_proj = nn.Linear(attention_out_dim, 128)
+
+        self.fc3 = nn.Linear(128, 64)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.dropout3 = nn.Dropout(dropout_rate * 0.5)
+
+        self.fc4 = nn.Linear(64, 32)
+        self.fc_out = nn.Linear(32, 1)
+
+        # Sigmoid 활성화 함수 - 출력을 0~1로 제한
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(
+        self,
+        face_features: torch.Tensor,
+        skin_features: torch.Tensor,
+        style_emb: torch.Tensor
+    ) -> torch.Tensor:
+        """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
+        # 1. Input projection
+        face_proj = self.face_projection(face_features)  # (batch, 64)
+        skin_proj = self.skin_projection(skin_features)  # (batch, 32)
+
+        # 2. Multi-Token Attention (3개 토큰 간 상호작용)
+        x = self.multi_token_attention(face_proj, skin_proj, style_emb)  # (batch, 384)
+
+        # Store for residual
+        residual = self.residual_proj(x)
+
+        # 3. Feature fusion MLP
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = torch.relu(x)
+        x = self.dropout1(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = torch.relu(x)
+        x = self.dropout2(x)
+
+        # Add residual connection
+        x = x + residual
+
+        x = self.fc3(x)
+        x = self.bn3(x)
+        x = torch.relu(x)
+        x = self.dropout3(x)
+
+        x = self.fc4(x)
+        x = torch.relu(x)
+
+        x = self.fc_out(x)
+
+        # Sigmoid로 0~1 출력 보장
+        x = self.sigmoid(x)
+
+        return x.squeeze(-1)
+
+
 class MLHairstyleRecommender:
     """ML 기반 헤어스타일 추천기"""
 
@@ -405,7 +645,7 @@ class MLHairstyleRecommender:
 
     def __init__(
         self,
-        model_path: str = "models/hairstyle_recommender_v5_normalized.pt",
+        model_path: str = "models/hairstyle_recommender_v6_multitoken.pt",
         embeddings_path: str = "data_source/style_embeddings.npz",
         gender_metadata_path: str = "data_source/hairstyle_gender.json"
     ):
@@ -413,7 +653,7 @@ class MLHairstyleRecommender:
         초기화
 
         Args:
-            model_path: 학습된 모델 경로
+            model_path: 학습된 모델 경로 (기본: v6 Multi-Token Attention)
             embeddings_path: 헤어스타일 임베딩 경로
             gender_metadata_path: 헤어스타일 성별 메타데이터 경로
         """
@@ -426,19 +666,36 @@ class MLHairstyleRecommender:
         try:
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
 
-            # 정규화 모델(v5) 여부 확인
+            # 모델 버전 및 설정 확인
             if isinstance(checkpoint, dict) and 'config' in checkpoint:
                 config = checkpoint['config']
                 self.is_normalized_model = config.get('normalized', False)
-                logger.info(f"  - 정규화 모델 여부: {self.is_normalized_model}")
+                self.model_version = config.get('version', 'v5' if self.is_normalized_model else 'v4')
+                self.attention_type = config.get('attention_type', 'single_token')
+                logger.info(f"  - 모델 버전: {self.model_version}")
+                logger.info(f"  - 정규화 모델: {self.is_normalized_model}")
+                logger.info(f"  - Attention 타입: {self.attention_type}")
             else:
                 self.is_normalized_model = False
+                self.model_version = 'v4'
+                self.attention_type = 'single_token'
 
             # 모델 클래스 선택
-            if self.is_normalized_model:
+            if self.model_version == 'v6' or self.attention_type == 'multi_token':
+                # V6: Multi-Token Attention
+                token_dim = config.get('token_dim', 128)
+                num_heads = config.get('num_heads', 4)
+                self.model = RecommendationModelV6(
+                    token_dim=token_dim,
+                    num_heads=num_heads
+                )
+                logger.info(f"  - 사용 모델: RecommendationModelV6 (Multi-Token Attention)")
+            elif self.is_normalized_model:
+                # V5: Normalized + Single-Token Attention
                 self.model = NormalizedRecommendationModel()
                 logger.info("  - 사용 모델: NormalizedRecommendationModel (v5 - Sigmoid 출력)")
             else:
+                # V4: Legacy
                 self.model = RecommendationModel()
                 logger.info("  - 사용 모델: RecommendationModel (v4)")
 
@@ -1013,3 +1270,56 @@ def get_ml_recommender() -> MLHairstyleRecommender:
         logger.info("✅ ML 추천기 준비 완료")
 
     return _recommender_instance
+
+
+# ========== 유틸리티 함수 (analyze.py 호환) ==========
+
+# Confidence threshold 상수
+CONFIDENCE_THRESHOLD_VERY_HIGH = 0.90
+CONFIDENCE_THRESHOLD_HIGH = 0.85
+CONFIDENCE_THRESHOLD_MEDIUM = 0.75
+
+
+def predict_ml_score(face_shape: str, skin_tone: str, hairstyle: str) -> float:
+    """
+    ML 모델로 특정 헤어스타일의 추천 점수 예측
+
+    Args:
+        face_shape: 얼굴형 (예: "계란형")
+        skin_tone: 피부톤 (예: "봄웜")
+        hairstyle: 헤어스타일명 (예: "시스루뱅 단발")
+
+    Returns:
+        추천 점수 (0.0 ~ 100.0)
+    """
+    try:
+        recommender = get_ml_recommender()
+        score = recommender.predict_score(face_shape, skin_tone, hairstyle)
+        return score
+    except Exception as e:
+        logger.error(f"ML 예측 실패: {str(e)}")
+        return 85.0  # 기본값
+
+
+def get_confidence_level(score: float) -> str:
+    """
+    점수를 신뢰도 레벨 문자열로 변환
+
+    Args:
+        score: 신뢰도 점수 (0.0 ~ 1.0 또는 0.0 ~ 100.0)
+
+    Returns:
+        신뢰도 레벨 문자열 ("매우 높음", "높음", "보통", "낮음")
+    """
+    # 0~100 범위 점수를 0~1로 정규화
+    if score > 1.0:
+        score = score / 100.0
+
+    if score >= CONFIDENCE_THRESHOLD_VERY_HIGH:
+        return "매우 높음"
+    elif score >= CONFIDENCE_THRESHOLD_HIGH:
+        return "높음"
+    elif score >= CONFIDENCE_THRESHOLD_MEDIUM:
+        return "보통"
+    else:
+        return "낮음"

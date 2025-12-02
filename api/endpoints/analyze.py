@@ -32,10 +32,10 @@ from core.exceptions import (
     InvalidFileFormatException
 )
 from core.cache import calculate_image_hash, get_cached_result, save_to_cache
-from core.ml_loader import (
+from models.ml_recommender import (
     predict_ml_score,
     get_confidence_level,
-    sentence_transformer
+    get_ml_recommender
 )
 from core.dependencies import (
     get_face_detection_service,
@@ -216,12 +216,13 @@ async def analyze_face(
             style_name = recommendation.get("style_name", "")
 
             # ✅ hairstyle_id 찾기 (ML 모델에서)
-            from core.ml_loader import ml_recommender
-            hairstyle_id = None
-            if ml_recommender is not None:
+            try:
+                ml_recommender = get_ml_recommender()
                 from utils.style_preprocessor import normalize_style_name
                 normalized_name = normalize_style_name(style_name)
                 hairstyle_id = ml_recommender.style_to_idx.get(normalized_name)
+            except Exception:
+                hairstyle_id = None
             recommendation['hairstyle_id'] = hairstyle_id
 
             # ML confidence score
@@ -232,16 +233,17 @@ async def analyze_face(
             # ✅ score 필드 추가 (안드로이드 앱 호환성)
             recommendation['score'] = round(ml_score / 100.0, 2)  # 0-1 범위로 변환
 
-            # Style embedding (Sentence Transformer)
-            if sentence_transformer is not None:
-                try:
-                    embedding = sentence_transformer.encode(style_name)
+            # Style embedding (Sentence Transformer from ML recommender)
+            try:
+                ml_recommender = get_ml_recommender()
+                if ml_recommender.sentence_model is not None:
+                    embedding = ml_recommender.sentence_model.encode(style_name)
                     recommendation['style_embedding'] = embedding.tolist()
                     logger.info(f"✅ 임베딩 생성 성공: {style_name} → {len(embedding)}차원")
-                except Exception as e:
-                    logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
+                else:
                     recommendation['style_embedding'] = None
-            else:
+            except Exception as e:
+                logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
                 recommendation['style_embedding'] = None
 
             # Naver search URL
