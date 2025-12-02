@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import List, Dict, Tuple, TYPE_CHECKING
+from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
 import logging
 import sys
 from difflib import SequenceMatcher
@@ -1270,6 +1270,186 @@ def get_ml_recommender() -> MLHairstyleRecommender:
         logger.info("✅ ML 추천기 준비 완료")
 
     return _recommender_instance
+
+
+# ========== A/B 테스트 래퍼 클래스 ==========
+
+class ABTestRecommender:
+    """
+    A/B 테스트를 지원하는 ML 추천기 래퍼
+
+    Champion(기존 모델)과 Challenger(신규 모델)을 관리하고,
+    사용자별로 일관된 모델을 선택하여 추천을 수행합니다.
+
+    특징:
+    - Lazy Loading: 모델은 처음 사용될 때 로드됨
+    - 메모리 최적화: Challenger 비활성화 시 Champion만 로드
+    - 일관된 라우팅: 동일 user_id는 항상 동일 모델 사용
+
+    Usage:
+        recommender = get_ab_recommender()
+        results = recommender.recommend_top_k(
+            user_id="analysis_123",
+            face_features=[...],
+            skin_features=[...],
+            gender="male",
+            k=3
+        )
+        # results에는 model_version, experiment_id, ab_variant 포함
+    """
+
+    def __init__(self):
+        """초기화 - 모델은 Lazy Loading"""
+        self._champion_model: Optional[MLHairstyleRecommender] = None
+        self._challenger_model: Optional[MLHairstyleRecommender] = None
+        self._router = None
+
+        # A/B 테스트 라우터 초기화
+        self._init_router()
+
+    def _init_router(self):
+        """A/B 테스트 라우터 초기화"""
+        try:
+            from services.mlops.ab_test import get_ab_router
+            self._router = get_ab_router()
+            logger.info(f"🔬 A/B 테스트 라우터 초기화 완료 (enabled={self._router.is_abtest_active()})")
+        except ImportError:
+            logger.warning("⚠️ A/B 테스트 모듈 로드 실패 - Champion 모델만 사용")
+            self._router = None
+
+    @property
+    def champion_model(self) -> MLHairstyleRecommender:
+        """Champion 모델 (Lazy Loading)"""
+        if self._champion_model is None:
+            logger.info("🔧 Champion 모델 로딩...")
+            # 기본 경로에서 로드 (기존 싱글톤과 동일)
+            self._champion_model = get_ml_recommender()
+        return self._champion_model
+
+    @property
+    def challenger_model(self) -> Optional[MLHairstyleRecommender]:
+        """Challenger 모델 (Lazy Loading, A/B 테스트 활성화 시에만)"""
+        if self._challenger_model is None and self._router and self._router.is_abtest_active():
+            logger.info("🔧 Challenger 모델 로딩...")
+            try:
+                # Challenger 모델 경로 결정
+                challenger_version = self._router.config.challenger_model_version
+                challenger_path = f"models/challenger/model.pt"
+
+                # S3에서 다운로드 필요시 여기서 처리
+                # 현재는 로컬 경로 사용
+                import os
+                if os.path.exists(challenger_path):
+                    self._challenger_model = MLHairstyleRecommender(model_path=challenger_path)
+                    logger.info(f"✅ Challenger 모델 로드 완료: {challenger_version}")
+                else:
+                    logger.warning(f"⚠️ Challenger 모델 파일 없음: {challenger_path}")
+            except Exception as e:
+                logger.error(f"❌ Challenger 모델 로드 실패: {e}")
+
+        return self._challenger_model
+
+    def recommend_top_k(
+        self,
+        user_id: str,
+        face_features: List[float] = None,
+        skin_features: List[float] = None,
+        gender: str = None,
+        k: int = 3,
+        face_shape: str = None,
+        skin_tone: str = None
+    ) -> List[Dict[str, any]]:
+        """
+        Top-K 헤어스타일 추천 (A/B 테스트 적용)
+
+        Args:
+            user_id: 사용자 ID (analysis_id 사용 가능) - 일관된 라우팅용
+            face_features: MediaPipe 얼굴 측정값 (6차원)
+            skin_features: MediaPipe 피부 측정값 (2차원)
+            gender: 성별 ("male", "female", "neutral")
+            k: 추천 개수
+            face_shape: 얼굴형 (deprecated, 하위 호환성)
+            skin_tone: 피부톤 (deprecated, 하위 호환성)
+
+        Returns:
+            추천 리스트 [{"hairstyle": "...", "score": 85.3, "model_version": "v6", "experiment_id": "...", "ab_variant": "champion"}, ...]
+        """
+        # 변형 결정
+        variant = None
+        experiment_info = {}
+
+        if self._router:
+            from services.mlops.ab_test import ModelVariant
+            variant = self._router.get_variant(user_id)
+            experiment_info = self._router.get_experiment_info(variant)
+        else:
+            experiment_info = {
+                'experiment_id': '',
+                'model_version': 'v6',
+                'ab_variant': 'champion'
+            }
+
+        # 모델 선택
+        model = self.champion_model  # 기본값
+
+        if variant and self._router:
+            from services.mlops.ab_test import ModelVariant
+            if variant == ModelVariant.CHALLENGER and self.challenger_model:
+                model = self.challenger_model
+                logger.debug(f"[ABTEST] user={user_id} -> Challenger 모델 사용")
+            else:
+                logger.debug(f"[ABTEST] user={user_id} -> Champion 모델 사용")
+
+        # 추천 수행
+        results = model.recommend_top_k(
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            k=k,
+            face_features=face_features,
+            skin_features=skin_features,
+            gender=gender
+        )
+
+        # 모델 버전 정보 추가 (피드백 분석용)
+        for result in results:
+            result['model_version'] = experiment_info.get('model_version', 'v6')
+            result['experiment_id'] = experiment_info.get('experiment_id', '')
+            result['ab_variant'] = experiment_info.get('ab_variant', 'champion')
+
+        return results
+
+    def is_abtest_active(self) -> bool:
+        """A/B 테스트 활성화 여부"""
+        return self._router is not None and self._router.is_abtest_active()
+
+    def get_current_config(self) -> Dict[str, any]:
+        """현재 A/B 테스트 설정 반환"""
+        if self._router:
+            return self._router.config.to_dict()
+        return {'enabled': False}
+
+
+# ========== A/B 테스트 추천기 싱글톤 ==========
+_ab_recommender_instance: Optional[ABTestRecommender] = None
+
+
+def get_ab_recommender() -> ABTestRecommender:
+    """
+    A/B 테스트 추천기 싱글톤 인스턴스 가져오기
+
+    A/B 테스트가 비활성화되어 있어도 동작합니다 (Champion만 사용).
+
+    Returns:
+        ABTestRecommender 인스턴스
+    """
+    global _ab_recommender_instance
+
+    if _ab_recommender_instance is None:
+        logger.info("🔧 A/B 테스트 추천기 초기화 중...")
+        _ab_recommender_instance = ABTestRecommender()
+        logger.info("✅ A/B 테스트 추천기 준비 완료")
+
+    return _ab_recommender_instance
 
 
 # ========== 유틸리티 함수 (analyze.py 호환) ==========
