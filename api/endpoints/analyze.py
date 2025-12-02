@@ -9,8 +9,6 @@ if TYPE_CHECKING:
     from services.face_detection_service import FaceDetectionService
     from services.gemini_analysis_service import GeminiAnalysisService
     from services.hybrid_recommender import MLRecommendationService
-    from services.feedback_collector import FeedbackCollector
-    from services.retrain_queue import RetrainQueue
     from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 from models.mediapipe_analyzer import MediaPipeFaceFeatures  # Keep this if used at runtime?
@@ -40,9 +38,7 @@ from models.ml_recommender import (
 from core.dependencies import (
     get_face_detection_service,
     get_gemini_analysis_service,
-    get_hybrid_service,
-    get_feedback_collector,
-    get_retrain_queue
+    get_hybrid_service
 )
 
 
