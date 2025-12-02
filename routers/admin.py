@@ -1,16 +1,16 @@
 """
 관리자 대시보드 라우터
 
-피드백 통계 및 분석 API를 제공합니다.
+피드백 통계 및 MLOps 상태 API를 제공합니다.
+신버전: S3 + DynamoDB 기반 MLOps 시스템
 
 Author: HairMe ML Team
-Date: 2025-11-13
-Version: 1.0.0
+Date: 2025-12-02
+Version: 2.0.0
 """
 
+import os
 from fastapi import APIRouter, HTTPException, Depends
-from services.feedback_analytics import get_feedback_analytics
-from services.retrain_queue import get_retrain_queue
 from services.circuit_breaker import get_circuit_breaker_status, reset_circuit_breakers
 from core.auth import verify_admin_api_key
 import logging
@@ -20,23 +20,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/admin/feedback-stats")
-async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
+@router.get("/admin/mlops-status")
+async def get_mlops_status(api_key: str = Depends(verify_admin_api_key)):
     """
-    전체 피드백 통계 조회
+    MLOps 파이프라인 상태 조회
 
     Returns:
-        - total: 전체 피드백 수
-        - positive_count: 좋아요 수
-        - negative_count: 싫어요 수
-        - positive_ratio: 좋아요 비율 (%)
-        - next_retrain_threshold: 다음 재학습 임계값
+        - enabled: MLOps 활성화 여부
+        - s3_bucket: S3 버킷 이름
+        - pending_count: 대기 중인 피드백 수
+        - total_feedback_count: 전체 피드백 수
+        - retrain_threshold: 재학습 트리거 임계값
+        - last_training_at: 마지막 학습 시간
     """
     try:
-        analytics = get_feedback_analytics()
-        stats = analytics.get_feedback_stats()
+        mlops_enabled = os.getenv('MLOPS_ENABLED', 'false').lower() == 'true'
 
-        logger.info(f"📊 통계 조회 성공: {stats['total']}개 피드백")
+        if not mlops_enabled:
+            return {
+                "success": True,
+                "enabled": False,
+                "message": "MLOps is disabled"
+            }
+
+        # S3 피드백 저장소 통계 조회
+        from services.mlops.s3_feedback_store import get_s3_feedback_store
+        store = get_s3_feedback_store()
+        stats = store.get_stats()
+
+        logger.info(f"📊 MLOps 상태 조회: {stats}")
 
         return {
             "success": True,
@@ -44,110 +56,45 @@ async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
         }
 
     except Exception as e:
-        logger.error(f"❌ 통계 조회 실패: {e}")
+        logger.error(f"❌ MLOps 상태 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"통계 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"MLOps 상태 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 
-@router.get("/admin/feedback-distribution")
-async def get_feedback_distribution(api_key: str = Depends(verify_admin_api_key)):
+@router.get("/admin/feedback-stats")
+async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
     """
-    얼굴형 및 피부톤별 피드백 분포
+    DynamoDB 기반 피드백 통계 조회
 
     Returns:
-        - by_face_shape: 얼굴형별 통계
-        - by_skin_tone: 피부톤별 통계
+        - total_analysis: 전체 분석 수
+        - total_feedback: 피드백이 있는 분석 수
+        - like_counts: 스타일별 좋아요 수
+        - dislike_counts: 스타일별 싫어요 수
     """
     try:
-        analytics = get_feedback_analytics()
-        distribution = analytics.get_feedback_distribution()
+        use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
 
-        logger.info(f"📊 분포 조회 성공")
+        if use_dynamodb:
+            from database.dynamodb_connection import get_feedback_stats as get_dynamodb_stats
+            stats = get_dynamodb_stats()
 
-        return {
-            "success": True,
-            **distribution
-        }
+            logger.info(f"📊 피드백 통계 조회 (DynamoDB): {stats.get('total_feedback', 0)}개")
 
-    except Exception as e:
-        logger.error(f"❌ 분포 조회 실패: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"분포 조회 중 오류가 발생했습니다: {str(e)}"
-        )
-
-
-@router.get("/admin/top-hairstyles")
-async def get_top_hairstyles(top_n: int = 10, api_key: str = Depends(verify_admin_api_key)):
-    """
-    좋아요/싫어요가 많은 헤어스타일 Top N
-
-    Args:
-        top_n: 반환할 개수 (기본값: 10)
-
-    Returns:
-        - most_liked: 좋아요가 많은 스타일 리스트
-        - most_disliked: 싫어요가 많은 스타일 리스트
-    """
-    try:
-        analytics = get_feedback_analytics()
-        top_styles = analytics.get_top_hairstyles(top_n=top_n)
-
-        logger.info(f"📊 Top {top_n} 헤어스타일 조회 성공")
-
-        return {
-            "success": True,
-            **top_styles
-        }
+            return stats
+        else:
+            return {
+                "success": False,
+                "message": "DynamoDB is not enabled. Set USE_DYNAMODB=true"
+            }
 
     except Exception as e:
-        logger.error(f"❌ Top 헤어스타일 조회 실패: {e}")
+        logger.error(f"❌ 피드백 통계 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Top 헤어스타일 조회 중 오류가 발생했습니다: {str(e)}"
-        )
-
-
-@router.get("/admin/retrain-status")
-async def get_retrain_status(api_key: str = Depends(verify_admin_api_key)):
-    """
-    재학습 작업 상태 조회
-
-    Returns:
-        - queue_stats: 큐 통계 (total, pending, running, completed, failed)
-        - pending_jobs: 대기 중인 작업 리스트
-        - recent_jobs: 최근 5개 작업 리스트
-    """
-    try:
-        queue = get_retrain_queue()
-
-        # 큐 통계
-        stats = queue.get_queue_stats()
-
-        # 대기 중인 작업
-        pending_jobs = queue.get_pending_jobs()
-
-        # 최근 5개 작업
-        all_jobs = queue.get_all_jobs()
-        all_jobs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        recent_jobs = all_jobs[:5]
-
-        logger.info(f"🔄 재학습 큐 상태 조회 성공: {stats}")
-
-        return {
-            "success": True,
-            "queue_stats": stats,
-            "pending_jobs": pending_jobs,
-            "recent_jobs": recent_jobs
-        }
-
-    except Exception as e:
-        logger.error(f"❌ 재학습 상태 조회 실패: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"재학습 상태 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"피드백 통계 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 
