@@ -274,6 +274,20 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             'feedback_at': None
         })
 
+        # A/B 테스트 정보 (model_version, experiment_id, ab_variant)
+        if data.get('model_version'):
+            item['model_version'] = data.get('model_version')
+        if data.get('experiment_id'):
+            item['experiment_id'] = data.get('experiment_id')
+        if data.get('ab_variant'):
+            item['ab_variant'] = data.get('ab_variant')
+
+        # 스타일별 점수 저장 (A/B 테스트 평가용)
+        for i in range(1, 4):
+            score_key = f'style_{i}_score'
+            if data.get(score_key) is not None:
+                item[score_key] = data.get(score_key)
+
         # Convert floats to Decimal for DynamoDB
         item = _convert_floats_to_decimal(item)
 

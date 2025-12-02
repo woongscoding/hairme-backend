@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     MLOPS_TRAINER_LAMBDA: str = "hairme-model-trainer"  # Trainer Lambda 함수명
     MLOPS_SNS_TOPIC_ARN: str = ""  # 알림용 SNS 토픽 (선택)
 
+    # A/B 테스트 Configuration
+    ABTEST_ENABLED: bool = False  # A/B 테스트 활성화
+    ABTEST_EXPERIMENT_ID: str = ""  # 실험 ID (예: "exp_2025_12_02")
+    ABTEST_CHAMPION_VERSION: str = "v6"  # Champion 모델 버전
+    ABTEST_CHALLENGER_VERSION: str = ""  # Challenger 모델 버전
+    ABTEST_CHALLENGER_PERCENT: int = 10  # Challenger 트래픽 비율 (0-100)
+
     # Redis Configuration
     REDIS_URL: Optional[str] = None
     CACHE_TTL: int = 86400  # 24 hours in seconds

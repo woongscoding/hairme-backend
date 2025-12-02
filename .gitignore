@@ -183,3 +183,9 @@ mypy.ini
 
 # Deployment review docs (temporary analysis)
 DEPLOYMENT_REVIEW_REQUEST.md
+
+# MLOps temporary files
+temp_*.json
+lambda_logs.json
+log_base64.txt
+models/training_history*.json
