@@ -311,10 +311,8 @@ async def health_check(deep: bool = False):
     from core.health_check import get_health_check_service
 
     # Basic startup status
-    required_services_ok = all([
-        startup_status["mediapipe"],
-        startup_status["ml_service"]
-    ])
+    # Gemini is required, MediaPipe and ML are optional fallbacks
+    required_services_ok = startup_status["gemini"]
 
     base_status = {
         "status": "healthy" if required_services_ok else "degraded",
@@ -322,11 +320,11 @@ async def health_check(deep: bool = False):
         "environment": settings.ENVIRONMENT,
         "startup": {
             "required_services": {
-                "mediapipe": startup_status["mediapipe"],
-                "ml_service": startup_status["ml_service"]
+                "gemini": startup_status["gemini"]
             },
             "optional_services": {
-                "gemini": startup_status["gemini"],
+                "mediapipe": startup_status["mediapipe"],
+                "ml_service": startup_status["ml_service"],
                 "feedback_collector": startup_status["feedback_collector"],
                 "retrain_queue": startup_status["retrain_queue"]
             }

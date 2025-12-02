@@ -189,3 +189,13 @@ temp_*.json
 lambda_logs.json
 log_base64.txt
 models/training_history*.json
+
+# Health check and response test files
+*_response.json
+*_payload.json
+*_result.json
+*_result.txt
+health_*.json
+health_*.txt
+cold_start_*.json
+curl_*.json

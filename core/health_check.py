@@ -196,9 +196,10 @@ class HealthCheckService:
             from services.circuit_breaker import gemini_breaker
 
             return {
+                "status": "healthy",
                 "state": str(gemini_breaker.current_state),
                 "fail_counter": gemini_breaker.fail_counter,
-                "success_counter": gemini_breaker.success_counter,
+                "fail_max": gemini_breaker.fail_max,
                 "last_failure": str(gemini_breaker.last_failure_time) if hasattr(gemini_breaker, 'last_failure_time') else None
             }
 
