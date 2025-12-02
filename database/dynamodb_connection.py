@@ -413,6 +413,13 @@ def save_feedback(
             except Exception as e:
                 logger.warning(f"⚠️ 캐시 무효화 실패: {str(e)}")
 
+        # ========== MLOps: S3 피드백 저장 (학습용) ==========
+        try:
+            _save_feedback_to_s3(analysis_id, style_index, feedback)
+        except Exception as e:
+            # S3 저장 실패해도 DynamoDB 저장은 성공으로 처리
+            logger.warning(f"⚠️ S3 피드백 저장 실패 (MLOps): {str(e)}")
+
         return True
 
     except ClientError as e:
@@ -626,3 +633,104 @@ def get_feedback_stats() -> Dict[str, Any]:
             'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
             'recent_feedbacks': []
         }
+
+
+# ========== MLOps: S3 피드백 저장 헬퍼 ==========
+
+def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
+    """
+    피드백을 S3에 저장 (ML 학습용)
+
+    DynamoDB에서 분석 데이터를 가져와 S3에 NPZ 형식으로 저장합니다.
+    MLOps 파이프라인에서 이 데이터를 사용하여 모델을 재학습합니다.
+
+    Args:
+        analysis_id: 분석 ID
+        style_index: 스타일 인덱스 (1, 2, 3)
+        feedback: 피드백 ('good' or 'bad')
+    """
+    import os
+
+    # MLOps 활성화 여부 확인
+    mlops_enabled = os.getenv('MLOPS_ENABLED', 'false').lower() == 'true'
+    if not mlops_enabled:
+        return
+
+    try:
+        # 1. 분석 데이터 조회
+        analysis = get_analysis(analysis_id)
+        if not analysis:
+            logger.warning(f"⚠️ S3 저장 건너뜀: 분석 데이터 없음 ({analysis_id})")
+            return
+
+        # 2. 필요한 데이터 추출
+        face_shape = analysis.get('face_shape', '')
+        skin_tone = analysis.get('personal_color', '')
+
+        # recommended_styles에서 hairstyle_id 추출
+        recommended_styles = analysis.get('recommended_styles', [])
+        if style_index <= len(recommended_styles):
+            style_data = recommended_styles[style_index - 1]
+            hairstyle_id = style_data.get('hairstyle_id')
+
+            # hairstyle_id가 None인 경우 스타일명으로 검색 시도
+            if hairstyle_id is None:
+                style_name = style_data.get('style_name', '')
+                logger.warning(
+                    f"⚠️ hairstyle_id 없음 - style_name: {style_name}"
+                )
+                return
+        else:
+            logger.warning(f"⚠️ S3 저장 건너뜀: style_index 범위 초과")
+            return
+
+        # 3. MediaPipe 측정값 추출 (있으면)
+        face_features = None
+        skin_features = None
+
+        # MediaPipe 측정값이 저장되어 있으면 사용
+        if analysis.get('mediapipe_face_ratio') is not None:
+            face_features = [
+                analysis.get('mediapipe_face_ratio', 1.2),
+                analysis.get('mediapipe_forehead_width', 400),
+                analysis.get('mediapipe_cheekbone_width', 500),
+                analysis.get('mediapipe_jaw_width', 400),
+                analysis.get('mediapipe_forehead_ratio', 0.8),
+                analysis.get('mediapipe_jaw_ratio', 0.8)
+            ]
+
+        if analysis.get('mediapipe_ITA_value') is not None:
+            skin_features = [
+                analysis.get('mediapipe_ITA_value', 70),
+                analysis.get('mediapipe_hue_value', 15)
+            ]
+
+        # 4. S3에 저장
+        from services.mlops.s3_feedback_store import get_s3_feedback_store
+
+        s3_store = get_s3_feedback_store()
+        result = s3_store.save_feedback(
+            analysis_id=analysis_id,
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            hairstyle_id=hairstyle_id,
+            feedback=feedback,
+            face_features=face_features,
+            skin_features=skin_features
+        )
+
+        if result.get('success'):
+            pending_count = result.get('pending_count', 0)
+            logger.info(f"✅ S3 피드백 저장 완료 (pending: {pending_count})")
+
+            # 재학습 트리거 확인
+            if result.get('should_trigger_training'):
+                from services.mlops.training_trigger import get_training_trigger
+                trigger = get_training_trigger()
+                trigger.check_and_trigger(pending_count)
+
+    except ImportError as e:
+        # MLOps 모듈이 없으면 무시 (선택적 기능)
+        logger.debug(f"MLOps 모듈 없음: {e}")
+    except Exception as e:
+        logger.warning(f"⚠️ S3 피드백 저장 실패: {e}")

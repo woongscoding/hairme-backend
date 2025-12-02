@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     AWS_REGION: str = "ap-northeast-2"
     DYNAMODB_TABLE_NAME: str = "hairme-analysis"
 
+    # MLOps Configuration
+    MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
+    MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷
+    MLOPS_RETRAIN_THRESHOLD: int = 100  # 재학습 트리거 피드백 수
+    MLOPS_TRAINER_LAMBDA: str = "hairme-model-trainer"  # Trainer Lambda 함수명
+    MLOPS_SNS_TOPIC_ARN: str = ""  # 알림용 SNS 토픽 (선택)
+
     # Redis Configuration
     REDIS_URL: Optional[str] = None
     CACHE_TTL: int = 86400  # 24 hours in seconds
