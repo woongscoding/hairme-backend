@@ -1,4 +1,4 @@
-"""Face analysis and hairstyle recommendation endpoints"""
+"""Face analysis and hairstyle recommendation endpoints (ML-only mode)"""
 
 import os
 import time
@@ -7,15 +7,10 @@ from typing import Optional, Dict, Any, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.face_detection_service import FaceDetectionService
-    from services.gemini_analysis_service import GeminiAnalysisService
     from services.hybrid_recommender import MLRecommendationService
     from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
-from models.mediapipe_analyzer import MediaPipeFaceFeatures  # Keep this if used at runtime?
-# Wait, MediaPipeFaceFeatures is a dataclass, it might be lightweight.
-# But models.mediapipe_analyzer imports logging, dataclasses, typing, math.
-# It does NOT import mediapipe at top level anymore.
-# So importing MediaPipeFaceFeatures is fine.
+from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends, Form
 from fastapi.responses import JSONResponse
@@ -37,7 +32,6 @@ from models.ml_recommender import (
 )
 from core.dependencies import (
     get_face_detection_service,
-    get_gemini_analysis_service,
     get_hybrid_service
 )
 
@@ -88,13 +82,8 @@ def save_to_database(
             backend = "dynamodb" if os.getenv('USE_DYNAMODB', 'false').lower() == 'true' else "mysql"
             recommendations = analysis_result.get("recommendations", [])
 
-            mediapipe_agreement = None
-            if mp_features:
-                gemini_shape = analysis_result.get("analysis", {}).get("face_shape")
-                mediapipe_agreement = (
-                    mp_features.face_shape in gemini_shape or
-                    gemini_shape in mp_features.face_shape
-                )
+            # ML-only 모드에서는 항상 MediaPipe 결과를 사용하므로 agreement는 항상 True
+            mediapipe_agreement = mp_features is not None
 
             log_structured("database_saved", {
                 "backend": backend,
@@ -117,20 +106,19 @@ def save_to_database(
 async def analyze_face(
     request: Request,
     file: UploadFile = File(...),
+    gender: str = Form("neutral"),  # 성별 파라미터 추가
     face_detector: 'FaceDetectionService' = Depends(get_face_detection_service),
-    gemini_service: 'GeminiAnalysisService' = Depends(get_gemini_analysis_service)
+    ml_recommender: 'MLRecommendationService' = Depends(get_hybrid_service)
 ):
-    """Face analysis and hairstyle recommendation (v20.2.0: ML integrated)"""
+    """
+    ML 기반 얼굴 분석 및 헤어스타일 추천 (v21.0.0: ML-only mode)
+
+    Gemini 의존성 제거 - MediaPipe + ML 모델만 사용
+    """
     start_time = time.time()
     image_hash = None
 
     try:
-        if not settings.GEMINI_API_KEY:
-            raise HTTPException(
-                status_code=500,
-                detail="Gemini API 키가 설정되지 않았습니다."
-            )
-
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
@@ -138,7 +126,7 @@ async def analyze_face(
         if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
             raise InvalidFileFormatException()
 
-        logger.info(f"이미지 업로드 시작: {file.filename}")
+        logger.info(f"🎨 ML 분석 시작: {file.filename}, gender={gender}")
 
         image_data = await file.read()
         image_hash = calculate_image_hash(image_data)
@@ -146,7 +134,8 @@ async def analyze_face(
         log_structured("analysis_start", {
             "filename": file.filename,
             "file_size_kb": round(len(image_data) / 1024, 2),
-            "image_hash": image_hash[:16]
+            "image_hash": image_hash[:16],
+            "method": "ml_only"
         })
 
         # Check cache
@@ -158,10 +147,10 @@ async def analyze_face(
                 "data": cached_result,
                 "processing_time": total_time,
                 "cached": True,
-                "model_used": settings.MODEL_NAME
+                "method": "ml"
             }
 
-        # Face detection using injected service
+        # Face detection using MediaPipe
         face_detection_start = time.time()
         face_result = face_detector.detect_face(image_data)
         face_detection_time = round((time.time() - face_detection_start) * 1000, 2)
@@ -178,73 +167,56 @@ async def analyze_face(
 
         # Extract MediaPipe features
         mp_features = face_result.get("features", None)
+        if not mp_features:
+            raise HTTPException(
+                status_code=500,
+                detail="MediaPipe 얼굴 분석에 실패했습니다."
+            )
 
-        # Gemini analysis using injected service (with MediaPipe hints)
-        gemini_start = time.time()
-        analysis_result = gemini_service.analyze_with_gemini(image_data, mp_features)
-        gemini_time = round((time.time() - gemini_start) * 1000, 2)
+        face_shape = mp_features.face_shape
+        skin_tone = mp_features.skin_tone
+        detected_gender = mp_features.gender if hasattr(mp_features, 'gender') else gender
 
-        # Use MediaPipe results (for consistency)
-        gender = None  # 성별 정보 추출 (NEW)
-        if mp_features:
-            face_shape = mp_features.face_shape
-            skin_tone = mp_features.skin_tone
-            gender = mp_features.gender  # 성별 추론 결과
-            logger.info(f"✅ MediaPipe 결과 채택: {face_shape} / {skin_tone} / 성별: {gender} (일관성 보장)")
+        # MediaPipe 실제 측정값 추출
+        face_features = getattr(mp_features, 'face_features', None)
+        skin_features = getattr(mp_features, 'skin_features', None)
 
-            # Log Gemini results for comparison
-            gemini_face_shape = analysis_result.get("analysis", {}).get("face_shape")
-            if gemini_face_shape != face_shape:
-                logger.warning(f"⚠️ Gemini 불일치: {gemini_face_shape} (MediaPipe: {face_shape})")
+        logger.info(f"✅ MediaPipe 분석: {face_shape} / {skin_tone} / 성별: {detected_gender}")
 
-            # Update analysis result with MediaPipe values
-            analysis_result["analysis"]["face_shape"] = face_shape
-            analysis_result["analysis"]["personal_color"] = skin_tone
-            analysis_result["analysis"]["gender"] = gender  # 성별 정보 추가
-        else:
-            # Use Gemini results if MediaPipe failed
-            face_shape = analysis_result.get("analysis", {}).get("face_shape")
-            skin_tone = analysis_result.get("analysis", {}).get("personal_color")
-            logger.warning(f"⚠️ MediaPipe 없음, Gemini 결과 사용: {face_shape} / {skin_tone}")
+        # ML 기반 추천
+        ml_start = time.time()
+        recommendation_result = ml_recommender.recommend(
+            image_data=image_data,
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            face_features=face_features,
+            skin_features=skin_features,
+            gender=gender if gender != "neutral" else detected_gender
+        )
+        ml_time = round((time.time() - ml_start) * 1000, 2)
 
-        # Add ML predictions and embeddings
-        for idx, recommendation in enumerate(analysis_result.get("recommendations", []), 1):
-            style_name = recommendation.get("style_name", "")
+        # 분석 결과 구성
+        analysis_result = {
+            "analysis": {
+                "face_shape": face_shape,
+                "personal_color": skin_tone,
+                "gender": detected_gender,
+                "features": f"ML 모델 기반 분석 ({face_shape}, {skin_tone})"
+            },
+            "recommendations": recommendation_result.get("recommendations", [])
+        }
 
-            # ✅ hairstyle_id 찾기 (ML 모델에서)
-            try:
-                ml_recommender = get_ml_recommender()
-                from utils.style_preprocessor import normalize_style_name
-                normalized_name = normalize_style_name(style_name)
-                hairstyle_id = ml_recommender.style_to_idx.get(normalized_name)
-            except Exception:
-                hairstyle_id = None
-            recommendation['hairstyle_id'] = hairstyle_id
-
-            # ML confidence score
-            ml_score = predict_ml_score(face_shape, skin_tone, style_name)
-            recommendation['ml_confidence'] = ml_score
-            recommendation['confidence_level'] = get_confidence_level(ml_score)
-
-            # ✅ score 필드 추가 (안드로이드 앱 호환성)
-            recommendation['score'] = round(ml_score / 100.0, 2)  # 0-1 범위로 변환
-
-            # Style embedding (Sentence Transformer from ML recommender)
-            try:
-                ml_recommender = get_ml_recommender()
-                if ml_recommender.sentence_model is not None:
-                    embedding = ml_recommender.sentence_model.encode(style_name)
-                    recommendation['style_embedding'] = embedding.tolist()
-                    logger.info(f"✅ 임베딩 생성 성공: {style_name} → {len(embedding)}차원")
-                else:
-                    recommendation['style_embedding'] = None
-            except Exception as e:
-                logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
-                recommendation['style_embedding'] = None
-
-            # Naver search URL
-            encoded_query = urllib.parse.quote(f"{style_name} 헤어스타일")
-            recommendation["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
+        # Naver 검색 URL 추가
+        for rec in analysis_result["recommendations"]:
+            style_name = rec.get("style_name", "")
+            if gender == "male":
+                search_query = f"남자 {style_name} 헤어스타일"
+            elif gender == "female":
+                search_query = f"여자 {style_name} 헤어스타일"
+            else:
+                search_query = f"{style_name} 헤어스타일"
+            encoded_query = urllib.parse.quote(search_query)
+            rec["image_search_url"] = f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
 
         # Cache result
         save_to_cache(image_hash, analysis_result)
@@ -255,33 +227,25 @@ async def analyze_face(
             image_hash=image_hash,
             analysis_result=analysis_result,
             processing_time=total_time,
-            detection_method=face_result.get("method", "mediapipe"),
+            detection_method="ml",
             mp_features=mp_features
         )
 
-        # Warn if database save failed but continue with response
         if analysis_id is None:
             logger.warning(
                 "⚠️ 데이터베이스 저장 실패 - 분석은 성공했지만 피드백을 저장할 수 없습니다. "
                 f"image_hash: {image_hash[:16]}"
             )
-            log_structured("database_save_failed", {
-                "image_hash": image_hash[:16],
-                "face_shape": face_shape,
-                "personal_color": skin_tone,
-                "warning": "feedback_disabled"
-            })
 
         log_structured("analysis_complete", {
             "image_hash": image_hash[:16],
             "processing_time": total_time,
             "face_detection_time_ms": face_detection_time,
-            "gemini_analysis_time_ms": gemini_time,
-            "mediapipe_enabled": mp_features is not None,
+            "ml_inference_time_ms": ml_time,
+            "method": "ml_only",
             "face_shape": face_shape,
             "personal_color": skin_tone,
-            "analysis_id": analysis_id,
-            "database_saved": analysis_id is not None
+            "analysis_id": analysis_id
         })
 
         return {
@@ -291,13 +255,12 @@ async def analyze_face(
             "processing_time": total_time,
             "performance": {
                 "face_detection_ms": face_detection_time,
-                "gemini_analysis_ms": gemini_time,
-                "detection_method": face_result.get("method", "mediapipe"),
-                "mediapipe_analysis": "enabled" if mp_features else "failed"
+                "ml_inference_ms": ml_time,
+                "detection_method": "mediapipe"
             },
             "cached": False,
-            "model_used": settings.MODEL_NAME,
-            "feedback_enabled": analysis_id is not None  # ✅ NEW: Android can check this
+            "method": "ml",
+            "feedback_enabled": analysis_id is not None
         }
 
     except (NoFaceDetectedException, MultipleFacesException, InvalidFileFormatException) as e:

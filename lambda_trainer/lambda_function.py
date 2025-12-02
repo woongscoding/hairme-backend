@@ -519,6 +519,197 @@ def fine_tune_model(
     return model, training_stats
 
 
+def evaluate_model(
+    model: RecommendationModelV6,
+    face_features: np.ndarray,
+    skin_features: np.ndarray,
+    style_embeddings: np.ndarray,
+    ground_truths: np.ndarray
+) -> Dict[str, Any]:
+    """
+    모델 평가 (학습 전후 비교용)
+
+    학습 데이터로 모델의 예측 정확도를 측정합니다.
+
+    Args:
+        model: 평가할 모델
+        face_features: 얼굴 특징 배열
+        skin_features: 피부 특징 배열
+        style_embeddings: 스타일 임베딩 배열
+        ground_truths: 정답 점수 배열 (0~1 정규화)
+
+    Returns:
+        평가 지표 딕셔너리
+    """
+    device = torch.device('cpu')
+    model = model.to(device)
+    model.eval()
+
+    # 텐서 변환
+    face_tensor = torch.FloatTensor(face_features).to(device)
+    skin_tensor = torch.FloatTensor(skin_features).to(device)
+    style_tensor = torch.FloatTensor(style_embeddings).to(device)
+    gt_tensor = torch.FloatTensor(ground_truths).reshape(-1, 1).to(device)
+
+    with torch.no_grad():
+        predictions = model(face_tensor, skin_tensor, style_tensor)
+
+    # NumPy 변환
+    preds = predictions.cpu().numpy().flatten()
+    gts = gt_tensor.cpu().numpy().flatten()
+
+    # 지표 계산
+    mse = float(np.mean((preds - gts) ** 2))
+    mae = float(np.mean(np.abs(preds - gts)))
+    rmse = float(np.sqrt(mse))
+
+    # 점수를 원래 범위로 역변환 (0~1 → 10~95)
+    preds_original = preds * LABEL_RANGE + LABEL_MIN
+    gts_original = gts * LABEL_RANGE + LABEL_MIN
+
+    # 임계값 기반 분류 (70점 이상 = 긍정)
+    threshold = (70 - LABEL_MIN) / LABEL_RANGE  # 정규화된 임계값
+    pred_positive = (preds >= threshold).astype(int)
+    gt_positive = (gts >= threshold).astype(int)
+
+    # Precision, Recall, Hit Rate 계산
+    true_positives = np.sum((pred_positive == 1) & (gt_positive == 1))
+    false_positives = np.sum((pred_positive == 1) & (gt_positive == 0))
+    false_negatives = np.sum((pred_positive == 0) & (gt_positive == 1))
+
+    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    # 상관계수 (예측과 실제의 관계)
+    if len(preds) > 1:
+        correlation = float(np.corrcoef(preds, gts)[0, 1])
+        if np.isnan(correlation):
+            correlation = 0.0
+    else:
+        correlation = 0.0
+
+    # 상위 K개 정확도 (Top-K Accuracy)
+    # 예측 점수 상위 K개가 실제 긍정 피드백과 얼마나 일치하는지
+    k_values = [1, 3, 5]
+    top_k_accuracy = {}
+    n_samples = len(preds)
+
+    for k in k_values:
+        if n_samples >= k:
+            top_k_indices = np.argsort(preds)[-k:][::-1]  # 상위 K개 인덱스
+            top_k_gt = gts[top_k_indices]
+            top_k_accuracy[k] = float(np.mean(top_k_gt >= threshold))
+        else:
+            top_k_accuracy[k] = 0.0
+
+    metrics = {
+        # 회귀 지표
+        "mse": mse,
+        "mae": mae,
+        "rmse": rmse,
+
+        # 분류 지표 (임계값 70점 기준)
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1,
+
+        # 상관관계
+        "correlation": correlation,
+
+        # Top-K 정확도
+        "top_k_accuracy": top_k_accuracy,
+
+        # 통계
+        "num_samples": int(n_samples),
+        "avg_prediction": float(np.mean(preds_original)),
+        "avg_ground_truth": float(np.mean(gts_original)),
+        "std_prediction": float(np.std(preds_original)),
+        "std_ground_truth": float(np.std(gts_original))
+    }
+
+    logger.info(f"📊 모델 평가 완료:")
+    logger.info(f"  MSE: {mse:.4f}, MAE: {mae:.4f}, RMSE: {rmse:.4f}")
+    logger.info(f"  Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+    logger.info(f"  Correlation: {correlation:.4f}")
+    logger.info(f"  Top-K Accuracy: {top_k_accuracy}")
+
+    return metrics
+
+
+def save_evaluation_report(
+    before_metrics: Dict[str, Any],
+    after_metrics: Dict[str, Any],
+    training_stats: Dict[str, Any],
+    version: str
+) -> bool:
+    """
+    평가 리포트를 S3에 저장
+
+    Args:
+        before_metrics: 학습 전 평가 지표
+        after_metrics: 학습 후 평가 지표
+        training_stats: 학습 통계
+        version: 모델 버전
+
+    Returns:
+        성공 여부
+    """
+    s3 = get_s3_client()
+
+    try:
+        # 개선율 계산
+        improvements = {}
+        for key in ['mse', 'mae', 'rmse']:
+            if key in before_metrics and key in after_metrics:
+                before_val = before_metrics[key]
+                after_val = after_metrics[key]
+                if before_val > 0:
+                    # 손실 지표는 감소가 개선
+                    improvements[key] = (before_val - after_val) / before_val * 100
+
+        for key in ['precision', 'recall', 'f1_score', 'correlation']:
+            if key in before_metrics and key in after_metrics:
+                before_val = before_metrics[key]
+                after_val = after_metrics[key]
+                if before_val > 0:
+                    # 정확도 지표는 증가가 개선
+                    improvements[key] = (after_val - before_val) / before_val * 100
+
+        report = {
+            "version": version,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
+            "before_training": before_metrics,
+            "after_training": after_metrics,
+            "improvements": improvements,
+            "training_stats": training_stats,
+            "summary": {
+                "mse_improved": improvements.get('mse', 0) > 0,
+                "precision_improved": improvements.get('precision', 0) > 0,
+                "overall_improved": sum(1 for v in improvements.values() if v > 0) > len(improvements) / 2
+            }
+        }
+
+        # S3에 저장
+        report_key = f'evaluations/{version}_report.json'
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=report_key,
+            Body=json.dumps(report, indent=2, ensure_ascii=False),
+            ContentType='application/json'
+        )
+
+        logger.info(f"✅ 평가 리포트 저장: {report_key}")
+        logger.info(f"📈 개선율: {improvements}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ 평가 리포트 저장 실패: {e}")
+        traceback.print_exc()
+        return False
+
+
 def save_model_to_s3(
     model: RecommendationModelV6,
     config: Dict[str, Any],
@@ -727,11 +918,23 @@ def run_training_pipeline() -> Dict[str, Any]:
 
         result['steps_completed'].append('load_model')
 
+        # 2.5. 학습 전 평가
+        logger.info("📊 Step 2.5: 학습 전 모델 평가")
+        before_metrics = evaluate_model(model, face, skin, style, gt)
+        result['before_metrics'] = before_metrics
+        result['steps_completed'].append('evaluate_before')
+
         # 3. Fine-tuning
         logger.info("🏋️ Step 3: Fine-tuning")
         model, stats = fine_tune_model(model, face, skin, style, gt)
         result['final_loss'] = stats['final_loss']
         result['steps_completed'].append('fine_tune')
+
+        # 3.5. 학습 후 평가
+        logger.info("📊 Step 3.5: 학습 후 모델 평가")
+        after_metrics = evaluate_model(model, face, skin, style, gt)
+        result['after_metrics'] = after_metrics
+        result['steps_completed'].append('evaluate_after')
 
         # 4. 설정 업데이트
         config['version'] = new_version
@@ -771,6 +974,11 @@ def run_training_pipeline() -> Dict[str, Any]:
         logger.info("📝 Step 8: 메타데이터 업데이트")
         update_metadata(training_triggered=True, new_model_version=new_version)
         result['steps_completed'].append('update_metadata')
+
+        # 10. 평가 리포트 저장
+        logger.info("📊 Step 9: 평가 리포트 저장")
+        save_evaluation_report(before_metrics, after_metrics, stats, new_version)
+        result['steps_completed'].append('save_evaluation_report')
 
         result['success'] = True
         result['message'] = 'Training completed successfully'
