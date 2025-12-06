@@ -1,10 +1,4 @@
 # AWS Lambda Python 3.11 base image
-#
-# ONNX 모드 지원 추가 (2025-12-03)
-# - USE_ONNX=true 환경변수로 ONNX 추천기 사용 가능
-# - PyTorch는 여전히 포함 (MediaPipe 의존성)
-# - 나중에 경량화 작업 시 requirements-lambda-lightweight.txt 사용
-#
 FROM public.ecr.aws/lambda/python:3.11
 
 # Install system dependencies for OpenCV, MediaPipe, and build tools
@@ -35,9 +29,6 @@ RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 # Install sentence-transformers separately (after sentencepiece is installed)
 RUN pip install --no-cache-dir sentence-transformers==2.2.2
 
-# Install ONNX Runtime for optional ONNX mode
-RUN pip install --no-cache-dir onnxruntime==1.16.3
-
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/
 
@@ -46,7 +37,6 @@ ENV SENTENCE_TRANSFORMERS_HOME=/tmp/.cache/sentence-transformers
 RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2'); print('Model pre-cached')" || true
 
 # Environment variables
-ENV USE_ONNX=false
 ENV PYTHONIOENCODING=utf-8
 
 # Set the CMD to your handler (main.handler)
