@@ -26,8 +26,8 @@ RUN pip install --no-cache-dir sentencepiece --prefer-binary
 COPY requirements-lambda.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Install sentence-transformers separately (after sentencepiece is installed)
-RUN pip install --no-cache-dir sentence-transformers==2.2.2
+# Install sentence-transformers with compatible transformers version
+RUN pip install --no-cache-dir transformers==4.36.0 sentence-transformers==2.2.2
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/
