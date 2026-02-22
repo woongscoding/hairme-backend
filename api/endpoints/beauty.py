@@ -27,6 +27,7 @@ def _get_service():
     global _beauty_consultant_service
     if _beauty_consultant_service is None:
         from services.beauty_consultant_service import get_beauty_consultant_service
+
         _beauty_consultant_service = get_beauty_consultant_service()
     return _beauty_consultant_service
 
@@ -37,8 +38,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ========== Response Models ==========
 
+
 class ProfileAnalysis(BaseModel):
     """기본 분석 결과"""
+
     face_shape: str = Field(..., description="얼굴형")
     personal_color: str = Field(..., description="퍼스널컬러")
     gender: str = Field(..., description="성별")
@@ -47,6 +50,7 @@ class ProfileAnalysis(BaseModel):
 
 class AnalysisDetail(BaseModel):
     """분석 상세값"""
+
     ita_value: float = Field(..., description="ITA 값")
     hue_value: float = Field(..., description="Hue 값")
     face_ratio: float = Field(..., description="얼굴 비율")
@@ -54,6 +58,7 @@ class AnalysisDetail(BaseModel):
 
 class HairstyleItem(BaseModel):
     """헤어스타일 추천"""
+
     style_name: str = Field(..., description="스타일명")
     score: Optional[float] = Field(None, description="추천 점수")
     reason: Optional[str] = Field(None, description="추천 이유")
@@ -62,6 +67,7 @@ class HairstyleItem(BaseModel):
 
 class HairColorItem(BaseModel):
     """염색 추천"""
+
     name: str = Field(..., description="염색명")
     hex: str = Field(..., description="HEX 코드")
     description: str = Field(default="", description="설명")
@@ -70,6 +76,7 @@ class HairColorItem(BaseModel):
 
 class ColorPaletteItem(BaseModel):
     """컬러 팔레트"""
+
     name: str = Field(..., description="컬러명")
     hex: str = Field(..., description="HEX 코드")
     description: str = Field(default="", description="설명")
@@ -77,6 +84,7 @@ class ColorPaletteItem(BaseModel):
 
 class StylingTips(BaseModel):
     """스타일링 조언"""
+
     makeup: List[str] = Field(default=[], description="메이크업 팁")
     fashion: List[str] = Field(default=[], description="패션 팁")
     description: str = Field(default="", description="상세 설명")
@@ -84,6 +92,7 @@ class StylingTips(BaseModel):
 
 class Recommendations(BaseModel):
     """통합 추천"""
+
     hairstyles: List[HairstyleItem] = Field(default=[], description="헤어스타일 추천")
     hair_colors: List[HairColorItem] = Field(default=[], description="염색 추천")
     color_palette: List[ColorPaletteItem] = Field(default=[], description="컬러 팔레트")
@@ -91,6 +100,7 @@ class Recommendations(BaseModel):
 
 class BeautyAnalysisResponse(BaseModel):
     """종합 뷰티 분석 응답"""
+
     success: bool
     profile: ProfileAnalysis
     analysis: AnalysisDetail
@@ -101,6 +111,7 @@ class BeautyAnalysisResponse(BaseModel):
 
 class ConsultationRequest(BaseModel):
     """상담 요청"""
+
     query: str = Field(..., min_length=1, max_length=500, description="질문")
     face_shape: Optional[str] = Field(None, description="얼굴형")
     personal_color: Optional[str] = Field(None, description="퍼스널컬러")
@@ -110,6 +121,7 @@ class ConsultationRequest(BaseModel):
 
 class ConsultationResponse(BaseModel):
     """상담 응답"""
+
     success: bool
     message: str = Field(..., description="상담 응답")
     intent: str = Field(..., description="분석된 의도")
@@ -118,12 +130,13 @@ class ConsultationResponse(BaseModel):
 
 # ========== Endpoints ==========
 
+
 @router.post("/beauty/analyze", response_model=BeautyAnalysisResponse, tags=["beauty"])
 @limiter.limit("10/minute")
 async def analyze_beauty(
     request: Request,
     file: UploadFile = File(..., description="얼굴 사진"),
-    gender: str = Form("neutral", description="성별 (male/female/neutral)")
+    gender: str = Form("neutral", description="성별 (male/female/neutral)"),
 ):
     """
     🌸 BeautyMe 종합 뷰티 분석
@@ -152,12 +165,12 @@ async def analyze_beauty(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
-        if gender not in ['male', 'female', 'neutral']:
-            gender = 'neutral'
+        if gender not in ["male", "female", "neutral"]:
+            gender = "neutral"
 
         logger.info(f"🌸 BeautyMe 분석 시작: {file.filename}, gender={gender}")
 
@@ -167,11 +180,14 @@ async def analyze_beauty(
         if len(image_data) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="파일 크기가 10MB를 초과합니다")
 
-        log_structured("beauty_analysis_start", {
-            "filename": file.filename,
-            "file_size_kb": round(len(image_data) / 1024, 2),
-            "gender": gender
-        })
+        log_structured(
+            "beauty_analysis_start",
+            {
+                "filename": file.filename,
+                "file_size_kb": round(len(image_data) / 1024, 2),
+                "gender": gender,
+            },
+        )
 
         # Analyze
         service = _get_service()
@@ -182,11 +198,14 @@ async def analyze_beauty(
 
         processing_time = round(time.time() - start_time, 2)
 
-        log_structured("beauty_analysis_complete", {
-            "face_shape": profile.face_shape,
-            "personal_color": profile.personal_color,
-            "processing_time": processing_time
-        })
+        log_structured(
+            "beauty_analysis_complete",
+            {
+                "face_shape": profile.face_shape,
+                "personal_color": profile.personal_color,
+                "processing_time": processing_time,
+            },
+        )
 
         # Build response
         return BeautyAnalysisResponse(
@@ -195,12 +214,12 @@ async def analyze_beauty(
                 face_shape=profile.face_shape,
                 personal_color=profile.personal_color,
                 gender=profile.gender,
-                confidence=profile.confidence
+                confidence=profile.confidence,
             ),
             analysis=AnalysisDetail(
                 ita_value=profile.ita_value,
                 hue_value=profile.hue_value,
-                face_ratio=profile.face_ratio
+                face_ratio=profile.face_ratio,
             ),
             recommendations=Recommendations(
                 hairstyles=[
@@ -208,31 +227,34 @@ async def analyze_beauty(
                         style_name=h.get("style_name", ""),
                         score=h.get("score"),
                         reason=h.get("reason"),
-                        image_search_url=h.get("image_search_url")
-                    ) for h in profile.hairstyles
+                        image_search_url=h.get("image_search_url"),
+                    )
+                    for h in profile.hairstyles
                 ],
                 hair_colors=[
                     HairColorItem(
                         name=c.get("name", ""),
                         hex=c.get("hex", "#000000"),
                         description=c.get("description", ""),
-                        is_trend=c.get("is_trend", False)
-                    ) for c in profile.hair_colors
+                        is_trend=c.get("is_trend", False),
+                    )
+                    for c in profile.hair_colors
                 ],
                 color_palette=[
                     ColorPaletteItem(
                         name=p.get("name", ""),
                         hex=p.get("hex", "#000000"),
-                        description=p.get("description", "")
-                    ) for p in profile.color_palette
-                ]
+                        description=p.get("description", ""),
+                    )
+                    for p in profile.color_palette
+                ],
             ),
             styling=StylingTips(
                 makeup=profile.styling_tips.get("makeup", []),
                 fashion=profile.styling_tips.get("fashion", []),
-                description=profile.styling_tips.get("description", "")
+                description=profile.styling_tips.get("description", ""),
             ),
-            processing_time=processing_time
+            processing_time=processing_time,
         )
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
@@ -241,27 +263,24 @@ async def analyze_beauty(
             content={
                 "success": False,
                 "error": e.__class__.__name__.replace("Exception", "").lower(),
-                "message": str(e)
-            }
+                "message": str(e),
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ BeautyMe 분석 오류: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"분석 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}"
         )
 
 
 @router.post("/beauty/consult", response_model=ConsultationResponse, tags=["beauty"])
 @limiter.limit("30/minute")
-async def consult_beauty(
-    request: Request,
-    consultation: ConsultationRequest
-):
+async def consult_beauty(request: Request, consultation: ConsultationRequest):
     """
     💬 BeautyMe AI 상담
 
@@ -286,33 +305,33 @@ async def consult_beauty(
 
         # 프로필 정보가 있으면 BeautyProfile 객체 생성
         from services.beauty_consultant_service import BeautyProfile
+
         profile = None
         if consultation.face_shape or consultation.personal_color:
             profile = BeautyProfile(
                 face_shape=consultation.face_shape or "",
                 personal_color=consultation.personal_color or "",
                 gender=consultation.gender or "neutral",
-                confidence=1.0
+                confidence=1.0,
             )
 
         result = service.get_consultation(
             query=consultation.query,
             profile=profile,
-            session_id=consultation.session_id
+            session_id=consultation.session_id,
         )
 
         return ConsultationResponse(
             success=result["success"],
             message=result["message"],
             intent=result["intent"],
-            suggestions=result.get("suggestions", [])
+            suggestions=result.get("suggestions", []),
         )
 
     except Exception as e:
         logger.error(f"❌ BeautyMe 상담 오류: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"상담 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"상담 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -322,7 +341,7 @@ async def generate_report(
     request: Request,
     file: UploadFile = File(..., description="얼굴 사진"),
     gender: str = Form("neutral", description="성별"),
-    format: str = Form("markdown", description="출력 형식 (markdown/json)")
+    format: str = Form("markdown", description="출력 형식 (markdown/json)"),
 ):
     """
     📊 BeautyMe 분석 리포트 생성
@@ -340,8 +359,8 @@ async def generate_report(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
         image_data = await file.read()
@@ -356,15 +375,11 @@ async def generate_report(
             report = service.generate_report(profile)
             return PlainTextResponse(content=report, media_type="text/markdown")
         else:
-            return {
-                "success": True,
-                "report": profile.to_dict()
-            }
+            return {"success": True, "report": profile.to_dict()}
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
         return JSONResponse(
-            status_code=400,
-            content={"success": False, "error": str(e)}
+            status_code=400, content={"success": False, "error": str(e)}
         )
     except Exception as e:
         logger.error(f"❌ 리포트 생성 오류: {str(e)}")
@@ -389,8 +404,8 @@ async def get_features():
                 "items": [
                     "얼굴형 분류 (5가지)",
                     "퍼스널컬러 진단 (4계절)",
-                    "성별 추론"
-                ]
+                    "성별 추론",
+                ],
             },
             "hairstyle": {
                 "name": "헤어스타일",
@@ -398,8 +413,8 @@ async def get_features():
                 "items": [
                     "얼굴형 맞춤 추천",
                     "AI 헤어스타일 합성",
-                    "트렌드 스타일 정보"
-                ]
+                    "트렌드 스타일 정보",
+                ],
             },
             "hair_color": {
                 "name": "염색",
@@ -408,8 +423,8 @@ async def get_features():
                     "맞춤 염색 컬러 추천",
                     "피해야 할 컬러 안내",
                     "2024-2025 트렌드 컬러",
-                    "AI 염색 시뮬레이션"
-                ]
+                    "AI 염색 시뮬레이션",
+                ],
             },
             "personal_color": {
                 "name": "퍼스널컬러",
@@ -417,22 +432,18 @@ async def get_features():
                 "items": [
                     "4계절 퍼스널컬러 진단",
                     "컬러 팔레트 제공",
-                    "메이크업/패션 스타일링 팁"
-                ]
+                    "메이크업/패션 스타일링 팁",
+                ],
             },
             "chatbot": {
                 "name": "AI 상담",
                 "description": "RAG 기반 뷰티 상담 챗봇",
-                "items": [
-                    "자연어 질문 응답",
-                    "맞춤형 상담",
-                    "지식 베이스 검색"
-                ]
-            }
+                "items": ["자연어 질문 응답", "맞춤형 상담", "지식 베이스 검색"],
+            },
         },
         "endpoints": {
             "main": "/api/beauty/analyze",
             "consult": "/api/beauty/consult",
-            "report": "/api/beauty/report"
-        }
+            "report": "/api/beauty/report",
+        },
     }

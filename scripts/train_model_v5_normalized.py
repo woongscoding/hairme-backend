@@ -37,14 +37,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # ========== 라벨 정규화 상수 ==========
-LABEL_MIN = 10.0   # 원본 점수 최소값
-LABEL_MAX = 95.0   # 원본 점수 최대값
+LABEL_MIN = 10.0  # 원본 점수 최소값
+LABEL_MAX = 95.0  # 원본 점수 최대값
 LABEL_RANGE = LABEL_MAX - LABEL_MIN  # 85
 
 
@@ -65,10 +64,7 @@ class AttentionLayer(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
         self.attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
         )
         self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
@@ -100,7 +96,7 @@ class NormalizedRecommenderV5(nn.Module):
         skin_feat_dim: int = 2,
         style_embed_dim: int = 384,
         use_attention: bool = True,
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -113,14 +109,14 @@ class NormalizedRecommenderV5(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         # Total dimension after projection
@@ -130,9 +126,7 @@ class NormalizedRecommenderV5(nn.Module):
         self.use_attention = use_attention
         if use_attention:
             self.attention = AttentionLayer(
-                embed_dim=self.total_dim,
-                num_heads=8,
-                dropout=0.1
+                embed_dim=self.total_dim, num_heads=8, dropout=0.1
             )
 
         # Feature fusion network
@@ -161,7 +155,7 @@ class NormalizedRecommenderV5(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
         # Project features
@@ -220,7 +214,7 @@ class HairstyleDatasetV5(Dataset):
         skin_features: np.ndarray,
         style_embeddings: np.ndarray,
         scores: np.ndarray,
-        normalize_labels: bool = True
+        normalize_labels: bool = True,
     ):
         """
         Args:
@@ -237,8 +231,12 @@ class HairstyleDatasetV5(Dataset):
         # 라벨 정규화
         if normalize_labels:
             normalized_scores = normalize_score(scores)
-            self.scores = torch.tensor(normalized_scores, dtype=torch.float32).unsqueeze(1)
-            logger.info(f"  라벨 정규화 적용: {scores.min():.1f}~{scores.max():.1f} → {normalized_scores.min():.3f}~{normalized_scores.max():.3f}")
+            self.scores = torch.tensor(
+                normalized_scores, dtype=torch.float32
+            ).unsqueeze(1)
+            logger.info(
+                f"  라벨 정규화 적용: {scores.min():.1f}~{scores.max():.1f} → {normalized_scores.min():.3f}~{normalized_scores.max():.3f}"
+            )
         else:
             self.scores = torch.tensor(scores, dtype=torch.float32).unsqueeze(1)
 
@@ -250,7 +248,7 @@ class HairstyleDatasetV5(Dataset):
             self.face_features[idx],
             self.skin_features[idx],
             self.style_embeddings[idx],
-            self.scores[idx]
+            self.scores[idx],
         )
 
 
@@ -261,10 +259,10 @@ def load_training_data(data_path: str) -> Dict:
     # allow_pickle=True: hairstyles 필드가 문자열 배열이므로 필요
     data = np.load(data_path, allow_pickle=True)
 
-    face_features = data['face_features']  # [N, 6]
-    skin_features = data['skin_features']  # [N, 2]
-    hairstyles = data['hairstyles']  # [N]
-    scores = data['scores']  # [N]
+    face_features = data["face_features"]  # [N, 6]
+    skin_features = data["skin_features"]  # [N, 2]
+    hairstyles = data["hairstyles"]  # [N]
+    scores = data["scores"]  # [N]
 
     logger.info(f"✅ 데이터 로드 완료:")
     logger.info(f"  - 샘플 수: {len(scores):,}")
@@ -274,11 +272,9 @@ def load_training_data(data_path: str) -> Dict:
 
     # 헤어스타일 임베딩 생성
     logger.info("🔄 헤어스타일 임베딩 생성 중...")
-    sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    sentence_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
     style_embeddings = sentence_model.encode(
-        hairstyles.tolist(),
-        show_progress_bar=True,
-        convert_to_numpy=True
+        hairstyles.tolist(), show_progress_bar=True, convert_to_numpy=True
     )
 
     logger.info(f"✅ 임베딩 생성 완료: {style_embeddings.shape}")
@@ -287,15 +283,19 @@ def load_training_data(data_path: str) -> Dict:
     logger.info(f"\n📊 원본 데이터 통계:")
     logger.info(f"  - 점수 범위: {scores.min():.1f} ~ {scores.max():.1f}")
     logger.info(f"  - 점수 평균: {scores.mean():.1f} ± {scores.std():.1f}")
-    logger.info(f"  - 고점수 (≥75): {(scores >= 75).sum():,}개 ({(scores >= 75).sum()/len(scores)*100:.1f}%)")
-    logger.info(f"  - 저점수 (≤40): {(scores <= 40).sum():,}개 ({(scores <= 40).sum()/len(scores)*100:.1f}%)")
+    logger.info(
+        f"  - 고점수 (≥75): {(scores >= 75).sum():,}개 ({(scores >= 75).sum()/len(scores)*100:.1f}%)"
+    )
+    logger.info(
+        f"  - 저점수 (≤40): {(scores <= 40).sum():,}개 ({(scores <= 40).sum()/len(scores)*100:.1f}%)"
+    )
 
     return {
-        'face_features': face_features,
-        'skin_features': skin_features,
-        'style_embeddings': style_embeddings,
-        'scores': scores,
-        'hairstyles': hairstyles
+        "face_features": face_features,
+        "skin_features": skin_features,
+        "style_embeddings": style_embeddings,
+        "scores": scores,
+        "hairstyles": hairstyles,
     }
 
 
@@ -304,17 +304,17 @@ def create_dataloaders_no_leakage(
     batch_size: int = 64,
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
-    samples_per_face: int = 6
+    samples_per_face: int = 6,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """데이터 리키지 방지: 얼굴 단위로 train/val/test 분할"""
 
     # 데이터셋 생성 (라벨 정규화 적용)
     dataset = HairstyleDatasetV5(
-        face_features=data['face_features'],
-        skin_features=data['skin_features'],
-        style_embeddings=data['style_embeddings'],
-        scores=data['scores'],
-        normalize_labels=True  # 라벨 정규화 활성화
+        face_features=data["face_features"],
+        skin_features=data["skin_features"],
+        style_embeddings=data["style_embeddings"],
+        scores=data["scores"],
+        normalize_labels=True,  # 라벨 정규화 활성화
     )
 
     total_samples = len(dataset)
@@ -335,13 +335,19 @@ def create_dataloaders_no_leakage(
     num_train_faces = num_faces - num_test_faces - num_val_faces
 
     train_face_indices = face_indices[:num_train_faces]
-    val_face_indices = face_indices[num_train_faces:num_train_faces + num_val_faces]
-    test_face_indices = face_indices[num_train_faces + num_val_faces:]
+    val_face_indices = face_indices[num_train_faces : num_train_faces + num_val_faces]
+    test_face_indices = face_indices[num_train_faces + num_val_faces :]
 
     logger.info(f"\n📊 얼굴 단위 분할:")
-    logger.info(f"  - Train: {num_train_faces:,}개 얼굴 ({num_train_faces/num_faces*100:.1f}%)")
-    logger.info(f"  - Val:   {num_val_faces:,}개 얼굴 ({num_val_faces/num_faces*100:.1f}%)")
-    logger.info(f"  - Test:  {num_test_faces:,}개 얼굴 ({num_test_faces/num_faces*100:.1f}%)")
+    logger.info(
+        f"  - Train: {num_train_faces:,}개 얼굴 ({num_train_faces/num_faces*100:.1f}%)"
+    )
+    logger.info(
+        f"  - Val:   {num_val_faces:,}개 얼굴 ({num_val_faces/num_faces*100:.1f}%)"
+    )
+    logger.info(
+        f"  - Test:  {num_test_faces:,}개 얼굴 ({num_test_faces/num_faces*100:.1f}%)"
+    )
 
     # 얼굴 인덱스 → 샘플 인덱스 변환
     def face_indices_to_sample_indices(face_idxs: np.ndarray) -> List[int]:
@@ -367,7 +373,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     val_loader = DataLoader(
@@ -375,7 +381,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     test_loader = DataLoader(
@@ -383,7 +389,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     return train_loader, val_loader, test_loader
@@ -394,7 +400,7 @@ def train_epoch(
     train_loader: DataLoader,
     optimizer: optim.Optimizer,
     criterion: nn.Module,
-    device: torch.device
+    device: torch.device,
 ) -> float:
     """1 에폭 학습"""
     model.train()
@@ -422,10 +428,7 @@ def train_epoch(
 
 
 def validate(
-    model: nn.Module,
-    val_loader: DataLoader,
-    criterion: nn.Module,
-    device: torch.device
+    model: nn.Module, val_loader: DataLoader, criterion: nn.Module, device: torch.device
 ) -> Tuple[float, float, float]:
     """
     검증 - 정규화된 스케일과 원본 스케일 모두에서 MAE 계산
@@ -464,7 +467,7 @@ def validate(
     return (
         total_loss / num_batches,
         total_normalized_mae / num_batches,
-        total_original_mae / num_batches
+        total_original_mae / num_batches,
     )
 
 
@@ -475,7 +478,7 @@ def train_model(
     batch_size: int = 64,
     learning_rate: float = 0.001,
     patience: int = 15,
-    use_attention: bool = True
+    use_attention: bool = True,
 ):
     """모델 학습 메인 함수 (라벨 정규화 적용)"""
     logger.info("=" * 60)
@@ -487,7 +490,7 @@ def train_model(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"🖥️  디바이스: {device}")
 
     # 데이터 로드
@@ -495,8 +498,7 @@ def train_model(
 
     # 데이터로더 생성 (라벨 정규화 포함)
     train_loader, val_loader, test_loader = create_dataloaders_no_leakage(
-        data,
-        batch_size=batch_size
+        data, batch_size=batch_size
     )
 
     # 모델 생성 (Sigmoid 출력층)
@@ -505,7 +507,7 @@ def train_model(
         skin_feat_dim=2,
         style_embed_dim=384,
         use_attention=use_attention,
-        dropout_rate=0.3
+        dropout_rate=0.3,
     ).to(device)
 
     logger.info(f"\n🏗️  모델 구조 (v5 - 정규화):")
@@ -520,22 +522,19 @@ def train_model(
     criterion = nn.MSELoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=5
+        optimizer, mode="min", factor=0.5, patience=5
     )
 
     # 학습 기록
     history = {
-        'train_loss': [],
-        'val_loss': [],
-        'val_mae_normalized': [],
-        'val_mae_original': [],
-        'lr': []
+        "train_loss": [],
+        "val_loss": [],
+        "val_mae_normalized": [],
+        "val_mae_original": [],
+        "lr": [],
     }
 
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     patience_counter = 0
 
     logger.info(f"\n🏋️  학습 시작:")
@@ -549,16 +548,18 @@ def train_model(
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
 
         # 검증
-        val_loss, val_mae_norm, val_mae_orig = validate(model, val_loader, criterion, device)
+        val_loss, val_mae_norm, val_mae_orig = validate(
+            model, val_loader, criterion, device
+        )
 
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = optimizer.param_groups[0]["lr"]
 
         # 기록
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        history['val_mae_normalized'].append(val_mae_norm)
-        history['val_mae_original'].append(val_mae_orig)
-        history['lr'].append(current_lr)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_mae_normalized"].append(val_mae_norm)
+        history["val_mae_original"].append(val_mae_orig)
+        history["lr"].append(current_lr)
 
         # 출력
         if (epoch + 1) % 5 == 0 or epoch == 0:
@@ -578,23 +579,26 @@ def train_model(
             patience_counter = 0
 
             model_path = output_dir / "hairstyle_recommender_v5_normalized.pt"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_val_loss': best_val_loss,
-                'history': history,
-                'config': {
-                    'face_feat_dim': 6,
-                    'skin_feat_dim': 2,
-                    'style_embed_dim': 384,
-                    'use_attention': use_attention,
-                    'normalized': True,
-                    'label_min': LABEL_MIN,
-                    'label_max': LABEL_MAX,
-                    'label_range': LABEL_RANGE
-                }
-            }, model_path)
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_val_loss": best_val_loss,
+                    "history": history,
+                    "config": {
+                        "face_feat_dim": 6,
+                        "skin_feat_dim": 2,
+                        "style_embed_dim": 384,
+                        "use_attention": use_attention,
+                        "normalized": True,
+                        "label_min": LABEL_MIN,
+                        "label_max": LABEL_MAX,
+                        "label_range": LABEL_RANGE,
+                    },
+                },
+                model_path,
+            )
 
             logger.info(f"  ✅ Best 모델 저장: {model_path}")
 
@@ -607,14 +611,16 @@ def train_model(
 
     # 최종 테스트
     logger.info(f"\n🧪 최종 테스트 평가:")
-    test_loss, test_mae_norm, test_mae_orig = validate(model, test_loader, criterion, device)
+    test_loss, test_mae_norm, test_mae_orig = validate(
+        model, test_loader, criterion, device
+    )
     logger.info(f"  - Test Loss: {test_loss:.4f}")
     logger.info(f"  - Test MAE (정규화): {test_mae_norm:.4f}")
     logger.info(f"  - Test MAE (원본 스케일): {test_mae_orig:.2f}점")
 
     # 학습 기록 저장
     history_path = output_dir / "training_history_v5_normalized.json"
-    with open(history_path, 'w', encoding='utf-8') as f:
+    with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
 
     logger.info(f"\n📊 학습 기록 저장: {history_path}")
@@ -638,19 +644,27 @@ def train_model(
         all_labels = np.concatenate(all_labels).flatten()
 
         # 정규화된 출력 범위
-        logger.info(f"  - 정규화된 출력 범위: {all_preds.min():.4f} ~ {all_preds.max():.4f}")
-        logger.info(f"  - 정규화된 라벨 범위: {all_labels.min():.4f} ~ {all_labels.max():.4f}")
+        logger.info(
+            f"  - 정규화된 출력 범위: {all_preds.min():.4f} ~ {all_preds.max():.4f}"
+        )
+        logger.info(
+            f"  - 정규화된 라벨 범위: {all_labels.min():.4f} ~ {all_labels.max():.4f}"
+        )
 
         # 원본 스케일로 역변환
         preds_orig = all_preds * LABEL_RANGE + LABEL_MIN
         labels_orig = all_labels * LABEL_RANGE + LABEL_MIN
 
-        logger.info(f"  - 원본 스케일 출력 범위: {preds_orig.min():.1f} ~ {preds_orig.max():.1f}")
-        logger.info(f"  - 원본 스케일 라벨 범위: {labels_orig.min():.1f} ~ {labels_orig.max():.1f}")
+        logger.info(
+            f"  - 원본 스케일 출력 범위: {preds_orig.min():.1f} ~ {preds_orig.max():.1f}"
+        )
+        logger.info(
+            f"  - 원본 스케일 라벨 범위: {labels_orig.min():.1f} ~ {labels_orig.max():.1f}"
+        )
 
         # 추천/비추천 분류 정확도
         high_threshold = normalize_score(np.array([75.0]))[0]  # 75점 → 정규화
-        low_threshold = normalize_score(np.array([40.0]))[0]   # 40점 → 정규화
+        low_threshold = normalize_score(np.array([40.0]))[0]  # 40점 → 정규화
 
         high_labels = all_labels >= high_threshold
         low_labels = all_labels <= low_threshold
@@ -659,15 +673,21 @@ def train_model(
         low_correct = (all_preds[low_labels] <= low_threshold).sum()
 
         logger.info(f"\n📊 분류 정확도:")
-        logger.info(f"  - 고점수(≥75점) 예측 정확도: {high_correct}/{high_labels.sum()} ({high_correct/high_labels.sum()*100:.1f}%)")
-        logger.info(f"  - 저점수(≤40점) 예측 정확도: {low_correct}/{low_labels.sum()} ({low_correct/low_labels.sum()*100:.1f}%)")
+        logger.info(
+            f"  - 고점수(≥75점) 예측 정확도: {high_correct}/{high_labels.sum()} ({high_correct/high_labels.sum()*100:.1f}%)"
+        )
+        logger.info(
+            f"  - 저점수(≤40점) 예측 정확도: {low_correct}/{low_labels.sum()} ({low_correct/low_labels.sum()*100:.1f}%)"
+        )
 
     logger.info("\n" + "=" * 60)
     logger.info("✅ 학습 완료!")
     logger.info("=" * 60)
     logger.info(f"  - Best Val Loss: {best_val_loss:.4f}")
     logger.info(f"  - Test MAE: {test_mae_orig:.2f}점 (원본 스케일)")
-    logger.info(f"  - 모델 경로: {output_dir / 'hairstyle_recommender_v5_normalized.pt'}")
+    logger.info(
+        f"  - 모델 경로: {output_dir / 'hairstyle_recommender_v5_normalized.pt'}"
+    )
 
 
 def main():
@@ -676,42 +696,26 @@ def main():
         "--data",
         type=str,
         default="data_source/ai_face_1000.npz",
-        help="학습 데이터 NPZ 경로 (기본: data_source/ai_face_1000.npz)"
+        help="학습 데이터 NPZ 경로 (기본: data_source/ai_face_1000.npz)",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="models",
-        help="모델 저장 디렉토리 (기본: models)"
+        help="모델 저장 디렉토리 (기본: models)",
     )
     parser.add_argument(
-        "--epochs",
-        type=int,
-        default=100,
-        help="학습 에폭 수 (기본: 100)"
+        "--epochs", type=int, default=100, help="학습 에폭 수 (기본: 100)"
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=64,
-        help="배치 크기 (기본: 64)"
+        "--batch-size", type=int, default=64, help="배치 크기 (기본: 64)"
+    )
+    parser.add_argument("--lr", type=float, default=0.001, help="학습률 (기본: 0.001)")
+    parser.add_argument(
+        "--patience", type=int, default=15, help="Early stopping patience (기본: 15)"
     )
     parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.001,
-        help="학습률 (기본: 0.001)"
-    )
-    parser.add_argument(
-        "--patience",
-        type=int,
-        default=15,
-        help="Early stopping patience (기본: 15)"
-    )
-    parser.add_argument(
-        "--no-attention",
-        action="store_true",
-        help="Attention 비활성화"
+        "--no-attention", action="store_true", help="Attention 비활성화"
     )
 
     args = parser.parse_args()
@@ -723,7 +727,7 @@ def main():
         batch_size=args.batch_size,
         learning_rate=args.lr,
         patience=args.patience,
-        use_attention=not args.no_attention
+        use_attention=not args.no_attention,
     )
 
 

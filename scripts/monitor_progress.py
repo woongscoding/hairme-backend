@@ -22,15 +22,10 @@ def monitor_log(log_file):
     print()
 
     # 통계 초기화
-    stats = {
-        "total": 0,
-        "success": 0,
-        "failed": 0,
-        "samples": 0
-    }
+    stats = {"total": 0, "success": 0, "failed": 0, "samples": 0}
 
     try:
-        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
             # 파일 끝으로 이동
             f.seek(0, 2)
 
@@ -47,7 +42,7 @@ def monitor_log(log_file):
 
                 # 성공/실패 카운트
                 if "성공:" in line and "샘플 생성" in line:
-                    match = re.search(r'(\d+)개 샘플', line)
+                    match = re.search(r"(\d+)개 샘플", line)
                     if match:
                         stats["samples"] += int(match.group(1))
                         stats["success"] += 1
@@ -57,7 +52,7 @@ def monitor_log(log_file):
 
                 # 통계 업데이트
                 if "📊 진행률:" in line:
-                    match = re.search(r'\[(\d+)/(\d+)\]', line)
+                    match = re.search(r"\[(\d+)/(\d+)\]", line)
                     if match:
                         current = int(match.group(1))
                         total = int(match.group(2))
@@ -67,7 +62,9 @@ def monitor_log(log_file):
                         if current % 5 == 0:
                             print()
                             print(f"📊 현재 통계:")
-                            print(f"  진행: {current}/{total} ({current/total*100:.1f}%)")
+                            print(
+                                f"  진행: {current}/{total} ({current/total*100:.1f}%)"
+                            )
                             print(f"  성공: {stats['success']}개")
                             print(f"  실패: {stats['failed']}개")
                             print(f"  누적 샘플: {stats['samples']}개")

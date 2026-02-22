@@ -33,13 +33,15 @@ def init_database() -> bool:
     Returns:
         bool: True if initialization successful, False otherwise
     """
-    use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+    use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
 
     if use_dynamodb:
         logger.info("🔄 Initializing DynamoDB connection...")
         from database.dynamodb_connection import init_dynamodb
+
         return init_dynamodb()
     else:
         logger.info("🔄 Initializing MySQL connection...")
         from database.connection import init_database as init_mysql
+
         return init_mysql()

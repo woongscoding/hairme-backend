@@ -70,7 +70,7 @@ def normalize_training_data(data: Dict) -> Dict:
     normalized_data = {
         "metadata": data["metadata"].copy(),
         "statistics": data["statistics"].copy() if "statistics" in data else {},
-        "training_data": []
+        "training_data": [],
     }
 
     # 각 이미지의 조합에서 스타일명 정규화
@@ -79,7 +79,7 @@ def normalize_training_data(data: Dict) -> Dict:
             "image_id": image_data["image_id"],
             "face_shape": image_data["face_shape"],
             "skin_tone": image_data["skin_tone"],
-            "combinations": []
+            "combinations": [],
         }
 
         for combo in image_data["combinations"]:
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         "단발 보브",
         "  허쉬컷  ",
         "5:5 가르마",
-        "웨이브 레이어드 컷"
+        "웨이브 레이어드 컷",
     ]
 
     print("=" * 60)

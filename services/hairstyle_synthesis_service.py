@@ -33,6 +33,7 @@ class HairstyleSynthesisService:
         if self._client is None:
             from google import genai
             from config.settings import settings
+
             self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._client
 
@@ -45,7 +46,7 @@ class HairstyleSynthesisService:
         image_data: bytes,
         hairstyle_name: str,
         gender: str = "male",
-        additional_instructions: Optional[str] = None
+        additional_instructions: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Synthesize a hairstyle on the user's photo
@@ -99,7 +100,7 @@ class HairstyleSynthesisService:
                         contents=[prompt, original_image],
                         config=types.GenerateContentConfig(
                             response_modalities=["IMAGE", "TEXT"],
-                        )
+                        ),
                     )
 
                     # Extract the generated image
@@ -107,24 +108,30 @@ class HairstyleSynthesisService:
                     result_text = None
 
                     for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
+                        if hasattr(part, "inline_data") and part.inline_data:
                             # Image data
                             result_image = part.inline_data
-                        elif hasattr(part, 'text') and part.text:
+                        elif hasattr(part, "text") and part.text:
                             # Text response
                             result_text = part.text
 
                     if result_image is not None:
-                        logger.info(f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})")
+                        logger.info(
+                            f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})"
+                        )
                         break
                     else:
-                        logger.warning(f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}")
+                        logger.warning(
+                            f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}"
+                        )
                         if attempt < self.MAX_RETRIES - 1:
                             time.sleep(self.RETRY_DELAY)
 
                 except Exception as api_error:
                     last_error = api_error
-                    logger.warning(f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}")
+                    logger.warning(
+                        f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}"
+                    )
                     if attempt < self.MAX_RETRIES - 1:
                         time.sleep(self.RETRY_DELAY)
 
@@ -135,7 +142,7 @@ class HairstyleSynthesisService:
                     "image_base64": None,
                     "image_format": None,
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
-                    "gemini_response": result_text
+                    "gemini_response": result_text,
                 }
 
             # Convert to base64
@@ -143,7 +150,9 @@ class HairstyleSynthesisService:
 
             # 🔍 디버깅: Gemini 응답 데이터 타입 확인
             logger.info(f"📦 Gemini 응답 데이터 타입: {type(image_bytes)}")
-            logger.info(f"📦 Gemini 응답 데이터 크기: {len(image_bytes) if image_bytes else 0}")
+            logger.info(
+                f"📦 Gemini 응답 데이터 크기: {len(image_bytes) if image_bytes else 0}"
+            )
 
             # Gemini API가 이미 Base64 문자열을 반환하는 경우 처리
             if isinstance(image_bytes, str):
@@ -152,34 +161,36 @@ class HairstyleSynthesisService:
                 image_base64 = image_bytes
             elif isinstance(image_bytes, bytes):
                 # bytes인 경우 - PNG 시그니처 확인
-                if image_bytes[:4] == b'\x89PNG' or image_bytes[:3] == b'\xff\xd8\xff':
+                if image_bytes[:4] == b"\x89PNG" or image_bytes[:3] == b"\xff\xd8\xff":
                     # 실제 이미지 바이너리 - Base64 인코딩 필요
                     logger.info("📦 실제 이미지 바이너리 - Base64 인코딩 수행")
-                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                 else:
                     # 이미 Base64 인코딩된 bytes일 수 있음 - 디코드해서 확인
                     try:
-                        decoded_str = image_bytes.decode('utf-8')
+                        decoded_str = image_bytes.decode("utf-8")
                         # Base64 문자열인지 확인 (iVBOR은 PNG, /9j/는 JPEG의 Base64 시작)
-                        if decoded_str.startswith('iVBOR') or decoded_str.startswith('/9j/'):
+                        if decoded_str.startswith("iVBOR") or decoded_str.startswith(
+                            "/9j/"
+                        ):
                             logger.info("📦 이미 Base64 인코딩된 bytes - 그대로 사용")
                             image_base64 = decoded_str
                         else:
                             # 알 수 없는 형식 - 일단 Base64 인코딩
                             logger.info("📦 알 수 없는 형식 - Base64 인코딩 수행")
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                     except UnicodeDecodeError:
                         # UTF-8 디코드 실패 - 바이너리 데이터로 취급
                         logger.info("📦 바이너리 데이터 - Base64 인코딩 수행")
-                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
             else:
                 # 기타 타입 - 일단 bytes로 변환 시도
                 logger.warning(f"📦 예상치 못한 타입: {type(image_bytes)}")
-                image_base64 = base64.b64encode(bytes(image_bytes)).decode('utf-8')
+                image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
 
             # Determine format from mime type
             mime_type = result_image.mime_type  # e.g., "image/png"
-            image_format = mime_type.split('/')[-1] if mime_type else "png"
+            image_format = mime_type.split("/")[-1] if mime_type else "png"
 
             logger.info(f"✅ 헤어스타일 합성 성공: {hairstyle_name}")
 
@@ -188,12 +199,13 @@ class HairstyleSynthesisService:
                 "image_base64": image_base64,
                 "image_format": image_format,
                 "message": f"'{hairstyle_name}' 스타일이 적용되었습니다.",
-                "gemini_response": result_text
+                "gemini_response": result_text,
             }
 
         except Exception as e:
             logger.error(f"❌ 헤어스타일 합성 실패: {str(e)}")
             import traceback
+
             traceback.print_exc()
 
             return {
@@ -201,14 +213,11 @@ class HairstyleSynthesisService:
                 "image_base64": None,
                 "image_format": None,
                 "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
-                "gemini_response": None
+                "gemini_response": None,
             }
 
     def synthesize_with_reference(
-        self,
-        user_image_data: bytes,
-        reference_image_data: bytes,
-        gender: str = "male"
+        self, user_image_data: bytes, reference_image_data: bytes, gender: str = "male"
     ) -> Dict[str, Any]:
         """
         Synthesize hairstyle using a reference image
@@ -252,7 +261,7 @@ class HairstyleSynthesisService:
                         contents=[prompt, user_image, reference_image],
                         config=types.GenerateContentConfig(
                             response_modalities=["IMAGE", "TEXT"],
-                        )
+                        ),
                     )
 
                     # Extract result
@@ -260,22 +269,28 @@ class HairstyleSynthesisService:
                     result_text = None
 
                     for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'inline_data') and part.inline_data:
+                        if hasattr(part, "inline_data") and part.inline_data:
                             result_image = part.inline_data
-                        elif hasattr(part, 'text') and part.text:
+                        elif hasattr(part, "text") and part.text:
                             result_text = part.text
 
                     if result_image is not None:
-                        logger.info(f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})")
+                        logger.info(
+                            f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})"
+                        )
                         break
                     else:
-                        logger.warning(f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}")
+                        logger.warning(
+                            f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}"
+                        )
                         if attempt < self.MAX_RETRIES - 1:
                             time.sleep(self.RETRY_DELAY)
 
                 except Exception as api_error:
                     last_error = api_error
-                    logger.warning(f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}")
+                    logger.warning(
+                        f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}"
+                    )
                     if attempt < self.MAX_RETRIES - 1:
                         time.sleep(self.RETRY_DELAY)
 
@@ -286,7 +301,7 @@ class HairstyleSynthesisService:
                     "image_base64": None,
                     "image_format": None,
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
-                    "gemini_response": result_text
+                    "gemini_response": result_text,
                 }
 
             image_bytes = result_image.data
@@ -295,22 +310,24 @@ class HairstyleSynthesisService:
             if isinstance(image_bytes, str):
                 image_base64 = image_bytes
             elif isinstance(image_bytes, bytes):
-                if image_bytes[:4] == b'\x89PNG' or image_bytes[:3] == b'\xff\xd8\xff':
-                    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                if image_bytes[:4] == b"\x89PNG" or image_bytes[:3] == b"\xff\xd8\xff":
+                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                 else:
                     try:
-                        decoded_str = image_bytes.decode('utf-8')
-                        if decoded_str.startswith('iVBOR') or decoded_str.startswith('/9j/'):
+                        decoded_str = image_bytes.decode("utf-8")
+                        if decoded_str.startswith("iVBOR") or decoded_str.startswith(
+                            "/9j/"
+                        ):
                             image_base64 = decoded_str
                         else:
-                            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                     except UnicodeDecodeError:
-                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
             else:
-                image_base64 = base64.b64encode(bytes(image_bytes)).decode('utf-8')
+                image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
 
             mime_type = result_image.mime_type
-            image_format = mime_type.split('/')[-1] if mime_type else "png"
+            image_format = mime_type.split("/")[-1] if mime_type else "png"
 
             logger.info(f"✅ 레퍼런스 기반 합성 성공")
 
@@ -319,7 +336,7 @@ class HairstyleSynthesisService:
                 "image_base64": image_base64,
                 "image_format": image_format,
                 "message": "레퍼런스 스타일이 적용되었습니다.",
-                "gemini_response": result_text
+                "gemini_response": result_text,
             }
 
         except Exception as e:
@@ -329,7 +346,7 @@ class HairstyleSynthesisService:
                 "image_base64": None,
                 "image_format": None,
                 "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
-                "gemini_response": None
+                "gemini_response": None,
             }
 
 

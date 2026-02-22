@@ -38,7 +38,7 @@ class HealthCheckService:
             return {
                 "status": "skipped",
                 "message": "DynamoDB not enabled (using MySQL)",
-                "latency_ms": 0
+                "latency_ms": 0,
             }
 
         try:
@@ -48,7 +48,7 @@ class HealthCheckService:
             start_time = time.time()
 
             # Create DynamoDB resource
-            dynamodb = boto3.resource('dynamodb', region_name=settings.AWS_REGION)
+            dynamodb = boto3.resource("dynamodb", region_name=settings.AWS_REGION)
             table = dynamodb.Table(settings.DYNAMODB_TABLE_NAME)
 
             # Lightweight operation - just check table status
@@ -63,18 +63,18 @@ class HealthCheckService:
                 "table_name": settings.DYNAMODB_TABLE_NAME,
                 "table_status": table_description,
                 "latency_ms": latency_ms,
-                "region": settings.AWS_REGION
+                "region": settings.AWS_REGION,
             }
 
         except ClientError as e:
-            error_code = e.response['Error']['Code']
+            error_code = e.response["Error"]["Code"]
             logger.error(f"❌ DynamoDB health check failed: {error_code}")
 
             return {
                 "status": "unhealthy",
                 "error": error_code,
                 "message": str(e),
-                "latency_ms": 0
+                "latency_ms": 0,
             }
 
         except Exception as e:
@@ -84,7 +84,7 @@ class HealthCheckService:
                 "status": "unhealthy",
                 "error": type(e).__name__,
                 "message": str(e),
-                "latency_ms": 0
+                "latency_ms": 0,
             }
 
     async def check_gemini_api(self) -> Dict[str, Any]:
@@ -118,7 +118,7 @@ class HealthCheckService:
                 "status": "healthy",
                 "model": settings.MODEL_NAME,
                 "latency_ms": latency_ms,
-                "response_length": len(response.text) if response.text else 0
+                "response_length": len(response.text) if response.text else 0,
             }
 
         except Exception as e:
@@ -128,7 +128,7 @@ class HealthCheckService:
                 "status": "unhealthy",
                 "error": type(e).__name__,
                 "message": str(e)[:100],  # Truncate long error messages
-                "latency_ms": 0
+                "latency_ms": 0,
             }
 
     def get_system_metrics(self) -> Dict[str, Any]:
@@ -147,12 +147,12 @@ class HealthCheckService:
 
             # Get disk usage (if available)
             try:
-                disk = psutil.disk_usage('/')
+                disk = psutil.disk_usage("/")
                 disk_info = {
-                    "total_gb": round(disk.total / (1024 ** 3), 2),
-                    "used_gb": round(disk.used / (1024 ** 3), 2),
-                    "free_gb": round(disk.free / (1024 ** 3), 2),
-                    "percent": disk.percent
+                    "total_gb": round(disk.total / (1024**3), 2),
+                    "used_gb": round(disk.used / (1024**3), 2),
+                    "free_gb": round(disk.free / (1024**3), 2),
+                    "percent": disk.percent,
                 }
             except (OSError, PermissionError) as e:
                 # Disk not accessible or permission denied
@@ -164,26 +164,20 @@ class HealthCheckService:
                 disk_info = {"status": "error", "error": str(e)}
 
             return {
-                "cpu": {
-                    "percent": cpu_percent,
-                    "count": psutil.cpu_count()
-                },
+                "cpu": {"percent": cpu_percent, "count": psutil.cpu_count()},
                 "memory": {
-                    "total_mb": round(memory.total / (1024 ** 2), 2),
-                    "available_mb": round(memory.available / (1024 ** 2), 2),
-                    "used_mb": round(memory.used / (1024 ** 2), 2),
-                    "percent": memory.percent
+                    "total_mb": round(memory.total / (1024**2), 2),
+                    "available_mb": round(memory.available / (1024**2), 2),
+                    "used_mb": round(memory.used / (1024**2), 2),
+                    "percent": memory.percent,
                 },
-                "disk": disk_info
+                "disk": disk_info,
             }
 
         except Exception as e:
             logger.error(f"❌ System metrics error: {str(e)}")
 
-            return {
-                "error": str(e),
-                "status": "unavailable"
-            }
+            return {"error": str(e), "status": "unavailable"}
 
     def get_circuit_breaker_status(self) -> Dict[str, Any]:
         """
@@ -200,20 +194,20 @@ class HealthCheckService:
                 "state": str(gemini_breaker.current_state),
                 "fail_counter": gemini_breaker.fail_counter,
                 "fail_max": gemini_breaker.fail_max,
-                "last_failure": str(gemini_breaker.last_failure_time) if hasattr(gemini_breaker, 'last_failure_time') else None
+                "last_failure": (
+                    str(gemini_breaker.last_failure_time)
+                    if hasattr(gemini_breaker, "last_failure_time")
+                    else None
+                ),
             }
 
         except Exception as e:
             logger.error(f"❌ Circuit breaker status error: {str(e)}")
 
-            return {
-                "status": "unavailable",
-                "error": str(e)
-            }
+            return {"status": "unavailable", "error": str(e)}
 
     async def comprehensive_health_check(
-        self,
-        include_expensive_checks: bool = False
+        self, include_expensive_checks: bool = False
     ) -> Dict[str, Any]:
         """
         Run comprehensive health check
@@ -230,7 +224,7 @@ class HealthCheckService:
         health_result = {
             "status": "healthy",
             "timestamp": datetime.utcnow().isoformat(),
-            "checks": {}
+            "checks": {},
         }
 
         # 1. System metrics (fast, always run)
@@ -256,7 +250,7 @@ class HealthCheckService:
         else:
             health_result["checks"]["gemini_api"] = {
                 "status": "skipped",
-                "message": "Use ?deep=true for full check"
+                "message": "Use ?deep=true for full check",
             }
 
         # Calculate total check time

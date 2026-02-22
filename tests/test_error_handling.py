@@ -12,7 +12,7 @@ from core.exceptions import (
     StyleNotFoundException,
     CircuitBreakerOpenException,
     MediaPipeException,
-    DynamoDBException
+    DynamoDBException,
 )
 
 
@@ -32,12 +32,16 @@ class TestExceptionHierarchy:
     def test_style_not_found_is_ml_exception(self):
         """Test that StyleNotFoundException is subclass of MLModelException"""
         from core.exceptions import MLModelException
+
         exc = StyleNotFoundException("test-style")
         assert isinstance(exc, MLModelException)
 
     def test_exception_messages(self):
         """Test exception default messages"""
-        assert "rate limit" in GeminiRateLimitException().message.lower() or "한도" in GeminiRateLimitException().message
+        assert (
+            "rate limit" in GeminiRateLimitException().message.lower()
+            or "한도" in GeminiRateLimitException().message
+        )
         assert "파싱" in GeminiInvalidResponseException().message
         assert "인증" in GeminiAuthenticationException().message
 
@@ -48,19 +52,26 @@ class TestHybridRecommenderErrorHandling:
     @pytest.fixture
     def hybrid_service(self):
         """Create hybrid service with mocked components"""
-        with patch('services.hybrid_recommender.get_ml_recommender') as mock_ml:
-            with patch('services.hybrid_recommender.get_reason_generator') as mock_reason:
+        with patch("services.hybrid_recommender.get_ml_recommender") as mock_ml:
+            with patch(
+                "services.hybrid_recommender.get_reason_generator"
+            ) as mock_reason:
                 mock_ml.return_value = None
                 mock_reason.return_value = None
 
                 from services.hybrid_recommender import HybridRecommendationService
+
                 service = HybridRecommendationService(gemini_api_key="test-key")
                 return service
 
     @pytest.mark.asyncio
-    async def test_gemini_json_parse_error_raises_specific_exception(self, hybrid_service):
+    async def test_gemini_json_parse_error_raises_specific_exception(
+        self, hybrid_service
+    ):
         """Test that JSON parse errors raise GeminiInvalidResponseException"""
-        with patch.object(hybrid_service.gemini_model, 'generate_content') as mock_generate:
+        with patch.object(
+            hybrid_service.gemini_model, "generate_content"
+        ) as mock_generate:
             # Mock response with invalid JSON
             mock_response = Mock()
             mock_response.text = "This is not JSON"
@@ -72,7 +83,9 @@ class TestHybridRecommenderErrorHandling:
     @pytest.mark.asyncio
     async def test_gemini_rate_limit_detection(self, hybrid_service):
         """Test that rate limit errors are detected and raise specific exception"""
-        with patch.object(hybrid_service.gemini_model, 'generate_content') as mock_generate:
+        with patch.object(
+            hybrid_service.gemini_model, "generate_content"
+        ) as mock_generate:
             # Mock rate limit error
             mock_generate.side_effect = Exception("quota exceeded for this resource")
 
@@ -82,7 +95,9 @@ class TestHybridRecommenderErrorHandling:
     @pytest.mark.asyncio
     async def test_gemini_auth_error_detection(self, hybrid_service):
         """Test that authentication errors are detected"""
-        with patch.object(hybrid_service.gemini_model, 'generate_content') as mock_generate:
+        with patch.object(
+            hybrid_service.gemini_model, "generate_content"
+        ) as mock_generate:
             # Mock auth error
             mock_generate.side_effect = Exception("API key invalid")
 
@@ -92,7 +107,9 @@ class TestHybridRecommenderErrorHandling:
     @pytest.mark.asyncio
     async def test_gemini_connection_error_detection(self, hybrid_service):
         """Test that connection errors are detected"""
-        with patch.object(hybrid_service.gemini_model, 'generate_content') as mock_generate:
+        with patch.object(
+            hybrid_service.gemini_model, "generate_content"
+        ) as mock_generate:
             # Mock connection error
             mock_generate.side_effect = Exception("connection timeout")
 
@@ -148,7 +165,9 @@ class TestCircuitBreakerErrorHandling:
         from services.circuit_breaker import with_circuit_breaker
 
         # Create test breaker
-        test_breaker = CircuitBreaker(fail_max=1, timeout_duration=60, name="TestService")
+        test_breaker = CircuitBreaker(
+            fail_max=1, timeout_duration=60, name="TestService"
+        )
 
         # Function that always fails
         @with_circuit_breaker(test_breaker, fallback=None)
@@ -170,7 +189,9 @@ class TestCircuitBreakerErrorHandling:
         from pybreaker import CircuitBreaker
         from services.circuit_breaker import with_circuit_breaker
 
-        test_breaker = CircuitBreaker(fail_max=1, timeout_duration=60, name="TestService")
+        test_breaker = CircuitBreaker(
+            fail_max=1, timeout_duration=60, name="TestService"
+        )
 
         def fallback_function(*args, **kwargs):
             return {"fallback": True}
@@ -198,17 +219,22 @@ class TestHealthCheckErrorHandling:
 
         health_service = HealthCheckService()
 
-        with patch('config.settings.settings') as mock_settings:
+        with patch("config.settings.settings") as mock_settings:
             mock_settings.USE_DYNAMODB = True
-            mock_settings.AWS_REGION = 'ap-northeast-2'
-            mock_settings.DYNAMODB_TABLE_NAME = 'test-table'
+            mock_settings.AWS_REGION = "ap-northeast-2"
+            mock_settings.DYNAMODB_TABLE_NAME = "test-table"
 
-            with patch('boto3.resource') as mock_boto:
+            with patch("boto3.resource") as mock_boto:
                 from botocore.exceptions import ClientError
 
                 mock_boto.side_effect = ClientError(
-                    {'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Table not found'}},
-                    'DescribeTable'
+                    {
+                        "Error": {
+                            "Code": "ResourceNotFoundException",
+                            "Message": "Table not found",
+                        }
+                    },
+                    "DescribeTable",
                 )
 
                 result = await health_service.check_dynamodb()
@@ -223,12 +249,12 @@ class TestHealthCheckErrorHandling:
 
         health_service = HealthCheckService()
 
-        with patch('config.settings.settings') as mock_settings:
-            mock_settings.GEMINI_API_KEY = 'test-key'
-            mock_settings.MODEL_NAME = 'gemini-1.5-flash-latest'
+        with patch("config.settings.settings") as mock_settings:
+            mock_settings.GEMINI_API_KEY = "test-key"
+            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
 
-            with patch('google.generativeai.configure'):
-                with patch('google.generativeai.GenerativeModel') as mock_model_class:
+            with patch("google.generativeai.configure"):
+                with patch("google.generativeai.GenerativeModel") as mock_model_class:
                     mock_model_class.side_effect = Exception("API Error")
 
                     result = await health_service.check_gemini_api()
@@ -243,7 +269,7 @@ class TestHealthCheckErrorHandling:
 
         health_service = HealthCheckService()
 
-        with patch('psutil.disk_usage') as mock_disk:
+        with patch("psutil.disk_usage") as mock_disk:
             mock_disk.side_effect = PermissionError("Access denied")
 
             result = health_service.get_system_metrics()
@@ -274,17 +300,17 @@ class TestSecretsErrorHandling:
         """Test that get_secret handles ClientError properly"""
         from config.secrets import get_secret
 
-        with patch('boto3.client') as mock_boto:
+        with patch("boto3.client") as mock_boto:
             from botocore.exceptions import ClientError
 
             mock_client = Mock()
             mock_client.get_secret_value.side_effect = ClientError(
-                {'Error': {'Code': 'AccessDenied Error', 'Message': 'Access denied'}},
-                'GetSecretValue'
+                {"Error": {"Code": "AccessDenied Error", "Message": "Access denied"}},
+                "GetSecretValue",
             )
             mock_boto.return_value = mock_client
 
-            result = get_secret('test-secret')
+            result = get_secret("test-secret")
 
             # Should return None, not raise
             assert result is None

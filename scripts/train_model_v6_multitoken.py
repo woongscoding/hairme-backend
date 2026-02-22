@@ -41,14 +41,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from sentence_transformers import SentenceTransformer
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # ========== 라벨 정규화 상수 ==========
-LABEL_MIN = 10.0   # 원본 점수 최소값
-LABEL_MAX = 95.0   # 원본 점수 최대값
+LABEL_MIN = 10.0  # 원본 점수 최소값
+LABEL_MAX = 95.0  # 원본 점수 최대값
 LABEL_RANGE = LABEL_MAX - LABEL_MIN  # 85
 
 
@@ -78,7 +77,7 @@ class MultiTokenAttentionLayer(nn.Module):
         style_dim: int = 384,
         token_dim: int = 128,
         num_heads: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.token_dim = token_dim
@@ -90,10 +89,7 @@ class MultiTokenAttentionLayer(nn.Module):
 
         # Multi-head self-attention (3 tokens)
         self.attention = nn.MultiheadAttention(
-            embed_dim=token_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            embed_dim=token_dim, num_heads=num_heads, dropout=dropout, batch_first=True
         )
         self.norm1 = nn.LayerNorm(token_dim)
 
@@ -102,7 +98,7 @@ class MultiTokenAttentionLayer(nn.Module):
             nn.Linear(token_dim, token_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(token_dim * 2, token_dim)
+            nn.Linear(token_dim * 2, token_dim),
         )
         self.norm2 = nn.LayerNorm(token_dim)
         self.dropout = nn.Dropout(dropout)
@@ -111,7 +107,7 @@ class MultiTokenAttentionLayer(nn.Module):
         self,
         face_proj: torch.Tensor,  # (batch, 64)
         skin_proj: torch.Tensor,  # (batch, 32)
-        style_emb: torch.Tensor   # (batch, 384)
+        style_emb: torch.Tensor,  # (batch, 384)
     ) -> torch.Tensor:
         """
         Returns:
@@ -120,9 +116,9 @@ class MultiTokenAttentionLayer(nn.Module):
         batch_size = face_proj.size(0)
 
         # 각 특징을 token_dim으로 projection
-        face_token = self.face_to_token(face_proj)   # (batch, token_dim)
-        skin_token = self.skin_to_token(skin_proj)   # (batch, token_dim)
-        style_token = self.style_to_token(style_emb) # (batch, token_dim)
+        face_token = self.face_to_token(face_proj)  # (batch, token_dim)
+        skin_token = self.skin_to_token(skin_proj)  # (batch, token_dim)
+        style_token = self.style_to_token(style_emb)  # (batch, token_dim)
 
         # 3개 토큰으로 시퀀스 구성: (batch, 3, token_dim)
         tokens = torch.stack([face_token, skin_token, style_token], dim=1)
@@ -159,7 +155,7 @@ class RecommendationModelV6(nn.Module):
         style_embed_dim: int = 384,
         token_dim: int = 128,
         num_heads: int = 4,
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -172,14 +168,14 @@ class RecommendationModelV6(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         # Multi-Token Attention Layer (3개 토큰 간 상호작용)
@@ -189,7 +185,7 @@ class RecommendationModelV6(nn.Module):
             style_dim=style_embed_dim,
             token_dim=token_dim,
             num_heads=num_heads,
-            dropout=dropout_rate * 0.3
+            dropout=dropout_rate * 0.3,
         )
 
         # Attention 출력 차원: token_dim * 3 = 384
@@ -221,7 +217,7 @@ class RecommendationModelV6(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
         # 1. Input projection
@@ -274,7 +270,7 @@ class HairstyleDatasetV6(Dataset):
         skin_features: np.ndarray,
         style_embeddings: np.ndarray,
         scores: np.ndarray,
-        normalize_labels: bool = True
+        normalize_labels: bool = True,
     ):
         self.face_features = torch.tensor(face_features, dtype=torch.float32)
         self.skin_features = torch.tensor(skin_features, dtype=torch.float32)
@@ -282,8 +278,12 @@ class HairstyleDatasetV6(Dataset):
 
         if normalize_labels:
             normalized_scores = normalize_score(scores)
-            self.scores = torch.tensor(normalized_scores, dtype=torch.float32).unsqueeze(1)
-            logger.info(f"  라벨 정규화 적용: {scores.min():.1f}~{scores.max():.1f} → {normalized_scores.min():.3f}~{normalized_scores.max():.3f}")
+            self.scores = torch.tensor(
+                normalized_scores, dtype=torch.float32
+            ).unsqueeze(1)
+            logger.info(
+                f"  라벨 정규화 적용: {scores.min():.1f}~{scores.max():.1f} → {normalized_scores.min():.3f}~{normalized_scores.max():.3f}"
+            )
         else:
             self.scores = torch.tensor(scores, dtype=torch.float32).unsqueeze(1)
 
@@ -295,7 +295,7 @@ class HairstyleDatasetV6(Dataset):
             self.face_features[idx],
             self.skin_features[idx],
             self.style_embeddings[idx],
-            self.scores[idx]
+            self.scores[idx],
         )
 
 
@@ -305,10 +305,10 @@ def load_training_data(data_path: str) -> Dict:
 
     data = np.load(data_path, allow_pickle=True)
 
-    face_features = data['face_features']
-    skin_features = data['skin_features']
-    hairstyles = data['hairstyles']
-    scores = data['scores']
+    face_features = data["face_features"]
+    skin_features = data["skin_features"]
+    hairstyles = data["hairstyles"]
+    scores = data["scores"]
 
     logger.info(f"✅ 데이터 로드 완료:")
     logger.info(f"  - 샘플 수: {len(scores):,}")
@@ -318,11 +318,9 @@ def load_training_data(data_path: str) -> Dict:
 
     # 헤어스타일 임베딩 생성
     logger.info("🔄 헤어스타일 임베딩 생성 중...")
-    sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    sentence_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
     style_embeddings = sentence_model.encode(
-        hairstyles.tolist(),
-        show_progress_bar=True,
-        convert_to_numpy=True
+        hairstyles.tolist(), show_progress_bar=True, convert_to_numpy=True
     )
 
     logger.info(f"✅ 임베딩 생성 완료: {style_embeddings.shape}")
@@ -331,15 +329,19 @@ def load_training_data(data_path: str) -> Dict:
     logger.info(f"\n📊 원본 데이터 통계:")
     logger.info(f"  - 점수 범위: {scores.min():.1f} ~ {scores.max():.1f}")
     logger.info(f"  - 점수 평균: {scores.mean():.1f} ± {scores.std():.1f}")
-    logger.info(f"  - 고점수 (≥75): {(scores >= 75).sum():,}개 ({(scores >= 75).sum()/len(scores)*100:.1f}%)")
-    logger.info(f"  - 저점수 (≤40): {(scores <= 40).sum():,}개 ({(scores <= 40).sum()/len(scores)*100:.1f}%)")
+    logger.info(
+        f"  - 고점수 (≥75): {(scores >= 75).sum():,}개 ({(scores >= 75).sum()/len(scores)*100:.1f}%)"
+    )
+    logger.info(
+        f"  - 저점수 (≤40): {(scores <= 40).sum():,}개 ({(scores <= 40).sum()/len(scores)*100:.1f}%)"
+    )
 
     return {
-        'face_features': face_features,
-        'skin_features': skin_features,
-        'style_embeddings': style_embeddings,
-        'scores': scores,
-        'hairstyles': hairstyles
+        "face_features": face_features,
+        "skin_features": skin_features,
+        "style_embeddings": style_embeddings,
+        "scores": scores,
+        "hairstyles": hairstyles,
     }
 
 
@@ -348,16 +350,16 @@ def create_dataloaders_no_leakage(
     batch_size: int = 64,
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
-    samples_per_face: int = 6
+    samples_per_face: int = 6,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """데이터 리키지 방지: 얼굴 단위로 train/val/test 분할"""
 
     dataset = HairstyleDatasetV6(
-        face_features=data['face_features'],
-        skin_features=data['skin_features'],
-        style_embeddings=data['style_embeddings'],
-        scores=data['scores'],
-        normalize_labels=True
+        face_features=data["face_features"],
+        skin_features=data["skin_features"],
+        style_embeddings=data["style_embeddings"],
+        scores=data["scores"],
+        normalize_labels=True,
     )
 
     total_samples = len(dataset)
@@ -376,13 +378,19 @@ def create_dataloaders_no_leakage(
     num_train_faces = num_faces - num_test_faces - num_val_faces
 
     train_face_indices = face_indices[:num_train_faces]
-    val_face_indices = face_indices[num_train_faces:num_train_faces + num_val_faces]
-    test_face_indices = face_indices[num_train_faces + num_val_faces:]
+    val_face_indices = face_indices[num_train_faces : num_train_faces + num_val_faces]
+    test_face_indices = face_indices[num_train_faces + num_val_faces :]
 
     logger.info(f"\n📊 얼굴 단위 분할:")
-    logger.info(f"  - Train: {num_train_faces:,}개 얼굴 ({num_train_faces/num_faces*100:.1f}%)")
-    logger.info(f"  - Val:   {num_val_faces:,}개 얼굴 ({num_val_faces/num_faces*100:.1f}%)")
-    logger.info(f"  - Test:  {num_test_faces:,}개 얼굴 ({num_test_faces/num_faces*100:.1f}%)")
+    logger.info(
+        f"  - Train: {num_train_faces:,}개 얼굴 ({num_train_faces/num_faces*100:.1f}%)"
+    )
+    logger.info(
+        f"  - Val:   {num_val_faces:,}개 얼굴 ({num_val_faces/num_faces*100:.1f}%)"
+    )
+    logger.info(
+        f"  - Test:  {num_test_faces:,}개 얼굴 ({num_test_faces/num_faces*100:.1f}%)"
+    )
 
     def face_indices_to_sample_indices(face_idxs: np.ndarray) -> List[int]:
         sample_idxs = []
@@ -405,7 +413,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     val_loader = DataLoader(
@@ -413,7 +421,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     test_loader = DataLoader(
@@ -421,7 +429,7 @@ def create_dataloaders_no_leakage(
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
-        pin_memory=True
+        pin_memory=True,
     )
 
     return train_loader, val_loader, test_loader
@@ -432,7 +440,7 @@ def train_epoch(
     train_loader: DataLoader,
     optimizer: optim.Optimizer,
     criterion: nn.Module,
-    device: torch.device
+    device: torch.device,
 ) -> float:
     """1 에폭 학습"""
     model.train()
@@ -459,10 +467,7 @@ def train_epoch(
 
 
 def validate(
-    model: nn.Module,
-    val_loader: DataLoader,
-    criterion: nn.Module,
-    device: torch.device
+    model: nn.Module, val_loader: DataLoader, criterion: nn.Module, device: torch.device
 ) -> Tuple[float, float, float]:
     """검증"""
     model.eval()
@@ -494,7 +499,7 @@ def validate(
     return (
         total_loss / num_batches,
         total_normalized_mae / num_batches,
-        total_original_mae / num_batches
+        total_original_mae / num_batches,
     )
 
 
@@ -511,7 +516,7 @@ def train_model(
     learning_rate: float = 0.001,
     patience: int = 15,
     token_dim: int = 128,
-    num_heads: int = 4
+    num_heads: int = 4,
 ):
     """모델 학습 메인 함수 (V6 - Multi-Token Attention)"""
     logger.info("=" * 60)
@@ -525,7 +530,7 @@ def train_model(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"🖥️  디바이스: {device}")
 
     # 데이터 로드
@@ -533,8 +538,7 @@ def train_model(
 
     # 데이터로더 생성
     train_loader, val_loader, test_loader = create_dataloaders_no_leakage(
-        data,
-        batch_size=batch_size
+        data, batch_size=batch_size
     )
 
     # V6 모델 생성
@@ -544,7 +548,7 @@ def train_model(
         style_embed_dim=384,
         token_dim=token_dim,
         num_heads=num_heads,
-        dropout_rate=0.3
+        dropout_rate=0.3,
     ).to(device)
 
     num_params = count_parameters(model)
@@ -563,21 +567,18 @@ def train_model(
     criterion = nn.MSELoss()
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=5
+        optimizer, mode="min", factor=0.5, patience=5
     )
 
     history = {
-        'train_loss': [],
-        'val_loss': [],
-        'val_mae_normalized': [],
-        'val_mae_original': [],
-        'lr': []
+        "train_loss": [],
+        "val_loss": [],
+        "val_mae_normalized": [],
+        "val_mae_original": [],
+        "lr": [],
     }
 
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
     patience_counter = 0
 
     logger.info(f"\n🏋️  학습 시작:")
@@ -588,15 +589,17 @@ def train_model(
 
     for epoch in range(epochs):
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss, val_mae_norm, val_mae_orig = validate(model, val_loader, criterion, device)
+        val_loss, val_mae_norm, val_mae_orig = validate(
+            model, val_loader, criterion, device
+        )
 
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = optimizer.param_groups[0]["lr"]
 
-        history['train_loss'].append(train_loss)
-        history['val_loss'].append(val_loss)
-        history['val_mae_normalized'].append(val_mae_norm)
-        history['val_mae_original'].append(val_mae_orig)
-        history['lr'].append(current_lr)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_mae_normalized"].append(val_mae_norm)
+        history["val_mae_original"].append(val_mae_orig)
+        history["lr"].append(current_lr)
 
         if (epoch + 1) % 5 == 0 or epoch == 0:
             logger.info(
@@ -614,26 +617,29 @@ def train_model(
             patience_counter = 0
 
             model_path = output_dir / "hairstyle_recommender_v6_multitoken.pt"
-            torch.save({
-                'epoch': epoch + 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_val_loss': best_val_loss,
-                'history': history,
-                'config': {
-                    'version': 'v6',
-                    'face_feat_dim': 6,
-                    'skin_feat_dim': 2,
-                    'style_embed_dim': 384,
-                    'token_dim': token_dim,
-                    'num_heads': num_heads,
-                    'normalized': True,
-                    'label_min': LABEL_MIN,
-                    'label_max': LABEL_MAX,
-                    'label_range': LABEL_RANGE,
-                    'attention_type': 'multi_token'
-                }
-            }, model_path)
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_val_loss": best_val_loss,
+                    "history": history,
+                    "config": {
+                        "version": "v6",
+                        "face_feat_dim": 6,
+                        "skin_feat_dim": 2,
+                        "style_embed_dim": 384,
+                        "token_dim": token_dim,
+                        "num_heads": num_heads,
+                        "normalized": True,
+                        "label_min": LABEL_MIN,
+                        "label_max": LABEL_MAX,
+                        "label_range": LABEL_RANGE,
+                        "attention_type": "multi_token",
+                    },
+                },
+                model_path,
+            )
 
             logger.info(f"  ✅ Best 모델 저장: {model_path}")
 
@@ -646,14 +652,16 @@ def train_model(
 
     # 최종 테스트
     logger.info(f"\n🧪 최종 테스트 평가:")
-    test_loss, test_mae_norm, test_mae_orig = validate(model, test_loader, criterion, device)
+    test_loss, test_mae_norm, test_mae_orig = validate(
+        model, test_loader, criterion, device
+    )
     logger.info(f"  - Test Loss: {test_loss:.4f}")
     logger.info(f"  - Test MAE (정규화): {test_mae_norm:.4f}")
     logger.info(f"  - Test MAE (원본 스케일): {test_mae_orig:.2f}점")
 
     # 학습 기록 저장
     history_path = output_dir / "training_history_v6_multitoken.json"
-    with open(history_path, 'w', encoding='utf-8') as f:
+    with open(history_path, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=2)
 
     logger.info(f"\n📊 학습 기록 저장: {history_path}")
@@ -676,14 +684,22 @@ def train_model(
         all_preds = np.concatenate(all_preds)
         all_labels = np.concatenate(all_labels).flatten()
 
-        logger.info(f"  - 정규화된 출력 범위: {all_preds.min():.4f} ~ {all_preds.max():.4f}")
-        logger.info(f"  - 정규화된 라벨 범위: {all_labels.min():.4f} ~ {all_labels.max():.4f}")
+        logger.info(
+            f"  - 정규화된 출력 범위: {all_preds.min():.4f} ~ {all_preds.max():.4f}"
+        )
+        logger.info(
+            f"  - 정규화된 라벨 범위: {all_labels.min():.4f} ~ {all_labels.max():.4f}"
+        )
 
         preds_orig = all_preds * LABEL_RANGE + LABEL_MIN
         labels_orig = all_labels * LABEL_RANGE + LABEL_MIN
 
-        logger.info(f"  - 원본 스케일 출력 범위: {preds_orig.min():.1f} ~ {preds_orig.max():.1f}")
-        logger.info(f"  - 원본 스케일 라벨 범위: {labels_orig.min():.1f} ~ {labels_orig.max():.1f}")
+        logger.info(
+            f"  - 원본 스케일 출력 범위: {preds_orig.min():.1f} ~ {preds_orig.max():.1f}"
+        )
+        logger.info(
+            f"  - 원본 스케일 라벨 범위: {labels_orig.min():.1f} ~ {labels_orig.max():.1f}"
+        )
 
         # 분류 정확도
         high_threshold = normalize_score(np.array([75.0]))[0]
@@ -695,18 +711,24 @@ def train_model(
         if high_labels.sum() > 0:
             high_correct = (all_preds[high_labels] >= high_threshold).sum()
             logger.info(f"\n📊 분류 정확도:")
-            logger.info(f"  - 고점수(≥75점) 예측 정확도: {high_correct}/{high_labels.sum()} ({high_correct/high_labels.sum()*100:.1f}%)")
+            logger.info(
+                f"  - 고점수(≥75점) 예측 정확도: {high_correct}/{high_labels.sum()} ({high_correct/high_labels.sum()*100:.1f}%)"
+            )
 
         if low_labels.sum() > 0:
             low_correct = (all_preds[low_labels] <= low_threshold).sum()
-            logger.info(f"  - 저점수(≤40점) 예측 정확도: {low_correct}/{low_labels.sum()} ({low_correct/low_labels.sum()*100:.1f}%)")
+            logger.info(
+                f"  - 저점수(≤40점) 예측 정확도: {low_correct}/{low_labels.sum()} ({low_correct/low_labels.sum()*100:.1f}%)"
+            )
 
     logger.info("\n" + "=" * 60)
     logger.info("✅ V6 학습 완료!")
     logger.info("=" * 60)
     logger.info(f"  - Best Val Loss: {best_val_loss:.4f}")
     logger.info(f"  - Test MAE: {test_mae_orig:.2f}점 (원본 스케일)")
-    logger.info(f"  - 모델 경로: {output_dir / 'hairstyle_recommender_v6_multitoken.pt'}")
+    logger.info(
+        f"  - 모델 경로: {output_dir / 'hairstyle_recommender_v6_multitoken.pt'}"
+    )
 
 
 def main():
@@ -715,50 +737,21 @@ def main():
         "--data",
         type=str,
         default="data_source/ai_face_1000.npz",
-        help="학습 데이터 NPZ 경로"
+        help="학습 데이터 NPZ 경로",
     )
     parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="models",
-        help="모델 저장 디렉토리"
+        "--output-dir", type=str, default="models", help="모델 저장 디렉토리"
+    )
+    parser.add_argument("--epochs", type=int, default=100, help="학습 에폭 수")
+    parser.add_argument("--batch-size", type=int, default=64, help="배치 크기")
+    parser.add_argument("--lr", type=float, default=0.001, help="학습률")
+    parser.add_argument(
+        "--patience", type=int, default=15, help="Early stopping patience"
     )
     parser.add_argument(
-        "--epochs",
-        type=int,
-        default=100,
-        help="학습 에폭 수"
+        "--token-dim", type=int, default=128, help="Attention 토큰 차원"
     )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=64,
-        help="배치 크기"
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.001,
-        help="학습률"
-    )
-    parser.add_argument(
-        "--patience",
-        type=int,
-        default=15,
-        help="Early stopping patience"
-    )
-    parser.add_argument(
-        "--token-dim",
-        type=int,
-        default=128,
-        help="Attention 토큰 차원"
-    )
-    parser.add_argument(
-        "--num-heads",
-        type=int,
-        default=4,
-        help="Attention heads 수"
-    )
+    parser.add_argument("--num-heads", type=int, default=4, help="Attention heads 수")
 
     args = parser.parse_args()
 
@@ -770,7 +763,7 @@ def main():
         learning_rate=args.lr,
         patience=args.patience,
         token_dim=args.token_dim,
-        num_heads=args.num_heads
+        num_heads=args.num_heads,
     )
 
 

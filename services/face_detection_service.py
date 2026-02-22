@@ -4,6 +4,7 @@ import io
 import json
 from typing import Dict, Any, Optional
 from PIL import Image
+
 # import google.generativeai as genai  # Lazy loaded
 
 from config.settings import settings
@@ -44,6 +45,7 @@ class FaceDetectionService:
             image.thumbnail((256, 256))
 
             import google.generativeai as genai
+
             model = genai.GenerativeModel(settings.MODEL_NAME)
             prompt = """이미지에 사람 얼굴이 있나요?
 
@@ -56,7 +58,7 @@ JSON으로만 답변:
             return {
                 "has_face": result.get("has_face", False),
                 "face_count": result.get("face_count", 0),
-                "method": "gemini"
+                "method": "gemini",
             }
 
         except Exception as e:
@@ -65,7 +67,7 @@ JSON으로만 답변:
                 "has_face": False,
                 "face_count": 0,
                 "method": "gemini",
-                "error": str(e)
+                "error": str(e),
             }
 
     def detect_face(self, image_data: bytes) -> Dict[str, Any]:
@@ -90,19 +92,22 @@ JSON으로만 답변:
                 mp_features = self.mediapipe_analyzer.analyze(image_data)
 
                 if mp_features:
-                    log_structured("face_detection", {
-                        "method": "mediapipe",
-                        "face_count": 1,
-                        "success": True,
-                        "face_shape": mp_features.face_shape,
-                        "skin_tone": mp_features.skin_tone,
-                        "confidence": mp_features.confidence
-                    })
+                    log_structured(
+                        "face_detection",
+                        {
+                            "method": "mediapipe",
+                            "face_count": 1,
+                            "success": True,
+                            "face_shape": mp_features.face_shape,
+                            "skin_tone": mp_features.skin_tone,
+                            "confidence": mp_features.confidence,
+                        },
+                    )
                     return {
                         "has_face": True,
                         "face_count": 1,
                         "method": "mediapipe",
-                        "features": mp_features
+                        "features": mp_features,
                     }
 
             except Exception as e:
@@ -112,10 +117,13 @@ JSON으로만 답변:
         logger.info("MediaPipe 실패, Gemini로 얼굴 검증 시작...")
         gemini_result = self.verify_face_with_gemini(image_data)
 
-        log_structured("face_detection", {
-            "method": "gemini",
-            "face_count": gemini_result.get("face_count", 0),
-            "success": gemini_result.get("has_face", False)
-        })
+        log_structured(
+            "face_detection",
+            {
+                "method": "gemini",
+                "face_count": gemini_result.get("face_count", 0),
+                "success": gemini_result.get("has_face", False),
+            },
+        )
 
         return gemini_result

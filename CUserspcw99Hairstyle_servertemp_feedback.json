@@ -1,0 +1,6169 @@
+{
+    "Items": [
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-02T11:48:50.001800+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-27T05:36:34.238463+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "good"
+            },
+            "analysis_id": {
+                "S": "cf0554d5-5443-4534-9eaf-6bc359ad7f1e"
+            },
+            "style_2_feedback": {
+                "S": "bad"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-02T11:50:21.694378+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-29T09:44:04.549633+00:00"
+            },
+            "style_1_feedback": {
+                "S": "bad"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "fa04a4c0-b374-45ce-9b27-be81f38decbf"
+            },
+            "style_2_feedback": {
+                "S": "bad"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°¢ÁøÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-02T11:32:40.139329+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-06T05:47:12"
+            },
+            "style_1_feedback": {
+                "S": "dislike"
+            },
+            "personal_color": {
+                "S": "°¡À»¿ú"
+            },
+            "style_3_feedback": {
+                "S": "dislike"
+            },
+            "analysis_id": {
+                "S": "2b0c3b1e-68c0-49f0-913a-92b7a189b454"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:43:39.817340+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "34056fe1-230f-49c5-acb4-0af0d2427993"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:38:06.430871+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c2b33575-6440-438a-8f66-1c88e04e4e3d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T15:13:28.979462+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "745e3615-018c-4a6e-a31c-69bc87df26da"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:21:01.032505+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "264fd4f9-e8b0-4ac5-8f29-06708d0ab3e1"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:37:29.269101+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "53a69498-7ff7-4858-ad4b-5b6c1d546a21"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T10:06:40.183957+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f8a636ef-79c3-4977-a901-401832087532"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T13:16:55.254947+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "5cabaef5-5dfe-4400-a312-55ef6d174d07"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-22T16:01:15.733336+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "616f1194-5d8e-4207-88c9-623c06bc4b2d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:15:52.966332+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "16fed01d-77b3-44e4-8895-264b0fa33d14"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T10:01:41.776673+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "74108acd-dd17-4625-9bc9-08d6616dc005"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:28:02.967788+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "55fcb8ba-bcee-40f5-938d-1e7c294700c9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:15:24.883075+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2b4396ed-af29-40ea-9a01-31cc4763ab74"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-26T15:24:14.630034+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b84ad908-f845-4c91-9b0a-2fe099ab860d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T05:11:51.830084+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7f1393ab-01b3-44ef-ad3a-5f4c5a17d0e7"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:59:53.043571+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ad9cd364-c179-4337-866f-8f5c03546689"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:23:31.788603+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9748307d-7168-4f13-a29f-34965abba656"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:19:57.533441+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0c4bd5c9-3900-4052-9bca-fa90fe8f9b97"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T13:40:31.435887+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "79da43ea-a380-4d74-8bc2-3683b519342e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T18:07:29.562637+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7d65ed4d-3818-4dbd-b56e-4995c1ddcc4c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:21:50.092941+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "cae87b0e-23b3-42d0-9879-8c5fef25f0ed"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T08:54:43.279115+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a83bcced-d07b-45f0-92fb-046ed17dff3b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:13:01.340382+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "62943062-7cfd-43a6-a325-16e992577e3b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T12:38:50"
+            },
+            "created_at": {
+                "S": "2025-11-02T12:38:44"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "S": "dislike"
+            },
+            "analysis_id": {
+                "S": "62612c33-1285-4235-bdf2-cff8e622ab35"
+            },
+            "style_2_feedback": {
+                "S": "like"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:26:11.510521+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3d2ad989-d982-4e4c-b8d7-638ef69ec62d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:32:48.139710+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2647ed91-7957-415d-b158-784ff7431757"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:20:21.318964+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b028e104-5328-48ea-9a8a-b4fad081bd66"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T02:49:22.557755+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0d0335bb-6e71-45a1-a283-08f009c71964"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:13:04.982336+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "1d6d1090-d78b-4317-93f2-2b8236eb21af"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T13:44:13.925350+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "30a19ca5-194f-49e5-b625-14ad9899f556"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-21T12:43:57.421058+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-21T12:42:12.601959+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0ab31dd6-d124-4046-97ca-d4d2d3a16eb0"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:51:01.626050+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9ca95626-0a6b-48a7-92ae-9ffedf9af98d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-13T16:03:44"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "33b6c0c6-d989-4d59-8ee2-653df316640a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T18:42:18.069407+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b4f8b667-20c5-4ad6-87f4-a97703147f0d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:18:43.678063+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "db189150-5480-4021-ba5d-9de529ecbc93"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T05:44:40.374266+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "87c809db-a26c-423b-ac34-e022a1741c45"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:31:40.840103+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f61aa5cb-cfdf-4d3a-8e81-2c670139cd2d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:11:34.198152+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7abf41ea-0362-46c0-a508-838d4999c7dd"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:12:45.455130+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d251681a-a867-4d16-bfce-d9394b3cf64f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:45:31.520436+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ee968daf-5700-4607-bc73-d09e4d799627"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:16:56.469107+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "301f63d0-c31e-43fe-9397-efc587c703d1"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "S": "2025-11-23T18:06:00.250766+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-23T18:05:56.995287+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e74520b6-8256-4cca-9931-610a93f87e91"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-06T16:33:08.075575+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-06T16:32:48.344453+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "465b0e4a-38b7-4729-b77f-5f6a86e83097"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T12:02:24.843685+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e00447a1-3c2c-4c32-bb03-59a80f773a77"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:21:26.361833+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "cd59d0ef-baa4-4031-8b3f-f7369ef02154"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-04T16:49:27"
+            },
+            "created_at": {
+                "S": "2025-11-04T16:49:07"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "like"
+            },
+            "analysis_id": {
+                "S": "30420c19-4548-4417-8cf9-88ceafc22c2f"
+            },
+            "style_2_feedback": {
+                "S": "dislike"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T05:29:41.371423+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "09af5d1d-db6b-4091-a0d1-6ec46e942d4f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:01:27.164789+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c32c123d-acd6-47b7-99a9-bb43615cad53"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-23T16:48:40.987023+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-23T16:48:32.823357+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "46931a87-94ff-41a2-b4e7-f89186ae1ace"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T13:25:01.332408+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d2021393-6424-4877-992a-831e1a04037f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:14:02.126498+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "5f891062-bb6a-4560-925c-c26adcf244f6"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:13:28.437059+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "46004ff8-1b89-482f-8bc4-0b02aed87c2a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:21:17.958342+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b5c8b2ca-e08e-40bb-b7c7-ca8a0076de3e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T10:05:22.842434+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f028152d-f4de-4775-a1ad-01e2ffc586b5"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T12:04:55.378345+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "65a00b7d-714a-425d-aca9-cf92ee6c8fe6"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-10T10:59:03"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "°¡À»¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6449d9e0-b484-4871-a252-dcd9aee6d3ff"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-21T12:27:42.556407+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-21T12:26:57.342920+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "good"
+            },
+            "analysis_id": {
+                "S": "41c77160-6e71-4c36-b802-6f1f18c91352"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-05T13:57:13"
+            },
+            "created_at": {
+                "S": "2025-11-05T13:56:53"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "°¡À»¿ú"
+            },
+            "style_3_feedback": {
+                "S": "dislike"
+            },
+            "analysis_id": {
+                "S": "ce19d0b2-acb1-4893-bfd6-1762a0b513b4"
+            },
+            "style_2_feedback": {
+                "S": "like"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:10:55.207397+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "36d15928-b02d-44db-8319-91a8e09394d9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-21T12:30:17.223856+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-21T12:28:52.541543+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "good"
+            },
+            "analysis_id": {
+                "S": "3396c5bb-834d-4efa-9061-33ff687cb75d"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:48:14.854664+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3154bb40-0952-4cbd-85d4-d4f338eaafbf"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-06T17:00:19.858489+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ae07f037-3f83-4e57-91ea-25d712349927"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "S": "2025-11-25T13:45:51.405757+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-25T13:45:48.379299+00:00"
+            },
+            "style_1_feedback": {
+                "S": "bad"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "037174b0-e8c3-40e1-8baa-81803beeac16"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:36:50.580859+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "71ed3c02-bcc3-4ef7-a453-6daba4de06c6"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T05:15:49.003485+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "69d27a85-edb2-4494-9dcd-139106200619"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:44:30.417327+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d213dda3-0d48-46e6-b04b-2d206a7b451d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T02:41:43.084893+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a2fadbd5-5612-4f53-9bf3-5384bbc580b5"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:31:18.536608+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "64be61de-cbc4-48d5-aeac-5222acac5323"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:25:36.224283+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a8aa9425-c26c-4ab3-a0fd-b4af2f250e48"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:08:40.418925+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "315e61ed-8dcc-4c9b-8327-8688ad342075"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-13T17:01:56"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "1b0df168-6152-498a-899e-27920400a68e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:16:54.423036+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "18a73df2-432e-4f68-9482-0d9007e0db51"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:11:21.156643+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6e9008c4-79bf-4997-be2f-dc4f9bdd3042"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T03:34:43"
+            },
+            "created_at": {
+                "S": "2025-11-02T03:34:40"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "268d667f-8952-442c-864a-f18f0b467eed"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:27:20.607867+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "805223d2-6c41-4dd4-90ee-49317831894e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T03:45:27"
+            },
+            "created_at": {
+                "S": "2025-11-02T03:45:24"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e0dfa1c0-ebf9-4ec7-8a5c-7f9fc24a6d1b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:44:00.799926+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b09362d2-bfe5-42de-abbf-d715e5a7cf20"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:16:01.412189+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7c0c63c6-e7b0-462b-86a9-b96192ac3e4e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:11:09.716857+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d4b199da-4fec-412f-91cb-934800d52b6b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:00:26.219484+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "18f475ba-8dd9-49f6-a6c0-443d54554c96"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:59:58.870623+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "18d2eb05-98f6-453f-9779-25f752411b7d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:26:53.195977+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2a60243f-8aa5-4b7e-a6e0-b19b2156830c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:15:36.207396+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "843e10a9-4ba6-4531-ad01-bddab8937a06"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T01:55:48.101149+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "577e7b82-8dca-40e4-9054-691315364a61"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T13:38:44.371057+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "70a11891-84a3-4a16-84a8-f42a41958a40"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:42:18.703831+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "60a185cc-32d8-4001-906c-a9df4c425462"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T13:43:19.630321+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "40c4d0c3-d029-4f52-8a78-7418df86a6ff"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:19:30.639265+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "4381e6c2-7e76-407f-90de-eeae6bbeba9c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T16:01:23.990232+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0115a4dc-f629-4739-940e-ecbbad8d9b39"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:12:56.311538+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8d0db20d-b733-4b81-b1c3-2e57cd12cbbe"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T11:13:16.510843+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0394051e-5280-4c54-bed9-8ae5ef23e86f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:21:04.258998+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "562b4174-111c-4e63-ae0b-7804eed9ec0b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:25:20.619245+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0b04a5e7-322c-46db-b246-f18e24a70977"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T10:04:05.718090+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9028e4b8-5f1d-4e2d-adc2-6bf79195302f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:28:38.116813+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "fa28b1b0-8201-495d-ad4c-495e01e0875b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T04:29:37.697434+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2c958bc1-5809-4cbd-b281-0d78ac131b1a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:45:51.786886+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "5f48ebc7-ded9-452c-bae1-02e59dcb3ab9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T12:43:58.652029+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "13b22db0-935f-4aa6-a52c-0dc92446e953"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:00:42.705677+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d9ae0738-433e-44d4-a9db-e75fabc56f72"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:13:01.601527+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "cf487fb7-b697-4519-92bc-b32081d5b757"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T12:44:35.992051+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a1d1b99e-99b3-46d4-9fc6-308a82054d9d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:38:59.200565+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "74a412d9-a239-4925-9648-f04b2cafc273"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T06:04:31.963888+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8a74537b-3a13-4edd-b12a-0559ff283ddd"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T02:29:38.542572+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "09f0c660-de28-40df-8779-47eeb9d6770c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-05T13:25:12"
+            },
+            "created_at": {
+                "S": "2025-11-05T13:24:50"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "°¡À»¿ú"
+            },
+            "style_3_feedback": {
+                "S": "like"
+            },
+            "analysis_id": {
+                "S": "a3b69f1c-0e46-48a4-af69-6047cd9f4960"
+            },
+            "style_2_feedback": {
+                "S": "dislike"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T18:28:24.286446+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "4def35fd-053d-4f3f-ad7c-803b960e82af"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T10:43:04.038327+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "56c0ebfc-5b18-47ee-bcaf-178fbd9bb288"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:57:28.759182+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e9002296-c221-4ee2-8a66-1aba8a1226b2"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-29T09:43:43.773019+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8692e67c-98f5-42f3-9fe7-87234567c91c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "S": "2025-11-13T16:58:58"
+            },
+            "created_at": {
+                "S": "2025-11-13T15:50:25"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3b63272c-b7b0-491b-93fd-5bacd2d3368e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-13T17:10:51"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "°¡À»¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c1cbb29c-24de-4f37-abb2-7ac8187369a3"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-22T03:50:44.568055+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-22T03:49:59.642299+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "good"
+            },
+            "analysis_id": {
+                "S": "fe46e2bc-85ac-46c8-aa17-fc930a9a465e"
+            },
+            "style_2_feedback": {
+                "S": "good"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:01:14.598795+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c97d7424-88f5-4f08-a629-6595ef6c4c43"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:23:17.434119+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "fddc936e-e7d8-4f86-8682-e74f6d0bcea4"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T14:51:32.033373+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "baccb964-b982-433c-8782-299747eaac8a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T05:32:35.312650+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "734e8abe-47d1-402e-979b-966a461f7efb"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:45:00.961498+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e6e7f66d-f7f7-4af2-8fb2-ec013006d03b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T23:05:27.803109+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3e777360-eea5-4e53-b64d-7f5477d7a4c2"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:01:56.243608+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ca0599f7-c55a-4331-a538-3520170525b5"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:21:09.509507+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c1cb1424-6a59-4d63-8ac9-84315d73cd4b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-29T09:48:33.321198+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "852fbd92-44bc-4c12-b064-5235266a4ced"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:20:55.705246+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "64252cbb-c6f6-494a-8934-3fc000b353f9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-29T10:14:50.070799+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "1fb3567e-588d-492c-9aa2-bf5846649413"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:41:41.055623+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b2a9f7e4-11b2-4a20-ab98-6df35308568a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "S": "2025-11-21T16:47:51.125166+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-21T16:33:31.204191+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6429efba-2ac0-47b8-8e3b-41a204438f55"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:12:25.550827+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "74b63ee5-77cb-4f4b-a27e-6cdf4ff8c88d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T22:54:02.060374+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8c6375dc-64ec-4ed5-a93c-6f6735d86416"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T22:36:26.359975+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0f129849-5dad-47ec-a599-7191d08abfa9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:13:39.622162+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9e88cd9f-9d98-455b-a2e1-8a61b77f4c9e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:30:38.987023+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "74085772-c47c-441d-9202-523ba8909de1"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:37:25.423354+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3a9929b2-dfb0-4c5d-8d1b-5f2c1f7e8b2e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:25:54.581912+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d651ae83-3118-451d-8220-970ce57ac97f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T15:15:46.522458+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "5c52e206-19d3-401d-a7db-5c1ecf4948c0"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:59:46.893421+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "034e11d1-f30e-422e-8958-46b793043417"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:20:41.960100+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "80b4ff0c-0d34-433e-99b4-0603ff56224c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T04:28:55.044173+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "35de6ab6-4d31-41a0-beee-880c4055a3fc"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:32:36.925652+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f643c97d-b1bc-45a5-be81-9408ec09e96a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T10:00:27.155328+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e36247c6-652f-41f0-b82f-28636bc79432"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:07:45.922536+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2741d0ef-8540-4abd-a7a8-af44dbd2e993"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T14:37:26.115953+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "49df06b7-01af-4e45-9d5e-623f3cd08c71"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-26T16:26:49.859686+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "faa0138e-27fb-494d-8fcd-6c67f15cbb0e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:18:48.244681+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "1bc0d997-1b79-45f2-9fe7-81f69342d841"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-23T06:04:53.165206+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "077b1a0b-8e0d-40f5-9275-dbd6e01d590c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:53:38.614414+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b0b7415e-ef6f-4fa0-8683-ed3483e4e02c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:17:42.852439+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "32faffd5-4cab-479c-bc77-8eed779318c5"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-13T17:55:21"
+            },
+            "created_at": {
+                "S": "2025-11-13T17:54:58"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "S": "like"
+            },
+            "analysis_id": {
+                "S": "2a061727-b314-4383-823a-d69da9831c04"
+            },
+            "style_2_feedback": {
+                "S": "like"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T13:03:57.439740+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2bd56000-d53f-4361-b843-00e9f179259d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T18:28:05.030591+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "4d0a1968-b464-4abd-bc1d-1fd984b6c156"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T15:24:47.056638+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "55ec5d7c-f09f-460f-94ef-f2df0c480e4b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:15:28.662310+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "96b71916-9306-4c30-af43-53b7bca14e6f"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T03:54:36.016489+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "875cf66a-f3dc-4637-af6e-0d305e47cfcf"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T23:43:18.295214+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "fa4e2fec-0b4f-4581-ac60-8698600d6e1b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T03:47:33"
+            },
+            "created_at": {
+                "S": "2025-11-02T03:47:16"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6d096dcf-a9dd-4630-84fb-7eb512bd7c3b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T03:54:24.847694+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2d43e64e-5aab-4040-8b0a-c9477d73c503"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-26T02:24:58.678107+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3e6b89d3-a04d-43bb-8e28-bb58ef490c9b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T10:20:25"
+            },
+            "created_at": {
+                "S": "2025-11-02T10:20:13"
+            },
+            "style_1_feedback": {
+                "S": "dislike"
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "S": "like"
+            },
+            "analysis_id": {
+                "S": "fa2cfe02-a116-4279-9130-c10a7284c0ac"
+            },
+            "style_2_feedback": {
+                "S": "like"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:14:56.000804+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8fef51fd-e954-440a-8ef7-eda50122bbc6"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-25T15:40:13.814104+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-25T15:40:00.701651+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6fb05f1c-0842-4239-b007-c0a21d5ee774"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:26:53.118777+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "2b3e50c0-14bb-4e1e-8047-ae4da0302f2c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:16:50.660147+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d1869a5b-0c93-4462-8bd2-fd111829c093"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:21:41.349235+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "900ff5a2-82b0-4b70-a43a-a1ac58201dad"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T10:02:53.928449+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0727c61f-ed84-4673-8ac5-da4831951e3d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:48:43.369852+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0637dadf-9acd-4c7a-90f6-483a6078cbe8"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-13T17:49:29"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "03b1d4b2-5735-48b2-9410-9b3d46da4f58"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:21:27.350121+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a12fece0-6992-4ea3-a97f-82c301c09339"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T22:49:40.406211+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7bc3ed2a-b005-47db-9178-0956f472d939"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:16:10.277815+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3c06e548-f0b4-4c6a-a4cc-a35575844e32"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T01:55:28.732216+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3e54d55d-6da9-484a-ae2f-a7f25078a5d8"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:53:17.039113+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "4d5770a9-a938-43e6-be75-958ce9bb33ae"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:08:31.996366+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "32f87936-b70d-4280-9faa-3589d227a307"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:47:58.214606+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b69ae7ed-c850-4f31-8c69-2de3bd3b2861"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:08:48.866151+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f9f21f52-7a3d-4ea2-81b8-f1ade22ba9e4"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T05:26:38.415241+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f03b62c6-b826-4b28-9169-7f76ab8c3515"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T18:28:31.659666+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ecc5e935-19a1-4465-a3e3-9e8af41a2a03"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:11:22.976281+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ba5f6692-8e4a-46cf-bfc5-33b4cdd9cd5c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T06:25:30.734072+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a57de994-5bca-4d40-8e07-b57f8f3fb0be"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:18:37.608721+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "91ba08a8-73b6-4325-9010-ca10dd502037"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:13:48.905802+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8641fead-b5dd-46bd-879b-10cce7a28287"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:13:03.194206+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "7b73d6f5-59df-46e0-9847-deb06532f43b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T03:20:14.980164+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "702670be-359a-4d2d-8847-e2e61a8afef3"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T22:51:26.049695+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9c532db0-8c6c-499b-aa1b-aab2b221e8af"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T01:52:47.848116+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "78b8246f-a335-42ee-aa96-bdf3271f0fc9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:48:15.333093+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8b4be048-137c-4e2c-9079-880851f6f18d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T04:30:51.808969+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f94a1500-7577-40c8-a5b8-3952694da361"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T06:06:55.974403+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "07d50850-7bfd-47b5-8a65-80dcb5fc9d46"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:24:17.211241+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "988d0446-6294-4f03-9c41-49673bab5ed5"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T04:11:36.258310+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "905a558a-7420-4877-9799-26d63fe5b488"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:13:30.682870+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d3b1fd1b-6e07-4d28-a4ef-873d29485e68"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T13:41:01.202877+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "edf19823-9a1a-4c86-8942-d8f4fb4830db"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "S": "2025-11-13T17:55:41"
+            },
+            "created_at": {
+                "S": "2025-11-13T17:55:36"
+            },
+            "style_1_feedback": {
+                "S": "like"
+            },
+            "personal_color": {
+                "S": "°Ü¿ïÄð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "14c2f842-f206-498e-82c9-16c1b667aab7"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-02T04:41:56"
+            },
+            "created_at": {
+                "S": "2025-11-02T04:41:47"
+            },
+            "style_1_feedback": {
+                "S": "dislike"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "S": "dislike"
+            },
+            "analysis_id": {
+                "S": "b53fb92e-e77e-4809-8e05-b6e8b7d62d8a"
+            },
+            "style_2_feedback": {
+                "S": "like"
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:45:18.814586+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "ad9052af-0732-46a1-8d2d-ab6aee9a73bf"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T13:04:37.663530+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "a9113d9d-0c4d-4eb1-9303-2e426e75feac"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T14:16:21.879263+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f22a762b-99f5-48a6-a66f-98cf697a67a1"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-21T18:27:29.535061+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "59e96835-6d45-470c-ab1c-98aa1703dae1"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T13:44:43.656255+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "27d4af3f-92e4-4428-82f9-a4aeb224edb9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:26:41.399564+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "25cdd74d-9348-438f-a369-baef0893070c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:04:14.227255+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "630293c0-66e1-49bc-9747-136eca2ed8bc"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-26T15:24:36.439660+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-26T15:24:29.024151+00:00"
+            },
+            "style_1_feedback": {
+                "S": "good"
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "f030e907-92ea-4f07-a33e-b983d0f89bed"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:27:11.956116+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "1066f5b8-6fd2-46dc-8f62-f9f53436ce2a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-24T08:21:46.297588+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9165c918-b059-441b-b9d2-cf03cfaa99fa"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:30:09.767686+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "9a674c75-2feb-4c8a-86c3-c98614df371b"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T12:17:24.029334+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "fe21f5a1-fa39-4b68-bb9d-c78db1ce3910"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T05:27:27.628504+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "cb33671e-3c4d-4d29-883f-e8ee5914a8ea"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-30T04:11:28.644925+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "74a09dd1-3a01-4871-847c-f2d5e1ebf491"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T13:19:56.281970+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "37455337-d6dc-4c66-a5fb-779b820d8809"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:09:35.975753+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "e37f3eae-f78a-462a-b333-5d843b3cb1bf"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:00:33.862590+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6222fe3a-048b-4ac3-8cd3-d2fdf0b80787"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T13:44:22.248833+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "dc50a386-58f4-45c7-bf69-2ca7d2fa07e9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-01T02:57:16"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "169697d6-6928-48de-9034-24441753888a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:52:29.050268+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6516f062-35ed-41f0-a1e0-fc47c19c1b15"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T15:35:08.163544+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "8b0fa0a5-2ae2-4f11-b8af-f94e38851a4c"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T01:57:23.290211+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "820c3f87-f0b6-45ea-b997-ea718534a49a"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T15:29:28.261398+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "c99765a5-ad2c-4515-86d4-86dc53a8ec73"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T12:18:49.227768+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "08ca730a-0704-43dc-995b-de22233cd502"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-27T06:00:12.118348+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0d7bbaf5-b8fc-448d-8734-bbd8df947f18"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T06:07:49.775479+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "18e5e274-b5fa-4674-b8d6-64b6bfee528d"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T12:04:45.698563+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "b3fff451-dae0-4da9-b530-6032843da788"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T09:27:13.024847+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "d736699d-6f92-4457-9eb8-c9f8fa08604e"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-22T04:10:43.599897+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "66c01d44-8a35-4ae2-886d-93721706ba58"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T13:26:53.681985+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "5300bf12-ca7f-490c-8724-863e5f8c56e0"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:59:43.857605+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "42d75235-e488-46cf-b778-259c2a16df72"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-01T13:05:00.488351+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0259ede7-50ed-4514-be8d-89cb2b1573b4"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-11-30T14:00:55.999468+00:00"
+            },
+            "created_at": {
+                "S": "2025-11-30T14:00:18.517368+00:00"
+            },
+            "style_1_feedback": {
+                "S": "bad"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "445bb911-aac6-49cf-bfe0-f693eafe0db9"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T04:21:43.959294+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "960a3065-e6b7-4a50-aa3f-85abda7bedcc"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-21T11:26:29.528933+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "28f3e4ce-1f43-43d8-9b6d-b79df3141739"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T18:07:43.232894+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "eb99a87f-bc3b-41ce-977b-761968684f66"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T07:34:57.899127+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "6118c9ec-3658-4c2f-9cdf-fe2bf1e7e6d6"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-24T12:07:34.939761+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "36d08cc4-4e73-416d-bcc7-192e099559dd"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-23T18:42:32.480098+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "61ae5418-5545-47f2-9fdd-75d777953e20"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T07:09:57.441181+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "865a5661-096f-4295-bcbb-80da007d9826"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "µÕ±ÙÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-18T22:50:05.945468+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "804cd0ee-2801-46de-a0a7-358c13ccb3a2"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-12-19T03:11:41.159528+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "º½¿ú"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "4f783b7a-0f47-4514-a342-63da52b2b655"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "°è¶õÇü"
+            },
+            "feedback_at": {
+                "S": "2025-12-23T06:03:43.205308+00:00"
+            },
+            "created_at": {
+                "S": "2025-12-23T06:03:09.490609+00:00"
+            },
+            "style_1_feedback": {
+                "S": "bad"
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "0e3b847c-539b-4364-a0cb-85b6592baf21"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        },
+        {
+            "face_shape": {
+                "S": "ÇÏÆ®Çü"
+            },
+            "feedback_at": {
+                "NULL": true
+            },
+            "created_at": {
+                "S": "2025-11-25T05:57:43.780415+00:00"
+            },
+            "style_1_feedback": {
+                "NULL": true
+            },
+            "personal_color": {
+                "S": "¿©¸§Äð"
+            },
+            "style_3_feedback": {
+                "NULL": true
+            },
+            "analysis_id": {
+                "S": "3fcd4137-3630-4a13-a8b9-cffcc4bfe674"
+            },
+            "style_2_feedback": {
+                "NULL": true
+            }
+        }
+    ],
+    "Count": 237,
+    "ScannedCount": 237,
+    "ConsumedCapacity": null
+}

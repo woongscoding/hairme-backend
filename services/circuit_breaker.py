@@ -5,18 +5,13 @@ from functools import wraps
 from typing import Callable, Any, Optional
 from core.logging import logger
 
-
 # ========== Circuit Breaker Configuration ==========
 
 # Gemini API Circuit Breaker
 # - fail_max=5: Open after 5 consecutive failures
 # - reset_timeout=60: Wait 60 seconds before trying again
 # - name: For logging and monitoring
-gemini_breaker = CircuitBreaker(
-    fail_max=5,
-    reset_timeout=60,
-    name='GeminiAPI'
-)
+gemini_breaker = CircuitBreaker(fail_max=5, reset_timeout=60, name="GeminiAPI")
 
 
 class CircuitBreakerListener:
@@ -48,7 +43,9 @@ class CircuitBreakerListener:
         )
 
     @staticmethod
-    def on_failure(circuit_breaker: CircuitBreaker, exception: Exception, *args, **kwargs):
+    def on_failure(
+        circuit_breaker: CircuitBreaker, exception: Exception, *args, **kwargs
+    ):
         """Called on each failure"""
         logger.warning(
             f"[CIRCUIT BREAKER FAILURE] {circuit_breaker.name}: "
@@ -69,10 +66,7 @@ class CircuitBreakerListener:
 # Circuit breaker will still function correctly but without detailed event logging
 
 
-def with_circuit_breaker(
-    breaker: CircuitBreaker,
-    fallback: Optional[Callable] = None
-):
+def with_circuit_breaker(breaker: CircuitBreaker, fallback: Optional[Callable] = None):
     """
     Decorator to apply circuit breaker to a function
 
@@ -85,6 +79,7 @@ def with_circuit_breaker(
         def call_api():
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
@@ -106,16 +101,19 @@ def with_circuit_breaker(
 
                 # Raise custom exception if no fallback
                 from core.exceptions import CircuitBreakerOpenException
+
                 raise CircuitBreakerOpenException(
                     service_name=breaker.name,
-                    message=f"{breaker.name} Circuit Breaker가 Open 상태입니다. 잠시 후 다시 시도해주세요."
+                    message=f"{breaker.name} Circuit Breaker가 Open 상태입니다. 잠시 후 다시 시도해주세요.",
                 )
 
         return wrapper
+
     return decorator
 
 
 # ========== Fallback Strategies ==========
+
 
 def gemini_api_fallback(*args, **kwargs) -> dict:
     """
@@ -126,7 +124,7 @@ def gemini_api_fallback(*args, **kwargs) -> dict:
     logger.warning("[FALLBACK] Gemini API 사용 불가. MediaPipe 데이터만 사용.")
 
     # Check if MediaPipe features are available in kwargs
-    mp_features = kwargs.get('mp_features')
+    mp_features = kwargs.get("mp_features")
 
     if mp_features:
         # Use MediaPipe data as fallback
@@ -134,16 +132,16 @@ def gemini_api_fallback(*args, **kwargs) -> dict:
             "analysis": {
                 "face_shape": mp_features.face_shape,
                 "personal_color": mp_features.skin_tone,
-                "features": "MediaPipe 기반 분석 (Gemini API 일시 중단)"
+                "features": "MediaPipe 기반 분석 (Gemini API 일시 중단)",
             },
             "recommendations": [
                 {
                     "style_name": "기본 추천",
-                    "reason": "AI 분석 일시 중단. MediaPipe 기반 추천입니다."
+                    "reason": "AI 분석 일시 중단. MediaPipe 기반 추천입니다.",
                 }
             ],
             "fallback": True,
-            "fallback_reason": "Gemini API Circuit Breaker OPEN"
+            "fallback_reason": "Gemini API Circuit Breaker OPEN",
         }
 
     # No MediaPipe data available
@@ -151,16 +149,16 @@ def gemini_api_fallback(*args, **kwargs) -> dict:
         "analysis": {
             "face_shape": "알 수 없음",
             "personal_color": "알 수 없음",
-            "features": "얼굴 분석 일시 불가"
+            "features": "얼굴 분석 일시 불가",
         },
         "recommendations": [
             {
                 "style_name": "서비스 일시 중단",
-                "reason": "AI 분석 시스템이 일시적으로 중단되었습니다. 잠시 후 다시 시도해주세요."
+                "reason": "AI 분석 시스템이 일시적으로 중단되었습니다. 잠시 후 다시 시도해주세요.",
             }
         ],
         "fallback": True,
-        "fallback_reason": "All detection methods unavailable"
+        "fallback_reason": "All detection methods unavailable",
     }
 
 
@@ -179,7 +177,7 @@ def get_circuit_breaker_status() -> dict:
             "reset_timeout": gemini_breaker._reset_timeout,
             "is_open": gemini_breaker.current_state == "open",
             "is_closed": gemini_breaker.current_state == "closed",
-            "is_half_open": gemini_breaker.current_state == "half-open"
+            "is_half_open": gemini_breaker.current_state == "half-open",
         }
     }
 

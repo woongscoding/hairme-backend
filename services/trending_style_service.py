@@ -19,7 +19,9 @@ from utils.style_preprocessor import normalize_style_name
 logger = logging.getLogger(__name__)
 
 # 트렌드 데이터 경로
-_TRENDING_DATA_PATH = Path(__file__).parent.parent / "data_source" / "trending_hairstyles.json"
+_TRENDING_DATA_PATH = (
+    Path(__file__).parent.parent / "data_source" / "trending_hairstyles.json"
+)
 
 # 트렌드 추천 이유 템플릿
 _TRENDING_REASONS = [
@@ -84,8 +86,7 @@ class TrendingStyleService:
 
         # ML 추천과 중복 제거 (정규화 기준)
         filtered = [
-            s for s in candidates
-            if normalize_style_name(s) not in exclude_styles
+            s for s in candidates if normalize_style_name(s) not in exclude_styles
         ]
 
         if not filtered:
@@ -96,13 +97,15 @@ class TrendingStyleService:
 
         results = []
         for style_name in picked:
-            results.append({
-                "hairstyle_id": None,
-                "style_name": style_name,
-                "source": "trending",
-                "reason": random.choice(_TRENDING_REASONS),
-                "score": None,
-            })
+            results.append(
+                {
+                    "hairstyle_id": None,
+                    "style_name": style_name,
+                    "source": "trending",
+                    "reason": random.choice(_TRENDING_REASONS),
+                    "score": None,
+                }
+            )
 
         logger.info(f"트렌드 스타일 선택: {[r['style_name'] for r in results]}")
         return results

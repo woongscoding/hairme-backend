@@ -27,6 +27,7 @@ def _get_service():
     global _hair_color_service
     if _hair_color_service is None:
         from services.hair_color_service import get_hair_color_service
+
         _hair_color_service = get_hair_color_service()
     return _hair_color_service
 
@@ -37,8 +38,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ========== Response Models ==========
 
+
 class HairColorItem(BaseModel):
     """염색 컬러 아이템"""
+
     name: str = Field(..., description="염색명")
     hex: str = Field(..., description="HEX 코드")
     level: str = Field(..., description="밝기 레벨")
@@ -49,12 +52,14 @@ class HairColorItem(BaseModel):
 
 class AvoidColorItem(BaseModel):
     """피해야 할 컬러"""
+
     name: str = Field(..., description="염색명")
     reason: str = Field(..., description="피해야 할 이유")
 
 
 class HairColorRecommendationResponse(BaseModel):
     """염색 추천 응답"""
+
     success: bool
     personal_color: str = Field(..., description="퍼스널컬러")
     recommended: List[HairColorItem] = Field(default=[], description="추천 컬러")
@@ -64,6 +69,7 @@ class HairColorRecommendationResponse(BaseModel):
 
 class SynthesisResponse(BaseModel):
     """염색 시뮬레이션 응답"""
+
     success: bool
     image_base64: Optional[str] = Field(None, description="Base64 인코딩된 결과 이미지")
     image_format: Optional[str] = Field(None, description="이미지 포맷")
@@ -75,10 +81,14 @@ class SynthesisResponse(BaseModel):
 
 # ========== Endpoints ==========
 
-@router.get("/hair-color/{personal_color}", response_model=HairColorRecommendationResponse, tags=["hair_color"])
+
+@router.get(
+    "/hair-color/{personal_color}",
+    response_model=HairColorRecommendationResponse,
+    tags=["hair_color"],
+)
 async def get_hair_color_recommendations(
-    personal_color: str,
-    include_trends: bool = True
+    personal_color: str, include_trends: bool = True
 ):
     """
     퍼스널컬러 기반 염색 추천
@@ -100,7 +110,7 @@ async def get_hair_color_recommendations(
     if personal_color not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}"
+            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
         )
 
     service = _get_service()
@@ -116,12 +126,12 @@ async def get_hair_color_recommendations(
                 level=c.level,
                 description=c.description,
                 suitable_for=c.suitable_for,
-                is_trend=c.is_trend
-            ) for c in result.recommended
+                is_trend=c.is_trend,
+            )
+            for c in result.recommended
         ],
         avoid=[
-            AvoidColorItem(name=a["name"], reason=a["reason"])
-            for a in result.avoid
+            AvoidColorItem(name=a["name"], reason=a["reason"]) for a in result.avoid
         ],
         trends=[
             HairColorItem(
@@ -130,9 +140,10 @@ async def get_hair_color_recommendations(
                 level=c.level,
                 description=c.description,
                 suitable_for=c.suitable_for,
-                is_trend=True
-            ) for c in result.trends
-        ]
+                is_trend=True,
+            )
+            for c in result.trends
+        ],
     )
 
 
@@ -149,10 +160,7 @@ async def get_all_trend_colors():
     service = _get_service()
     trends = service.get_all_trends()
 
-    return {
-        "success": True,
-        "trends": trends
-    }
+    return {"success": True, "trends": trends}
 
 
 @router.get("/hair-color/search/{color_name}", tags=["hair_color"])
@@ -171,24 +179,22 @@ async def search_color(color_name: str):
 
     if color is None:
         raise HTTPException(
-            status_code=404,
-            detail=f"'{color_name}' 컬러를 찾을 수 없습니다."
+            status_code=404, detail=f"'{color_name}' 컬러를 찾을 수 없습니다."
         )
 
-    return {
-        "success": True,
-        "color": color
-    }
+    return {"success": True, "color": color}
 
 
-@router.post("/hair-color/synthesize", response_model=SynthesisResponse, tags=["hair_color"])
+@router.post(
+    "/hair-color/synthesize", response_model=SynthesisResponse, tags=["hair_color"]
+)
 @limiter.limit("5/minute")
 async def synthesize_hair_color(
     request: Request,
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
     color_name: str = Form(..., description="염색 컬러명 (예: 밀크브라운)"),
     color_hex: str = Form(None, description="HEX 코드 (선택, 미입력시 자동 조회)"),
-    additional_instructions: Optional[str] = Form(None, description="추가 요청사항")
+    additional_instructions: Optional[str] = Form(None, description="추가 요청사항"),
 ):
     """
     가상 염색 시뮬레이션 API
@@ -214,8 +220,8 @@ async def synthesize_hair_color(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
         logger.info(f"🎨 염색 시뮬레이션 요청: {color_name}")
@@ -238,27 +244,30 @@ async def synthesize_hair_color(
                 color_hex = "#8B4513"  # Default brown if not found
                 logger.warning(f"컬러 미발견, 기본값 사용: {color_name} -> {color_hex}")
 
-        log_structured("hair_color_synthesis_start", {
-            "color_name": color_name,
-            "color_hex": color_hex,
-            "file_size_kb": round(len(image_data) / 1024, 2)
-        })
+        log_structured(
+            "hair_color_synthesis_start",
+            {
+                "color_name": color_name,
+                "color_hex": color_hex,
+                "file_size_kb": round(len(image_data) / 1024, 2),
+            },
+        )
 
         # Synthesize
         result = service.synthesize_hair_color(
             image_data=image_data,
             color_name=color_name,
             color_hex=color_hex,
-            additional_instructions=additional_instructions
+            additional_instructions=additional_instructions,
         )
 
         processing_time = round(time.time() - start_time, 2)
 
         if result["success"]:
-            log_structured("hair_color_synthesis_success", {
-                "color_name": color_name,
-                "processing_time": processing_time
-            })
+            log_structured(
+                "hair_color_synthesis_success",
+                {"color_name": color_name, "processing_time": processing_time},
+            )
 
             return SynthesisResponse(
                 success=True,
@@ -267,13 +276,13 @@ async def synthesize_hair_color(
                 message=result["message"],
                 color_name=color_name,
                 color_hex=color_hex,
-                processing_time=processing_time
+                processing_time=processing_time,
             )
         else:
-            log_structured("hair_color_synthesis_failed", {
-                "color_name": color_name,
-                "message": result["message"]
-            })
+            log_structured(
+                "hair_color_synthesis_failed",
+                {"color_name": color_name, "message": result["message"]},
+            )
 
             return JSONResponse(
                 status_code=422,
@@ -282,8 +291,8 @@ async def synthesize_hair_color(
                     "message": result["message"],
                     "color_name": color_name,
                     "color_hex": color_hex,
-                    "processing_time": processing_time
-                }
+                    "processing_time": processing_time,
+                },
             )
 
     except InvalidFileFormatException as e:
@@ -292,18 +301,18 @@ async def synthesize_hair_color(
             content={
                 "success": False,
                 "error": "invalid_file_format",
-                "message": str(e)
-            }
+                "message": str(e),
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ 염색 시뮬레이션 오류: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"염색 시뮬레이션 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"염색 시뮬레이션 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -312,8 +321,10 @@ async def synthesize_hair_color(
 async def synthesize_recommended_color(
     request: Request,
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
-    personal_color: str = Form(..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"),
-    color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)")
+    personal_color: str = Form(
+        ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
+    ),
+    color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)"),
 ):
     """
     퍼스널컬러 기반 추천 염색 시뮬레이션
@@ -338,7 +349,7 @@ async def synthesize_recommended_color(
         if personal_color not in valid_types:
             raise HTTPException(
                 status_code=400,
-                detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}"
+                detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
             )
 
         # Get recommendations
@@ -348,7 +359,7 @@ async def synthesize_recommended_color(
         if color_index >= len(result.recommended):
             raise HTTPException(
                 status_code=400,
-                detail=f"color_index가 범위를 벗어났습니다. (최대: {len(result.recommended) - 1})"
+                detail=f"color_index가 범위를 벗어났습니다. (최대: {len(result.recommended) - 1})",
             )
 
         selected_color = result.recommended[color_index]
@@ -357,8 +368,8 @@ async def synthesize_recommended_color(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
         image_data = await file.read()
@@ -366,13 +377,15 @@ async def synthesize_recommended_color(
         if len(image_data) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="파일 크기가 10MB를 초과합니다")
 
-        logger.info(f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}")
+        logger.info(
+            f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}"
+        )
 
         # Synthesize
         synthesis_result = service.synthesize_hair_color(
             image_data=image_data,
             color_name=selected_color.name,
-            color_hex=selected_color.hex
+            color_hex=selected_color.hex,
         )
 
         processing_time = round(time.time() - start_time, 2)
@@ -388,9 +401,9 @@ async def synthesize_recommended_color(
                     "name": selected_color.name,
                     "hex": selected_color.hex,
                     "level": selected_color.level,
-                    "description": selected_color.description
+                    "description": selected_color.description,
                 },
-                "processing_time": processing_time
+                "processing_time": processing_time,
             }
         else:
             return JSONResponse(
@@ -399,14 +412,18 @@ async def synthesize_recommended_color(
                     "success": False,
                     "message": synthesis_result["message"],
                     "personal_color": personal_color,
-                    "processing_time": processing_time
-                }
+                    "processing_time": processing_time,
+                },
             )
 
     except InvalidFileFormatException as e:
         return JSONResponse(
             status_code=400,
-            content={"success": False, "error": "invalid_file_format", "message": str(e)}
+            content={
+                "success": False,
+                "error": "invalid_file_format",
+                "message": str(e),
+            },
         )
     except HTTPException:
         raise

@@ -41,10 +41,12 @@ def migrate_database_schema() -> bool:
             # v20.1.6: vertical ratio data
             "opencv_upper_face_ratio",
             "opencv_middle_face_ratio",
-            "opencv_lower_face_ratio"
+            "opencv_lower_face_ratio",
         ]
 
-        missing_columns = [col for col in required_columns if col not in existing_columns]
+        missing_columns = [
+            col for col in required_columns if col not in existing_columns
+        ]
 
         if not missing_columns:
             logger.info("✅ 스키마가 이미 최신 상태입니다 (v20.1.6)")
@@ -120,18 +122,19 @@ def migrate_database_schema() -> bool:
         db.commit()
         logger.info("✅ 스키마 마이그레이션 완료!")
 
-        log_structured("schema_migration", {
-            "status": "success",
-            "added_columns": missing_columns
-        })
+        log_structured(
+            "schema_migration", {"status": "success", "added_columns": missing_columns}
+        )
 
         db.close()
         return True
 
     except Exception as e:
         logger.error(f"❌ 스키마 마이그레이션 실패: {str(e)}")
-        logger.error("서버는 계속 실행되지만, v20 기능이 제대로 작동하지 않을 수 있습니다.")
-        if 'db' in locals():
+        logger.error(
+            "서버는 계속 실행되지만, v20 기능이 제대로 작동하지 않을 수 있습니다."
+        )
+        if "db" in locals():
             db.rollback()
             db.close()
         return False

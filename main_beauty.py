@@ -23,8 +23,8 @@ from core.logging import logger, log_structured
 from core.monitoring import init_sentry
 
 # Lambda type identifier
-LAMBDA_TYPE = os.environ.get('LAMBDA_TYPE', 'beauty')
-IS_LAMBDA = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+LAMBDA_TYPE = os.environ.get("LAMBDA_TYPE", "beauty")
+IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
 # Import only beauty-related routers (NO ML, NO PyTorch)
 from api.endpoints.personal_color import router as personal_color_router
@@ -45,16 +45,13 @@ if sentry_enabled:
 limiter = Limiter(key_func=get_remote_address)
 
 # ========== Service Startup Status Tracking ==========
-startup_status = {
-    "mediapipe": False,
-    "gemini": False
-}
+startup_status = {"mediapipe": False, "gemini": False}
 
 # ========== FastAPI App Initialization ==========
 app = FastAPI(
     title="BeautyMe Beauty API",
     description="Personal Color + Hair Color Recommendation (Lightweight)",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Attach limiter to app state
@@ -64,10 +61,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ========== Trusted Host Middleware ==========
 allowed_hosts = ["*"]
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=allowed_hosts
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 # ========== CORS Middleware ==========
@@ -135,6 +129,7 @@ def ensure_lambda_initialization():
 
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
         logger.info("Gemini API configured")
@@ -169,6 +164,7 @@ async def lambda_init_middleware(request: Request, call_next):
 # ========== File Size Limit Middleware ==========
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
+
 @app.middleware("http")
 async def limit_upload_size(request: Request, call_next):
     """Limit file upload size to prevent DoS attacks"""
@@ -177,7 +173,7 @@ async def limit_upload_size(request: Request, call_next):
         if content_length and int(content_length) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB",
             )
     return await call_next(request)
 
@@ -201,6 +197,7 @@ async def startup_event():
 
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
         logger.info("Gemini API configured")
@@ -232,14 +229,16 @@ async def root():
             "personal_color": "enabled (ITA algorithm)",
             "hair_color_recommendation": "enabled",
             "beauty_consultation": "enabled",
-            "hair_color_synthesis": "enabled" if settings.GEMINI_API_KEY else "disabled"
+            "hair_color_synthesis": (
+                "enabled" if settings.GEMINI_API_KEY else "disabled"
+            ),
         },
         "endpoints": {
             "personal_color": "/api/personal-color",
             "hair_color": "/api/hair-color/{type}",
             "beauty_analyze": "/api/beauty/analyze",
-            "beauty_consult": "/api/beauty/consult"
-        }
+            "beauty_consult": "/api/beauty/consult",
+        },
     }
 
 
@@ -254,14 +253,15 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "services": {
             "gemini": startup_status["gemini"],
-            "mediapipe": startup_status["mediapipe"]
-        }
+            "mediapipe": startup_status["mediapipe"],
+        },
     }
 
 
 # ========== Lambda Handler ==========
 try:
     from mangum import Mangum
+
     handler = Mangum(app, lifespan="on")
     logger.info("Beauty Lambda handler initialized")
 except ImportError:
@@ -272,4 +272,5 @@ except ImportError:
 # ========== Main Entry Point ==========
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8001)

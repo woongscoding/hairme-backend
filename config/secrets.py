@@ -34,25 +34,25 @@ def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optiona
         from botocore.exceptions import ClientError
 
         # Create Secrets Manager client
-        client = boto3.client('secretsmanager', region_name=region_name)
+        client = boto3.client("secretsmanager", region_name=region_name)
 
         # Retrieve secret
         response = client.get_secret_value(SecretId=secret_name)
 
         # Extract secret string
-        secret_value: Optional[str] = response.get('SecretString')
+        secret_value: Optional[str] = response.get("SecretString")
 
         logger.info(f"✅ Successfully retrieved secret: {secret_name}")
         return secret_value
 
     except ClientError as e:
-        error_code = e.response['Error']['Code']
+        error_code = e.response["Error"]["Code"]
 
-        if error_code == 'ResourceNotFoundException':
+        if error_code == "ResourceNotFoundException":
             logger.warning(f"⚠️ Secret not found: {secret_name}")
-        elif error_code == 'AccessDeniedException':
+        elif error_code == "AccessDeniedException":
             logger.error(f"❌ Access denied to secret: {secret_name}")
-        elif error_code == 'InvalidRequestException':
+        elif error_code == "InvalidRequestException":
             logger.error(f"❌ Invalid request for secret: {secret_name}")
         else:
             logger.error(f"❌ Error retrieving secret {secret_name}: {e}")
@@ -76,21 +76,19 @@ def is_aws_environment() -> bool:
         True if in AWS environment, False otherwise
     """
     # Check for Lambda environment
-    if os.getenv('AWS_EXECUTION_ENV'):
+    if os.getenv("AWS_EXECUTION_ENV"):
         return True
 
     # Check for ECS environment
-    if os.getenv('ECS_CONTAINER_METADATA_URI'):
+    if os.getenv("ECS_CONTAINER_METADATA_URI"):
         return True
 
     # Check for EC2 instance metadata (this is more expensive, so check last)
     try:
         import requests  # type: ignore[import-untyped]
+
         # EC2 metadata service with short timeout
-        response = requests.get(
-            'http://169.254.169.254/latest/meta-data/',
-            timeout=0.1
-        )
+        response = requests.get("http://169.254.169.254/latest/meta-data/", timeout=0.1)
         return bool(response.status_code == 200)
     except (ImportError, ModuleNotFoundError):
         # requests not installed
@@ -109,7 +107,7 @@ def get_secret_or_env(
     secret_name: str,
     env_var_name: str,
     region_name: str = "ap-northeast-2",
-    required: bool = True
+    required: bool = True,
 ) -> Optional[str]:
     """
     Get value from Secrets Manager if in AWS environment, otherwise from environment variable
@@ -144,7 +142,9 @@ def get_secret_or_env(
             logger.info(f"✅ Using secret from Secrets Manager: {secret_name}")
             return secret_value
         else:
-            logger.warning(f"⚠️ Failed to retrieve secret {secret_name}, falling back to env var")
+            logger.warning(
+                f"⚠️ Failed to retrieve secret {secret_name}, falling back to env var"
+            )
 
     # Fallback to environment variable
     env_value = os.getenv(env_var_name)

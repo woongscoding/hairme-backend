@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 class TestDatabaseConnection:
     """Test database connection"""
 
-    @patch('database.connection.create_engine')
+    @patch("database.connection.create_engine")
     def test_database_initialization(self, mock_create_engine):
         """Test database initialization"""
         from database.connection import init_database
@@ -21,7 +21,7 @@ class TestDatabaseConnection:
         # Should initialize successfully or return False
         assert isinstance(result, bool)
 
-    @patch('database.connection.SessionLocal')
+    @patch("database.connection.SessionLocal")
     def test_get_db_session(self, mock_session):
         """Test getting database session"""
         from database.connection import get_db_session
@@ -49,7 +49,7 @@ class TestAnalysisHistoryModel:
             personal_color="봄웜",
             recommended_hairstyles='[{"name": "레이어드 컷"}]',
             analysis_time=0.5,
-            model_version="20.2.0"
+            model_version="20.2.0",
         )
 
         test_db.add(record)
@@ -70,7 +70,7 @@ class TestAnalysisHistoryModel:
             image_hash="hash1",
             face_shape="계란형",
             personal_color="봄웜",
-            analysis_time=0.5
+            analysis_time=0.5,
         )
 
         record2 = AnalysisHistory(
@@ -78,7 +78,7 @@ class TestAnalysisHistoryModel:
             image_hash="hash2",
             face_shape="둥근형",
             personal_color="가을웜",
-            analysis_time=0.6
+            analysis_time=0.6,
         )
 
         test_db.add(record1)
@@ -95,8 +95,8 @@ class TestAnalysisHistoryModel:
 class TestDatabaseMigration:
     """Test database migration"""
 
-    @patch('database.migration.SessionLocal')
-    @patch('database.connection.engine')
+    @patch("database.migration.SessionLocal")
+    @patch("database.connection.engine")
     def test_migrate_database_schema(self, mock_engine, mock_session):
         """Test database schema migration"""
         from database.migration import migrate_database_schema

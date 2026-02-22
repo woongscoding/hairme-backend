@@ -99,10 +99,12 @@ class ReasonGenerator:
         try:
             file_path = Path(path)
             if file_path.exists():
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     self.STYLE_CHARACTERISTICS = data
-                logger.info(f"✅ 스타일 특성 로드 완료: {len(self.STYLE_CHARACTERISTICS)}개")
+                logger.info(
+                    f"✅ 스타일 특성 로드 완료: {len(self.STYLE_CHARACTERISTICS)}개"
+                )
             else:
                 logger.warning(f"⚠️ 스타일 특성 파일 없음: {path}")
         except Exception as e:
@@ -113,7 +115,7 @@ class ReasonGenerator:
         face_shape: str,
         skin_tone: str,
         hairstyle: str,
-        include_skin_tone: bool = True
+        include_skin_tone: bool = True,
     ) -> str:
         """
         추천 이유 생성
@@ -129,8 +131,7 @@ class ReasonGenerator:
         """
         # 1. 얼굴형 템플릿 선택
         face_templates = self.FACE_TEMPLATES.get(
-            face_shape,
-            self.FACE_TEMPLATES["계란형"]  # 기본값
+            face_shape, self.FACE_TEMPLATES["계란형"]  # 기본값
         )
         face_reason = random.choice(face_templates).format(style=hairstyle)
 
@@ -153,12 +154,7 @@ class ReasonGenerator:
 
         return face_reason
 
-    def generate_simple(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        hairstyle: str
-    ) -> str:
+    def generate_simple(self, face_shape: str, skin_tone: str, hairstyle: str) -> str:
         """
         간단한 버전 (피부톤 설명 제외, 30자 이내)
 
@@ -171,17 +167,12 @@ class ReasonGenerator:
             추천 이유 (30자 이내)
         """
         face_templates = self.FACE_TEMPLATES.get(
-            face_shape,
-            self.FACE_TEMPLATES["계란형"]
+            face_shape, self.FACE_TEMPLATES["계란형"]
         )
         return random.choice(face_templates).format(style=hairstyle)
 
     def generate_with_score(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        hairstyle: str,
-        ml_score: float
+        self, face_shape: str, skin_tone: str, hairstyle: str, ml_score: float
     ) -> str:
         """
         ML 점수를 포함한 이유 생성
@@ -230,13 +221,8 @@ class ReasonGenerator:
             path: 저장할 파일 경로
         """
         try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(
-                    self.STYLE_CHARACTERISTICS,
-                    f,
-                    ensure_ascii=False,
-                    indent=2
-                )
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.STYLE_CHARACTERISTICS, f, ensure_ascii=False, indent=2)
             logger.info(f"✅ 스타일 특성 저장 완료: {path}")
         except Exception as e:
             logger.error(f"❌ 스타일 특성 저장 실패: {str(e)}")
@@ -247,7 +233,7 @@ _reason_generator_instance = None
 
 
 def get_reason_generator(
-    characteristics_path: Optional[str] = "data_source/style_characteristics.json"
+    characteristics_path: Optional[str] = "data_source/style_characteristics.json",
 ) -> ReasonGenerator:
     """
     ReasonGenerator 싱글톤 인스턴스 가져오기

@@ -16,7 +16,7 @@ def init_sentry(
     dsn: Optional[str] = None,
     environment: Optional[str] = None,
     traces_sample_rate: float = 0.1,
-    profiles_sample_rate: float = 0.1
+    profiles_sample_rate: float = 0.1,
 ) -> bool:
     """
     Initialize Sentry error tracking and performance monitoring
@@ -42,47 +42,46 @@ def init_sentry(
         from sentry_sdk.integrations.logging import LoggingIntegration
 
         # Get configuration from environment or parameters
-        sentry_dsn = dsn or os.getenv('SENTRY_DSN')
+        sentry_dsn = dsn or os.getenv("SENTRY_DSN")
 
         if not sentry_dsn:
             logger.warning("⚠️ SENTRY_DSN not configured - Sentry disabled")
             return False
 
         # Get environment
-        sentry_env = os.getenv('SENTRY_ENVIRONMENT') or environment or settings.ENVIRONMENT
+        sentry_env = (
+            os.getenv("SENTRY_ENVIRONMENT") or environment or settings.ENVIRONMENT
+        )
 
         # Get sample rates from env or use defaults
-        traces_rate = float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', traces_sample_rate))
-        profiles_rate = float(os.getenv('SENTRY_PROFILES_SAMPLE_RATE', profiles_sample_rate))
+        traces_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", traces_sample_rate))
+        profiles_rate = float(
+            os.getenv("SENTRY_PROFILES_SAMPLE_RATE", profiles_sample_rate)
+        )
 
         # Configure Sentry
         sentry_sdk.init(
             dsn=sentry_dsn,
             environment=sentry_env,
             release=f"hairme-backend@{settings.APP_VERSION}",
-
             # Performance Monitoring
             traces_sample_rate=traces_rate,
             profiles_sample_rate=profiles_rate,
-
             # Integrations
             integrations=[
                 # FastAPI integration
                 FastApiIntegration(
                     transaction_style="endpoint",  # Group by endpoint
-                    failed_request_status_codes=[500, 501, 502, 503, 504, 505]
+                    failed_request_status_codes=[500, 501, 502, 503, 504, 505],
                 ),
-
                 # Logging integration
                 LoggingIntegration(
                     level=logging.INFO,  # Capture INFO and above
-                    event_level=logging.ERROR  # Send ERROR and above to Sentry
+                    event_level=logging.ERROR,  # Send ERROR and above to Sentry
                 ),
             ],
-
             # Error filtering
             before_send=before_send_filter,
-
             # Additional options
             attach_stacktrace=True,
             send_default_pii=False,  # Don't send PII by default
@@ -109,7 +108,9 @@ def init_sentry(
         return False
 
 
-def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def before_send_filter(
+    event: Dict[str, Any], hint: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """
     Filter events before sending to Sentry
 
@@ -121,26 +122,26 @@ def before_send_filter(event: Dict[str, Any], hint: Dict[str, Any]) -> Optional[
         Modified event or None to drop the event
     """
     # Don't send health check errors
-    if event.get('transaction') == 'GET /api/health':
+    if event.get("transaction") == "GET /api/health":
         return None
 
     # Don't send expected user errors (4xx)
-    if 'exception' in event:
-        exc_type = event['exception']['values'][0].get('type', '')
+    if "exception" in event:
+        exc_type = event["exception"]["values"][0].get("type", "")
 
         # Filter out expected exceptions
         expected_exceptions = [
-            'NoFaceDetectedException',
-            'MultipleFacesException',
-            'InvalidFileFormatException'
+            "NoFaceDetectedException",
+            "MultipleFacesException",
+            "InvalidFileFormatException",
         ]
 
         if exc_type in expected_exceptions:
             return None
 
     # Filter out rate limit test requests
-    request = event.get('request', {})
-    if request.get('headers', {}).get('X-Test-Request') == 'true':
+    request = event.get("request", {})
+    if request.get("headers", {}).get("X-Test-Request") == "true":
         return None
 
     return event
@@ -150,7 +151,7 @@ def add_breadcrumb(
     message: str,
     category: str = "custom",
     level: str = "info",
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None,
 ):
     """
     Add breadcrumb for Sentry debugging
@@ -173,10 +174,7 @@ def add_breadcrumb(
         import sentry_sdk
 
         sentry_sdk.add_breadcrumb(
-            message=message,
-            category=category,
-            level=level,
-            data=data or {}
+            message=message, category=category, level=level, data=data or {}
         )
     except:
         # Don't let breadcrumb errors break the app
@@ -220,10 +218,7 @@ def set_user(user_id: str, **kwargs):
     try:
         import sentry_sdk
 
-        sentry_sdk.set_user({
-            "id": user_id,
-            **kwargs
-        })
+        sentry_sdk.set_user({"id": user_id, **kwargs})
     except:
         pass
 
@@ -247,12 +242,12 @@ def capture_exception(exception: Exception, **scope_kwargs):
 
         with sentry_sdk.push_scope() as scope:
             # Add tags
-            for key, value in scope_kwargs.get('tags', {}).items():
+            for key, value in scope_kwargs.get("tags", {}).items():
                 scope.set_tag(key, value)
 
             # Set level
-            if 'level' in scope_kwargs:
-                scope.set_level(scope_kwargs['level'])
+            if "level" in scope_kwargs:
+                scope.set_level(scope_kwargs["level"])
 
             sentry_sdk.capture_exception(exception)
     except:
@@ -280,7 +275,7 @@ def capture_message(message: str, level: str = "info", **scope_kwargs):
         import sentry_sdk
 
         with sentry_sdk.push_scope() as scope:
-            for key, value in scope_kwargs.get('tags', {}).items():
+            for key, value in scope_kwargs.get("tags", {}).items():
                 scope.set_tag(key, value)
 
             sentry_sdk.capture_message(message, level=level)
@@ -311,6 +306,7 @@ def start_transaction(op: str, name: str, **kwargs):
     except:
         # Return dummy context manager if Sentry not available
         from contextlib import nullcontext
+
         return nullcontext()
 
 
@@ -337,10 +333,12 @@ def start_span(op: str, description: str, **kwargs):
         return sentry_sdk.start_span(op=op, description=description, **kwargs)
     except:
         from contextlib import nullcontext
+
         return nullcontext()
 
 
 # Performance monitoring helpers
+
 
 def track_performance(func_name: str, duration_ms: float, **tags):
     """
@@ -360,7 +358,7 @@ def track_performance(func_name: str, duration_ms: float, **tags):
         f"{func_name} completed in {duration_ms:.2f}ms",
         category="performance",
         level="info",
-        data={"duration_ms": duration_ms, **tags}
+        data={"duration_ms": duration_ms, **tags},
     )
 
 
@@ -377,9 +375,5 @@ def track_gemini_api_call(latency_ms: float, success: bool, **context):
         f"Gemini API call: {'success' if success else 'failed'} ({latency_ms:.0f}ms)",
         category="api",
         level="info" if success else "warning",
-        data={
-            "latency_ms": latency_ms,
-            "success": success,
-            **context
-        }
+        data={"latency_ms": latency_ms, "success": success, **context},
     )

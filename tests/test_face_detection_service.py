@@ -19,9 +19,9 @@ def mock_mediapipe_analyzer():
 @pytest.fixture
 def sample_image_data():
     """Generate sample image bytes"""
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     img_bytes = io.BytesIO()
-    img.save(img_bytes, format='JPEG')
+    img.save(img_bytes, format="JPEG")
     return img_bytes.getvalue()
 
 
@@ -36,7 +36,7 @@ def mock_mp_features():
         cheekbone_width=130.0,
         jaw_width=110.0,
         ITA_value=45.0,
-        confidence=0.95
+        confidence=0.95,
     )
 
 
@@ -54,10 +54,7 @@ class TestFaceDetectionService:
         assert service.mediapipe_analyzer is None
 
     def test_detect_face_with_mediapipe_success(
-        self,
-        mock_mediapipe_analyzer,
-        sample_image_data,
-        mock_mp_features
+        self, mock_mediapipe_analyzer, sample_image_data, mock_mp_features
     ):
         """Test successful face detection with MediaPipe"""
         mock_mediapipe_analyzer.analyze.return_value = mock_mp_features
@@ -72,21 +69,18 @@ class TestFaceDetectionService:
         mock_mediapipe_analyzer.analyze.assert_called_once_with(sample_image_data)
 
     def test_detect_face_mediapipe_returns_none(
-        self,
-        mock_mediapipe_analyzer,
-        sample_image_data
+        self, mock_mediapipe_analyzer, sample_image_data
     ):
         """Test fallback to Gemini when MediaPipe returns None"""
         mock_mediapipe_analyzer.analyze.return_value = None
 
         with patch.object(
-            FaceDetectionService,
-            'verify_face_with_gemini'
+            FaceDetectionService, "verify_face_with_gemini"
         ) as mock_gemini:
             mock_gemini.return_value = {
                 "has_face": True,
                 "face_count": 1,
-                "method": "gemini"
+                "method": "gemini",
             }
 
             service = FaceDetectionService(mediapipe_analyzer=mock_mediapipe_analyzer)
@@ -96,21 +90,18 @@ class TestFaceDetectionService:
             mock_gemini.assert_called_once_with(sample_image_data)
 
     def test_detect_face_mediapipe_raises_exception(
-        self,
-        mock_mediapipe_analyzer,
-        sample_image_data
+        self, mock_mediapipe_analyzer, sample_image_data
     ):
         """Test fallback to Gemini when MediaPipe raises exception"""
         mock_mediapipe_analyzer.analyze.side_effect = Exception("MediaPipe error")
 
         with patch.object(
-            FaceDetectionService,
-            'verify_face_with_gemini'
+            FaceDetectionService, "verify_face_with_gemini"
         ) as mock_gemini:
             mock_gemini.return_value = {
                 "has_face": True,
                 "face_count": 1,
-                "method": "gemini"
+                "method": "gemini",
             }
 
             service = FaceDetectionService(mediapipe_analyzer=mock_mediapipe_analyzer)
@@ -122,13 +113,12 @@ class TestFaceDetectionService:
     def test_detect_face_no_analyzer_uses_gemini(self, sample_image_data):
         """Test direct Gemini usage when no analyzer provided"""
         with patch.object(
-            FaceDetectionService,
-            'verify_face_with_gemini'
+            FaceDetectionService, "verify_face_with_gemini"
         ) as mock_gemini:
             mock_gemini.return_value = {
                 "has_face": False,
                 "face_count": 0,
-                "method": "gemini"
+                "method": "gemini",
             }
 
             service = FaceDetectionService(mediapipe_analyzer=None)
@@ -137,12 +127,8 @@ class TestFaceDetectionService:
             assert result["method"] == "gemini"
             mock_gemini.assert_called_once_with(sample_image_data)
 
-    @patch('services.face_detection_service.genai.GenerativeModel')
-    def test_verify_face_with_gemini_success(
-        self,
-        mock_genai_model,
-        sample_image_data
-    ):
+    @patch("services.face_detection_service.genai.GenerativeModel")
+    def test_verify_face_with_gemini_success(self, mock_genai_model, sample_image_data):
         """Test successful Gemini face verification"""
         # Mock Gemini response
         mock_model = MagicMock()
@@ -159,12 +145,8 @@ class TestFaceDetectionService:
         assert result["method"] == "gemini"
         assert "error" not in result
 
-    @patch('services.face_detection_service.genai.GenerativeModel')
-    def test_verify_face_with_gemini_no_face(
-        self,
-        mock_genai_model,
-        sample_image_data
-    ):
+    @patch("services.face_detection_service.genai.GenerativeModel")
+    def test_verify_face_with_gemini_no_face(self, mock_genai_model, sample_image_data):
         """Test Gemini verification with no face detected"""
         mock_model = MagicMock()
         mock_response = MagicMock()
@@ -179,12 +161,8 @@ class TestFaceDetectionService:
         assert result["face_count"] == 0
         assert result["method"] == "gemini"
 
-    @patch('services.face_detection_service.genai.GenerativeModel')
-    def test_verify_face_with_gemini_error(
-        self,
-        mock_genai_model,
-        sample_image_data
-    ):
+    @patch("services.face_detection_service.genai.GenerativeModel")
+    def test_verify_face_with_gemini_error(self, mock_genai_model, sample_image_data):
         """Test Gemini verification error handling"""
         mock_genai_model.side_effect = Exception("API Error")
 
@@ -197,16 +175,14 @@ class TestFaceDetectionService:
         assert "error" in result
         assert "API Error" in result["error"]
 
-    @patch('services.face_detection_service.genai.GenerativeModel')
+    @patch("services.face_detection_service.genai.GenerativeModel")
     def test_verify_face_with_gemini_invalid_json(
-        self,
-        mock_genai_model,
-        sample_image_data
+        self, mock_genai_model, sample_image_data
     ):
         """Test Gemini verification with invalid JSON response"""
         mock_model = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = 'Invalid JSON'
+        mock_response.text = "Invalid JSON"
         mock_model.generate_content.return_value = mock_response
         mock_genai_model.return_value = mock_model
 

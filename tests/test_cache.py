@@ -37,7 +37,7 @@ class TestImageHashing:
 class TestRedisCache:
     """Test Redis caching functionality"""
 
-    @patch('core.cache.redis_client')
+    @patch("core.cache.redis_client")
     def test_get_cached_result(self, mock_redis):
         """Test retrieving cached result"""
         from core.cache import get_cached_result
@@ -52,7 +52,7 @@ class TestRedisCache:
         assert result is not None
         assert result["face_shape"] == "계란형"
 
-    @patch('core.cache.redis_client')
+    @patch("core.cache.redis_client")
     def test_get_cached_result_miss(self, mock_redis):
         """Test cache miss"""
         from core.cache import get_cached_result
@@ -63,7 +63,7 @@ class TestRedisCache:
 
         assert result is None
 
-    @patch('core.cache.redis_client')
+    @patch("core.cache.redis_client")
     def test_save_to_cache(self, mock_redis):
         """Test saving result to cache"""
         from core.cache import save_to_cache
@@ -76,7 +76,7 @@ class TestRedisCache:
         # Should call setex with correct parameters
         assert mock_redis.setex.called or result is None
 
-    @patch('core.cache.redis_client', None)
+    @patch("core.cache.redis_client", None)
     def test_cache_disabled(self):
         """Test behavior when Redis is disabled"""
         from core.cache import get_cached_result, save_to_cache

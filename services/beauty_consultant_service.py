@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 @dataclass
 class BeautyProfile:
     """사용자 뷰티 프로필"""
+
     # 기본 분석
     face_shape: str
     personal_color: str
@@ -47,19 +48,19 @@ class BeautyProfile:
                 "face_shape": self.face_shape,
                 "personal_color": self.personal_color,
                 "gender": self.gender,
-                "confidence": self.confidence
+                "confidence": self.confidence,
             },
             "analysis": {
                 "ita_value": self.ita_value,
                 "hue_value": self.hue_value,
-                "face_ratio": self.face_ratio
+                "face_ratio": self.face_ratio,
             },
             "recommendations": {
                 "hairstyles": self.hairstyles,
                 "hair_colors": self.hair_colors,
-                "color_palette": self.color_palette
+                "color_palette": self.color_palette,
             },
-            "styling": self.styling_tips
+            "styling": self.styling_tips,
         }
 
 
@@ -86,6 +87,7 @@ class BeautyConsultantService:
         if self._analyzer is None:
             # Lazy import to reduce Lambda cold start time
             from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
+
             self._analyzer = MediaPipeFaceAnalyzer()
             logger.info("✅ BeautyConsultant: MediaPipe analyzer loaded")
         return self._analyzer
@@ -95,6 +97,7 @@ class BeautyConsultantService:
         """Lazy load personal color service"""
         if self._personal_color_service is None:
             from services.personal_color_service import get_personal_color_service
+
             self._personal_color_service = get_personal_color_service()
         return self._personal_color_service
 
@@ -103,6 +106,7 @@ class BeautyConsultantService:
         """Lazy load hair color service"""
         if self._hair_color_service is None:
             from services.hair_color_service import get_hair_color_service
+
             self._hair_color_service = get_hair_color_service()
         return self._hair_color_service
 
@@ -111,6 +115,7 @@ class BeautyConsultantService:
         """Lazy load ML recommender"""
         if self._ml_recommender is None:
             from core.dependencies import get_hybrid_service
+
             self._ml_recommender = get_hybrid_service()
         return self._ml_recommender
 
@@ -119,13 +124,12 @@ class BeautyConsultantService:
         """Lazy load chatbot service"""
         if self._chatbot_service is None:
             from services.chatbot_service import get_chatbot_service
+
             self._chatbot_service = get_chatbot_service()
         return self._chatbot_service
 
     def analyze_full(
-        self,
-        image_data: bytes,
-        gender: str = "neutral"
+        self, image_data: bytes, gender: str = "neutral"
     ) -> Optional[BeautyProfile]:
         """
         종합 뷰티 분석
@@ -152,7 +156,7 @@ class BeautyConsultantService:
 
             face_shape = features.face_shape
             personal_color = features.skin_tone
-            detected_gender = features.gender if hasattr(features, 'gender') else gender
+            detected_gender = features.gender if hasattr(features, "gender") else gender
             final_gender = gender if gender != "neutral" else detected_gender
 
             logger.info(
@@ -168,7 +172,7 @@ class BeautyConsultantService:
                     skin_tone=personal_color,
                     face_features=features.face_features,
                     skin_features=features.skin_features,
-                    gender=final_gender
+                    gender=final_gender,
                 )
                 hairstyles = ml_result.get("recommendations", [])[:3]
                 logger.info(f"✅ 헤어스타일 추천: {len(hairstyles)}개")
@@ -183,19 +187,23 @@ class BeautyConsultantService:
                 )
                 # 추천 + 트렌드 합쳐서 상위 5개
                 for rec in color_result.recommended[:3]:
-                    hair_colors.append({
-                        "name": rec.name,
-                        "hex": rec.hex,
-                        "description": rec.description,
-                        "is_trend": False
-                    })
+                    hair_colors.append(
+                        {
+                            "name": rec.name,
+                            "hex": rec.hex,
+                            "description": rec.description,
+                            "is_trend": False,
+                        }
+                    )
                 for trend in color_result.trends[:2]:
-                    hair_colors.append({
-                        "name": trend.name,
-                        "hex": trend.hex,
-                        "description": trend.description,
-                        "is_trend": True
-                    })
+                    hair_colors.append(
+                        {
+                            "name": trend.name,
+                            "hex": trend.hex,
+                            "description": trend.description,
+                            "is_trend": True,
+                        }
+                    )
                 logger.info(f"✅ 염색 추천: {len(hair_colors)}개")
             except Exception as e:
                 logger.warning(f"염색 추천 실패: {e}")
@@ -216,7 +224,7 @@ class BeautyConsultantService:
                 styling_tips = {
                     "makeup": tips.get("makeup_tips", []),
                     "fashion": tips.get("fashion_tips", []),
-                    "description": tips.get("description", "")
+                    "description": tips.get("description", ""),
                 }
                 logger.info("✅ 스타일링 조언 로드 완료")
             except Exception as e:
@@ -234,7 +242,7 @@ class BeautyConsultantService:
                 hairstyles=hairstyles,
                 hair_colors=hair_colors,
                 color_palette=color_palette,
-                styling_tips=styling_tips
+                styling_tips=styling_tips,
             )
 
             elapsed = round(time.time() - start_time, 2)
@@ -245,6 +253,7 @@ class BeautyConsultantService:
         except Exception as e:
             logger.error(f"❌ 종합 뷰티 분석 실패: {e}")
             import traceback
+
             traceback.print_exc()
             return None
 
@@ -252,7 +261,7 @@ class BeautyConsultantService:
         self,
         query: str,
         profile: Optional[BeautyProfile] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         AI 뷰티 상담
@@ -274,14 +283,12 @@ class BeautyConsultantService:
                 user_profile = {
                     "face_shape": profile.face_shape,
                     "personal_color": profile.personal_color,
-                    "gender": profile.gender
+                    "gender": profile.gender,
                 }
 
             # 챗봇 서비스 호출
             response = self.chatbot_service.chat(
-                query=query,
-                user_profile=user_profile,
-                session_id=session_id
+                query=query, user_profile=user_profile, session_id=session_id
             )
 
             return {
@@ -289,7 +296,7 @@ class BeautyConsultantService:
                 "message": response.message,
                 "intent": response.intent,
                 "suggestions": response.suggestions,
-                "sources": response.sources
+                "sources": response.sources,
             }
 
         except Exception as e:
@@ -299,7 +306,7 @@ class BeautyConsultantService:
                 "message": "상담 중 오류가 발생했습니다.",
                 "intent": "error",
                 "suggestions": [],
-                "sources": []
+                "sources": [],
             }
 
     def generate_report(self, profile: BeautyProfile) -> str:
@@ -331,7 +338,7 @@ class BeautyConsultantService:
 """
         for i, style in enumerate(profile.hairstyles[:3], 1):
             report += f"{i}. **{style.get('style_name', 'Unknown')}**\n"
-            if style.get('reason'):
+            if style.get("reason"):
                 report += f"   - {style.get('reason')}\n"
 
         report += """
@@ -341,9 +348,9 @@ class BeautyConsultantService:
 
 """
         for color in profile.hair_colors[:5]:
-            trend_badge = " 🔥트렌드" if color.get('is_trend') else ""
+            trend_badge = " 🔥트렌드" if color.get("is_trend") else ""
             report += f"- **{color.get('name')}** ({color.get('hex')}){trend_badge}\n"
-            if color.get('description'):
+            if color.get("description"):
                 report += f"  - {color.get('description')}\n"
 
         report += """
@@ -353,13 +360,13 @@ class BeautyConsultantService:
 
 ### 메이크업
 """
-        for tip in profile.styling_tips.get('makeup', [])[:3]:
+        for tip in profile.styling_tips.get("makeup", [])[:3]:
             report += f"- {tip}\n"
 
         report += """
 ### 패션
 """
-        for tip in profile.styling_tips.get('fashion', [])[:3]:
+        for tip in profile.styling_tips.get("fashion", [])[:3]:
             report += f"- {tip}\n"
 
         report += """

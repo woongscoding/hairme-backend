@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     @property
     def allowed_origins_list(self) -> List[str]:
         """Parse ALLOWED_ORIGINS string into list"""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
     # Gemini Model Configuration
     MODEL_NAME: str = "gemini-2.5-flash"
@@ -60,7 +64,9 @@ class Settings(BaseSettings):
     ML_ENCODER_PATH: str = "models/encoders.pkl"
 
     # ML Model Version Management
-    MODEL_ENVIRONMENT: str = "production"  # production, staging, or archive/vX_YYYY-MM-DD
+    MODEL_ENVIRONMENT: str = (
+        "production"  # production, staging, or archive/vX_YYYY-MM-DD
+    )
     MODEL_BASE_PATH: str = "models"
 
     @property
@@ -105,7 +111,9 @@ class Settings(BaseSettings):
 
     # Application Info
     APP_TITLE: str = "HairMe API"
-    APP_DESCRIPTION: str = "AI 기반 헤어스타일 추천 서비스 (v20.2.0: MediaPipe 전환 완료)"
+    APP_DESCRIPTION: str = (
+        "AI 기반 헤어스타일 추천 서비스 (v20.2.0: MediaPipe 전환 완료)"
+    )
     APP_VERSION: str = "20.2.0"
 
     # Constants
@@ -130,15 +138,17 @@ class Settings(BaseSettings):
 
         # Only fetch from Secrets Manager if in AWS environment
         if is_aws_environment():
-            logger.info("🔐 AWS environment detected - loading secrets from Secrets Manager")
+            logger.info(
+                "🔐 AWS environment detected - loading secrets from Secrets Manager"
+            )
 
             # Fetch GEMINI_API_KEY from Secrets Manager
             try:
                 gemini_key = get_secret_or_env(
-                    secret_name='hairme-gemini-api-key',
-                    env_var_name='GEMINI_API_KEY',
+                    secret_name="hairme-gemini-api-key",
+                    env_var_name="GEMINI_API_KEY",
                     region_name=self.AWS_REGION,
-                    required=True
+                    required=True,
                 )
                 if gemini_key:
                     self.GEMINI_API_KEY = gemini_key
@@ -149,10 +159,10 @@ class Settings(BaseSettings):
             # Fetch ADMIN_API_KEY from Secrets Manager
             try:
                 admin_key = get_secret_or_env(
-                    secret_name='hairme-admin-api-key',
-                    env_var_name='ADMIN_API_KEY',
+                    secret_name="hairme-admin-api-key",
+                    env_var_name="ADMIN_API_KEY",
                     region_name=self.AWS_REGION,
-                    required=False
+                    required=False,
                 )
                 if admin_key:
                     self.ADMIN_API_KEY = admin_key
@@ -164,10 +174,10 @@ class Settings(BaseSettings):
             if not self.USE_DYNAMODB:
                 try:
                     db_password = get_secret_or_env(
-                        secret_name='hairme-db-password',
-                        env_var_name='DB_PASSWORD',
+                        secret_name="hairme-db-password",
+                        env_var_name="DB_PASSWORD",
                         region_name=self.AWS_REGION,
-                        required=False
+                        required=False,
                     )
                     if db_password:
                         self.DB_PASSWORD = db_password
@@ -179,10 +189,10 @@ class Settings(BaseSettings):
             if not self.USE_DYNAMODB and not self.DATABASE_URL:
                 try:
                     database_url = get_secret_or_env(
-                        secret_name='hairme-database-url',
-                        env_var_name='DATABASE_URL',
+                        secret_name="hairme-database-url",
+                        env_var_name="DATABASE_URL",
                         region_name=self.AWS_REGION,
-                        required=False
+                        required=False,
                     )
                     if database_url:
                         self.DATABASE_URL = database_url
@@ -191,7 +201,9 @@ class Settings(BaseSettings):
                     logger.warning(f"⚠️ Failed to load DATABASE_URL: {str(e)}")
 
         else:
-            logger.info("💻 Local/Dev environment detected - using environment variables/.env file")
+            logger.info(
+                "💻 Local/Dev environment detected - using environment variables/.env file"
+            )
 
         # Validate required secrets
         if not self.GEMINI_API_KEY:

@@ -37,32 +37,25 @@ async def get_mlops_status(api_key: str = Depends(verify_admin_api_key)):
         - last_training_at: 마지막 학습 시간
     """
     try:
-        mlops_enabled = os.getenv('MLOPS_ENABLED', 'false').lower() == 'true'
+        mlops_enabled = os.getenv("MLOPS_ENABLED", "false").lower() == "true"
 
         if not mlops_enabled:
-            return {
-                "success": True,
-                "enabled": False,
-                "message": "MLOps is disabled"
-            }
+            return {"success": True, "enabled": False, "message": "MLOps is disabled"}
 
         # S3 피드백 저장소 통계 조회
         from services.mlops.s3_feedback_store import get_s3_feedback_store
+
         store = get_s3_feedback_store()
         stats = store.get_stats()
 
         logger.info(f"📊 MLOps 상태 조회: {stats}")
 
-        return {
-            "success": True,
-            **stats
-        }
+        return {"success": True, **stats}
 
     except Exception as e:
         logger.error(f"❌ MLOps 상태 조회 실패: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"MLOps 상태 조회 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"MLOps 상태 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -78,26 +71,30 @@ async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
         - dislike_counts: 스타일별 싫어요 수
     """
     try:
-        use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+        use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
 
         if use_dynamodb:
-            from database.dynamodb_connection import get_feedback_stats as get_dynamodb_stats
+            from database.dynamodb_connection import (
+                get_feedback_stats as get_dynamodb_stats,
+            )
+
             stats = get_dynamodb_stats()
 
-            logger.info(f"📊 피드백 통계 조회 (DynamoDB): {stats.get('total_feedback', 0)}개")
+            logger.info(
+                f"📊 피드백 통계 조회 (DynamoDB): {stats.get('total_feedback', 0)}개"
+            )
 
             return stats
         else:
             return {
                 "success": False,
-                "message": "DynamoDB is not enabled. Set USE_DYNAMODB=true"
+                "message": "DynamoDB is not enabled. Set USE_DYNAMODB=true",
             }
 
     except Exception as e:
         logger.error(f"❌ 피드백 통계 조회 실패: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"피드백 통계 조회 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"피드백 통계 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -121,16 +118,13 @@ async def get_circuit_status(api_key: str = Depends(verify_admin_api_key)):
 
         logger.info(f"⚡ Circuit Breaker 상태 조회: {status}")
 
-        return {
-            "success": True,
-            **status
-        }
+        return {"success": True, **status}
 
     except Exception as e:
         logger.error(f"❌ Circuit Breaker 상태 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Circuit Breaker 상태 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"Circuit Breaker 상태 조회 중 오류가 발생했습니다: {str(e)}",
         )
 
 
@@ -146,23 +140,23 @@ async def reset_circuit(api_key: str = Depends(verify_admin_api_key)):
 
         logger.warning(f"⚠️ [ADMIN] Circuit Breaker 수동 리셋 실행됨")
 
-        return {
-            "success": True,
-            "message": "All circuit breakers have been reset"
-        }
+        return {"success": True, "message": "All circuit breakers have been reset"}
 
     except Exception as e:
         logger.error(f"❌ Circuit Breaker 리셋 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Circuit Breaker 리셋 중 오류가 발생했습니다: {str(e)}"
+            detail=f"Circuit Breaker 리셋 중 오류가 발생했습니다: {str(e)}",
         )
 
 
 # ========== A/B 테스트 관리 API ==========
 
+
 @router.get("/admin/abtest/status")
-async def get_abtest_status(api_key: str = Depends(verify_admin_api_key)) -> Dict[str, Any]:
+async def get_abtest_status(
+    api_key: str = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
     """
     현재 A/B 테스트 상태 조회
 
@@ -188,27 +182,26 @@ async def get_abtest_status(api_key: str = Depends(verify_admin_api_key)) -> Dic
             "challenger_version": config.challenger_model_version,
             "challenger_traffic_percent": config.challenger_traffic_percent,
             "started_at": config.started_at,
-            "is_active": router.is_abtest_active()
+            "is_active": router.is_abtest_active(),
         }
 
     except ImportError:
         return {
             "success": False,
             "enabled": False,
-            "message": "A/B 테스트 모듈이 로드되지 않았습니다"
+            "message": "A/B 테스트 모듈이 로드되지 않았습니다",
         }
     except Exception as e:
         logger.error(f"❌ A/B 테스트 상태 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 상태 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"A/B 테스트 상태 조회 중 오류가 발생했습니다: {str(e)}",
         )
 
 
 @router.get("/admin/abtest/metrics/{experiment_id}")
 async def get_abtest_metrics(
-    experiment_id: str,
-    api_key: str = Depends(verify_admin_api_key)
+    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     특정 실험의 A/B 테스트 지표 조회
@@ -234,35 +227,29 @@ async def get_abtest_metrics(
         if not metrics:
             return {
                 "success": False,
-                "message": f"실험 '{experiment_id}'에 대한 데이터가 없습니다"
+                "message": f"실험 '{experiment_id}'에 대한 데이터가 없습니다",
             }
 
         # 승자 판단
         result = evaluator.is_challenger_better(metrics)
 
-        return {
-            "success": True,
-            "experiment_id": experiment_id,
-            **result
-        }
+        return {"success": True, "experiment_id": experiment_id, **result}
 
     except ImportError:
         raise HTTPException(
-            status_code=500,
-            detail="A/B 테스트 평가기 모듈이 로드되지 않았습니다"
+            status_code=500, detail="A/B 테스트 평가기 모듈이 로드되지 않았습니다"
         )
     except Exception as e:
         logger.error(f"❌ A/B 테스트 지표 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 지표 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"A/B 테스트 지표 조회 중 오류가 발생했습니다: {str(e)}",
         )
 
 
 @router.get("/admin/abtest/summary/{experiment_id}")
 async def get_abtest_summary(
-    experiment_id: str,
-    api_key: str = Depends(verify_admin_api_key)
+    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     실험 요약 정보 조회
@@ -282,23 +269,19 @@ async def get_abtest_summary(
         evaluator = get_ab_evaluator()
         summary = evaluator.get_experiment_summary(experiment_id)
 
-        return {
-            "success": True,
-            **summary
-        }
+        return {"success": True, **summary}
 
     except Exception as e:
         logger.error(f"❌ A/B 테스트 요약 조회 실패: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 요약 조회 중 오류가 발생했습니다: {str(e)}"
+            detail=f"A/B 테스트 요약 조회 중 오류가 발생했습니다: {str(e)}",
         )
 
 
 @router.post("/admin/abtest/start")
 async def start_abtest(
-    request: ABTestStartRequest,
-    api_key: str = Depends(verify_admin_api_key)
+    request: ABTestStartRequest, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     새 A/B 테스트 시작
@@ -318,16 +301,20 @@ async def start_abtest(
         - config: 적용된 설정
     """
     try:
-        from services.mlops.ab_test import get_ab_router, ABTestConfig, refresh_ab_router
+        from services.mlops.ab_test import (
+            get_ab_router,
+            ABTestConfig,
+            refresh_ab_router,
+        )
 
         # 새 설정으로 라우터 업데이트
         new_config = ABTestConfig(
             experiment_id=request.experiment_id,
-            champion_model_version=os.getenv('ABTEST_CHAMPION_VERSION', 'v6'),
+            champion_model_version=os.getenv("ABTEST_CHAMPION_VERSION", "v6"),
             challenger_model_version=request.challenger_model_version,
             challenger_traffic_percent=request.challenger_traffic_percent,
             enabled=True,
-            started_at=datetime.now(timezone.utc).isoformat()
+            started_at=datetime.now(timezone.utc).isoformat(),
         )
 
         router = get_ab_router()
@@ -342,14 +329,13 @@ async def start_abtest(
             "success": True,
             "message": f"A/B 테스트가 시작되었습니다 (experiment: {request.experiment_id})",
             "config": new_config.to_dict(),
-            "warning": "이 설정은 런타임에만 적용됩니다. 서버 재시작 시 환경변수 설정이 필요합니다."
+            "warning": "이 설정은 런타임에만 적용됩니다. 서버 재시작 시 환경변수 설정이 필요합니다.",
         }
 
     except Exception as e:
         logger.error(f"❌ A/B 테스트 시작 실패: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"A/B 테스트 시작 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"A/B 테스트 시작 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -377,7 +363,7 @@ async def stop_abtest(api_key: str = Depends(verify_admin_api_key)) -> Dict[str,
             challenger_model_version=router.config.challenger_model_version,
             challenger_traffic_percent=0,
             enabled=False,
-            started_at=router.config.started_at
+            started_at=router.config.started_at,
         )
 
         router.update_config(new_config)
@@ -387,21 +373,19 @@ async def stop_abtest(api_key: str = Depends(verify_admin_api_key)) -> Dict[str,
         return {
             "success": True,
             "message": f"A/B 테스트가 중지되었습니다 (experiment: {old_experiment})",
-            "config": new_config.to_dict()
+            "config": new_config.to_dict(),
         }
 
     except Exception as e:
         logger.error(f"❌ A/B 테스트 중지 실패: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"A/B 테스트 중지 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"A/B 테스트 중지 중 오류가 발생했습니다: {str(e)}"
         )
 
 
 @router.post("/admin/abtest/promote/{experiment_id}")
 async def promote_challenger(
-    experiment_id: str,
-    api_key: str = Depends(verify_admin_api_key)
+    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     Challenger를 Champion으로 승격
@@ -427,7 +411,7 @@ async def promote_challenger(
         if router.config.experiment_id != experiment_id:
             raise HTTPException(
                 status_code=400,
-                detail=f"현재 실험 ID({router.config.experiment_id})와 일치하지 않습니다"
+                detail=f"현재 실험 ID({router.config.experiment_id})와 일치하지 않습니다",
             )
 
         # 지표 확인
@@ -435,7 +419,7 @@ async def promote_challenger(
         metrics = evaluator.get_metrics_by_variant(experiment_id)
         result = evaluator.is_challenger_better(metrics)
 
-        if result.get('conclusion') != 'challenger_wins':
+        if result.get("conclusion") != "challenger_wins":
             logger.warning(
                 f"⚠️ Challenger가 승자가 아닌데 승격 시도: "
                 f"conclusion={result.get('conclusion')}"
@@ -450,7 +434,7 @@ async def promote_challenger(
             challenger_model_version="",
             challenger_traffic_percent=0,
             enabled=False,
-            started_at=None
+            started_at=None,
         )
 
         router.update_config(new_config)
@@ -469,8 +453,8 @@ async def promote_challenger(
             "next_steps": [
                 "1. S3에서 challenger/model.pt를 current/model.pt로 복사",
                 "2. Lambda/ECS 환경변수 업데이트 (ABTEST_CHAMPION_VERSION)",
-                "3. 서비스 재배포"
-            ]
+                "3. 서비스 재배포",
+            ],
         }
 
     except HTTPException:
@@ -478,6 +462,5 @@ async def promote_challenger(
     except Exception as e:
         logger.error(f"❌ Challenger 승격 실패: {e}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Challenger 승격 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"Challenger 승격 중 오류가 발생했습니다: {str(e)}"
         )

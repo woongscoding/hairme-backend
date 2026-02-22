@@ -12,7 +12,6 @@ from core.logging import logger
 from core.exceptions import InvalidFileFormatException
 from services.hairstyle_synthesis_service import get_synthesis_service
 
-
 router = APIRouter()
 
 # Rate limiter - synthesis is expensive, so limit more strictly
@@ -24,9 +23,13 @@ limiter = Limiter(key_func=get_remote_address)
 async def synthesize_hairstyle(
     request: Request,
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
-    hairstyle_name: str = Form(..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"),
+    hairstyle_name: str = Form(
+        ..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"
+    ),
     gender: str = Form("male", description="성별 (male/female)"),
-    additional_instructions: Optional[str] = Form(None, description="추가 스타일링 요청 (선택)")
+    additional_instructions: Optional[str] = Form(
+        None, description="추가 스타일링 요청 (선택)"
+    ),
 ):
     """
     헤어스타일 합성 API
@@ -55,15 +58,14 @@ async def synthesize_hairstyle(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
         # Gender validation
-        if gender not in ['male', 'female']:
+        if gender not in ["male", "female"]:
             raise HTTPException(
-                status_code=400,
-                detail="gender는 'male' 또는 'female'만 가능합니다."
+                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
             )
 
         logger.info(f"🎨 합성 요청: {hairstyle_name} ({gender}), file={file.filename}")
@@ -74,8 +76,7 @@ async def synthesize_hairstyle(
         # File size validation (max 10MB)
         if len(image_data) > 10 * 1024 * 1024:
             raise HTTPException(
-                status_code=400,
-                detail="파일 크기가 10MB를 초과합니다."
+                status_code=400, detail="파일 크기가 10MB를 초과합니다."
             )
 
         # Get synthesis service and process
@@ -84,7 +85,7 @@ async def synthesize_hairstyle(
             image_data=image_data,
             hairstyle_name=hairstyle_name,
             gender=gender,
-            additional_instructions=additional_instructions
+            additional_instructions=additional_instructions,
         )
 
         processing_time = round(time.time() - start_time, 2)
@@ -96,7 +97,7 @@ async def synthesize_hairstyle(
                 "image_base64": result["image_base64"],
                 "image_format": result["image_format"],
                 "message": result["message"],
-                "processing_time": processing_time
+                "processing_time": processing_time,
             }
         else:
             logger.warning(f"⚠️ 합성 실패: {result['message']}")
@@ -105,8 +106,8 @@ async def synthesize_hairstyle(
                 content={
                     "success": False,
                     "message": result["message"],
-                    "processing_time": processing_time
-                }
+                    "processing_time": processing_time,
+                },
             )
 
     except InvalidFileFormatException as e:
@@ -115,18 +116,18 @@ async def synthesize_hairstyle(
             content={
                 "success": False,
                 "error": "invalid_file_format",
-                "message": str(e)
-            }
+                "message": str(e),
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ 합성 오류: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"합성 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"합성 중 오류가 발생했습니다: {str(e)}"
         )
 
 
@@ -136,7 +137,7 @@ async def synthesize_with_reference(
     request: Request,
     user_photo: UploadFile = File(..., description="사용자 얼굴 사진"),
     reference_photo: UploadFile = File(..., description="참고할 헤어스타일 사진"),
-    gender: str = Form("male", description="성별 (male/female)")
+    gender: str = Form("male", description="성별 (male/female)"),
 ):
     """
     레퍼런스 이미지 기반 헤어스타일 합성 API
@@ -164,23 +165,28 @@ async def synthesize_with_reference(
         if not user_photo.filename:
             raise HTTPException(status_code=400, detail="사용자 사진 파일명이 없습니다")
 
-        user_ext = user_photo.filename.lower().split('.')[-1]
-        if user_ext not in ['jpg', 'jpeg', 'png', 'webp']:
-            raise HTTPException(status_code=400, detail="사용자 사진 형식이 올바르지 않습니다")
+        user_ext = user_photo.filename.lower().split(".")[-1]
+        if user_ext not in ["jpg", "jpeg", "png", "webp"]:
+            raise HTTPException(
+                status_code=400, detail="사용자 사진 형식이 올바르지 않습니다"
+            )
 
         # Validate reference photo
         if not reference_photo.filename:
-            raise HTTPException(status_code=400, detail="레퍼런스 사진 파일명이 없습니다")
+            raise HTTPException(
+                status_code=400, detail="레퍼런스 사진 파일명이 없습니다"
+            )
 
-        ref_ext = reference_photo.filename.lower().split('.')[-1]
-        if ref_ext not in ['jpg', 'jpeg', 'png', 'webp']:
-            raise HTTPException(status_code=400, detail="레퍼런스 사진 형식이 올바르지 않습니다")
+        ref_ext = reference_photo.filename.lower().split(".")[-1]
+        if ref_ext not in ["jpg", "jpeg", "png", "webp"]:
+            raise HTTPException(
+                status_code=400, detail="레퍼런스 사진 형식이 올바르지 않습니다"
+            )
 
         # Gender validation
-        if gender not in ['male', 'female']:
+        if gender not in ["male", "female"]:
             raise HTTPException(
-                status_code=400,
-                detail="gender는 'male' 또는 'female'만 가능합니다."
+                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
             )
 
         logger.info(f"🎨 레퍼런스 합성 요청: {gender}")
@@ -191,17 +197,21 @@ async def synthesize_with_reference(
 
         # File size validation
         if len(user_image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="사용자 사진이 10MB를 초과합니다")
+            raise HTTPException(
+                status_code=400, detail="사용자 사진이 10MB를 초과합니다"
+            )
 
         if len(reference_image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="레퍼런스 사진이 10MB를 초과합니다")
+            raise HTTPException(
+                status_code=400, detail="레퍼런스 사진이 10MB를 초과합니다"
+            )
 
         # Get synthesis service and process
         service = get_synthesis_service()
         result = service.synthesize_with_reference(
             user_image_data=user_image_data,
             reference_image_data=reference_image_data,
-            gender=gender
+            gender=gender,
         )
 
         processing_time = round(time.time() - start_time, 2)
@@ -213,7 +223,7 @@ async def synthesize_with_reference(
                 "image_base64": result["image_base64"],
                 "image_format": result["image_format"],
                 "message": result["message"],
-                "processing_time": processing_time
+                "processing_time": processing_time,
             }
         else:
             logger.warning(f"⚠️ 레퍼런스 합성 실패: {result['message']}")
@@ -222,8 +232,8 @@ async def synthesize_with_reference(
                 content={
                     "success": False,
                     "message": result["message"],
-                    "processing_time": processing_time
-                }
+                    "processing_time": processing_time,
+                },
             )
 
     except HTTPException:
@@ -231,8 +241,8 @@ async def synthesize_with_reference(
     except Exception as e:
         logger.error(f"❌ 레퍼런스 합성 오류: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"합성 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"합성 중 오류가 발생했습니다: {str(e)}"
         )

@@ -14,20 +14,21 @@ class TestHealthCheckService:
     def health_service(self):
         """Create health check service instance"""
         from core.health_check import HealthCheckService
+
         return HealthCheckService()
 
     @pytest.mark.asyncio
     async def test_check_dynamodb_success(self, health_service):
         """Test successful DynamoDB health check"""
-        with patch('config.settings.settings') as mock_settings:
+        with patch("config.settings.settings") as mock_settings:
             mock_settings.USE_DYNAMODB = True
-            mock_settings.AWS_REGION = 'ap-northeast-2'
-            mock_settings.DYNAMODB_TABLE_NAME = 'test-table'
+            mock_settings.AWS_REGION = "ap-northeast-2"
+            mock_settings.DYNAMODB_TABLE_NAME = "test-table"
 
-            with patch('boto3.resource') as mock_boto:
+            with patch("boto3.resource") as mock_boto:
                 # Mock DynamoDB table
                 mock_table = Mock()
-                mock_table.table_status = 'ACTIVE'
+                mock_table.table_status = "ACTIVE"
 
                 mock_dynamodb = Mock()
                 mock_dynamodb.Table.return_value = mock_table
@@ -45,7 +46,7 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_check_dynamodb_disabled(self, health_service):
         """Test DynamoDB check when disabled"""
-        with patch('config.settings.settings') as mock_settings:
+        with patch("config.settings.settings") as mock_settings:
             mock_settings.USE_DYNAMODB = False
 
             result = await health_service.check_dynamodb()
@@ -56,18 +57,23 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_check_dynamodb_error(self, health_service):
         """Test DynamoDB check with connection error"""
-        with patch('config.settings.settings') as mock_settings:
+        with patch("config.settings.settings") as mock_settings:
             mock_settings.USE_DYNAMODB = True
-            mock_settings.AWS_REGION = 'ap-northeast-2'
-            mock_settings.DYNAMODB_TABLE_NAME = 'test-table'
+            mock_settings.AWS_REGION = "ap-northeast-2"
+            mock_settings.DYNAMODB_TABLE_NAME = "test-table"
 
-            with patch('boto3.resource') as mock_boto:
+            with patch("boto3.resource") as mock_boto:
                 from botocore.exceptions import ClientError
 
                 # Mock error
                 mock_boto.side_effect = ClientError(
-                    {'Error': {'Code': 'ResourceNotFoundException', 'Message': 'Table not found'}},
-                    'DescribeTable'
+                    {
+                        "Error": {
+                            "Code": "ResourceNotFoundException",
+                            "Message": "Table not found",
+                        }
+                    },
+                    "DescribeTable",
                 )
 
                 result = await health_service.check_dynamodb()
@@ -78,12 +84,12 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_check_gemini_api_success(self, health_service):
         """Test successful Gemini API health check"""
-        with patch('config.settings.settings') as mock_settings:
-            mock_settings.GEMINI_API_KEY = 'test-key'
-            mock_settings.MODEL_NAME = 'gemini-1.5-flash-latest'
+        with patch("config.settings.settings") as mock_settings:
+            mock_settings.GEMINI_API_KEY = "test-key"
+            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
 
-            with patch('google.generativeai.configure'):
-                with patch('google.generativeai.GenerativeModel') as mock_model_class:
+            with patch("google.generativeai.configure"):
+                with patch("google.generativeai.GenerativeModel") as mock_model_class:
                     # Mock model response
                     mock_response = Mock()
                     mock_response.text = "test response"
@@ -102,12 +108,12 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_check_gemini_api_error(self, health_service):
         """Test Gemini API check with API error"""
-        with patch('config.settings.settings') as mock_settings:
-            mock_settings.GEMINI_API_KEY = 'test-key'
-            mock_settings.MODEL_NAME = 'gemini-1.5-flash-latest'
+        with patch("config.settings.settings") as mock_settings:
+            mock_settings.GEMINI_API_KEY = "test-key"
+            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
 
-            with patch('google.generativeai.configure'):
-                with patch('google.generativeai.GenerativeModel') as mock_model_class:
+            with patch("google.generativeai.configure"):
+                with patch("google.generativeai.GenerativeModel") as mock_model_class:
                     # Mock API error
                     mock_model_class.side_effect = Exception("API Error")
 
@@ -139,7 +145,7 @@ class TestHealthCheckService:
 
     def test_get_circuit_breaker_status(self, health_service):
         """Test circuit breaker status retrieval"""
-        with patch('services.circuit_breaker.gemini_breaker') as mock_breaker:
+        with patch("services.circuit_breaker.gemini_breaker") as mock_breaker:
             mock_breaker.current_state = "closed"
             mock_breaker.fail_counter = 0
             mock_breaker.success_counter = 10
@@ -153,9 +159,13 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_basic(self, health_service):
         """Test comprehensive health check without deep check"""
-        with patch.object(health_service, 'check_dynamodb', new_callable=AsyncMock) as mock_dynamodb:
-            with patch.object(health_service, 'get_system_metrics') as mock_system:
-                with patch.object(health_service, 'get_circuit_breaker_status') as mock_cb:
+        with patch.object(
+            health_service, "check_dynamodb", new_callable=AsyncMock
+        ) as mock_dynamodb:
+            with patch.object(health_service, "get_system_metrics") as mock_system:
+                with patch.object(
+                    health_service, "get_circuit_breaker_status"
+                ) as mock_cb:
                     # Mock successful responses
                     mock_dynamodb.return_value = {"status": "healthy"}
                     mock_system.return_value = {"cpu": {"percent": 50}}
@@ -183,13 +193,22 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_deep(self, health_service):
         """Test comprehensive health check with deep check"""
-        with patch.object(health_service, 'check_dynamodb', new_callable=AsyncMock) as mock_dynamodb:
-            with patch.object(health_service, 'check_gemini_api', new_callable=AsyncMock) as mock_gemini:
-                with patch.object(health_service, 'get_system_metrics') as mock_system:
-                    with patch.object(health_service, 'get_circuit_breaker_status') as mock_cb:
+        with patch.object(
+            health_service, "check_dynamodb", new_callable=AsyncMock
+        ) as mock_dynamodb:
+            with patch.object(
+                health_service, "check_gemini_api", new_callable=AsyncMock
+            ) as mock_gemini:
+                with patch.object(health_service, "get_system_metrics") as mock_system:
+                    with patch.object(
+                        health_service, "get_circuit_breaker_status"
+                    ) as mock_cb:
                         # Mock successful responses
                         mock_dynamodb.return_value = {"status": "healthy"}
-                        mock_gemini.return_value = {"status": "healthy", "latency_ms": 100}
+                        mock_gemini.return_value = {
+                            "status": "healthy",
+                            "latency_ms": 100,
+                        }
                         mock_system.return_value = {"cpu": {"percent": 50}}
                         mock_cb.return_value = {"state": "closed"}
 
@@ -206,11 +225,18 @@ class TestHealthCheckService:
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_degraded(self, health_service):
         """Test health check returns degraded when service fails"""
-        with patch.object(health_service, 'check_dynamodb', new_callable=AsyncMock) as mock_dynamodb:
-            with patch.object(health_service, 'get_system_metrics') as mock_system:
-                with patch.object(health_service, 'get_circuit_breaker_status') as mock_cb:
+        with patch.object(
+            health_service, "check_dynamodb", new_callable=AsyncMock
+        ) as mock_dynamodb:
+            with patch.object(health_service, "get_system_metrics") as mock_system:
+                with patch.object(
+                    health_service, "get_circuit_breaker_status"
+                ) as mock_cb:
                     # Mock DynamoDB failure
-                    mock_dynamodb.return_value = {"status": "unhealthy", "error": "Connection failed"}
+                    mock_dynamodb.return_value = {
+                        "status": "unhealthy",
+                        "error": "Connection failed",
+                    }
                     mock_system.return_value = {"cpu": {"percent": 50}}
                     mock_cb.return_value = {"state": "closed"}
 
@@ -226,30 +252,33 @@ class TestHealthCheckEndpoint:
     @pytest.fixture
     def client(self):
         """Create test client"""
-        with patch('config.settings.is_aws_environment', return_value=False):
-            with patch.dict('os.environ', {
-                'GEMINI_API_KEY': 'test-key',
-                'ENVIRONMENT': 'development'
-            }):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "development"},
+            ):
                 from fastapi.testclient import TestClient
                 from main import app
+
                 return TestClient(app)
 
     def test_health_endpoint_basic(self, client):
         """Test basic health check endpoint"""
-        with patch('core.health_check.get_health_check_service') as mock_service:
+        with patch("core.health_check.get_health_check_service") as mock_service:
             mock_health_service = Mock()
-            mock_health_service.comprehensive_health_check = AsyncMock(return_value={
-                "status": "healthy",
-                "timestamp": "2025-01-17T00:00:00",
-                "checks": {
-                    "system": {"cpu": {"percent": 50}},
-                    "dynamodb": {"status": "healthy"},
-                    "circuit_breaker": {"state": "closed"},
-                    "gemini_api": {"status": "skipped"}
-                },
-                "check_duration_ms": 50
-            })
+            mock_health_service.comprehensive_health_check = AsyncMock(
+                return_value={
+                    "status": "healthy",
+                    "timestamp": "2025-01-17T00:00:00",
+                    "checks": {
+                        "system": {"cpu": {"percent": 50}},
+                        "dynamodb": {"status": "healthy"},
+                        "circuit_breaker": {"state": "closed"},
+                        "gemini_api": {"status": "skipped"},
+                    },
+                    "check_duration_ms": 50,
+                }
+            )
             mock_service.return_value = mock_health_service
 
             response = client.get("/api/health")
@@ -264,19 +293,21 @@ class TestHealthCheckEndpoint:
 
     def test_health_endpoint_deep_check(self, client):
         """Test health check with deep=true"""
-        with patch('core.health_check.get_health_check_service') as mock_service:
+        with patch("core.health_check.get_health_check_service") as mock_service:
             mock_health_service = Mock()
-            mock_health_service.comprehensive_health_check = AsyncMock(return_value={
-                "status": "healthy",
-                "timestamp": "2025-01-17T00:00:00",
-                "checks": {
-                    "system": {"cpu": {"percent": 50}},
-                    "dynamodb": {"status": "healthy"},
-                    "circuit_breaker": {"state": "closed"},
-                    "gemini_api": {"status": "healthy", "latency_ms": 100}
-                },
-                "check_duration_ms": 150
-            })
+            mock_health_service.comprehensive_health_check = AsyncMock(
+                return_value={
+                    "status": "healthy",
+                    "timestamp": "2025-01-17T00:00:00",
+                    "checks": {
+                        "system": {"cpu": {"percent": 50}},
+                        "dynamodb": {"status": "healthy"},
+                        "circuit_breaker": {"state": "closed"},
+                        "gemini_api": {"status": "healthy", "latency_ms": 100},
+                    },
+                    "check_duration_ms": 150,
+                }
+            )
             mock_service.return_value = mock_health_service
 
             response = client.get("/api/health?deep=true")

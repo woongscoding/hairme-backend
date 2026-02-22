@@ -4,6 +4,7 @@ import io
 import json
 from typing import Dict, Any, Optional
 from PIL import Image
+
 # import google.generativeai as genai  # Lazy loaded
 from fastapi import HTTPException
 from pybreaker import CircuitBreakerError
@@ -12,7 +13,6 @@ from pybreaker import CircuitBreakerError
 from core.logging import logger
 from models.mediapipe_analyzer import MediaPipeFaceFeatures
 from services.circuit_breaker import gemini_breaker, gemini_api_fallback
-
 
 # ========== Gemini Prompts ==========
 ANALYSIS_PROMPT = """분석하고 JSON으로 응답:
@@ -55,8 +55,7 @@ class GeminiAnalysisService:
         self.max_retries = max_retries
 
     def _build_prompt_with_mediapipe_hints(
-        self,
-        mp_features: MediaPipeFaceFeatures
+        self, mp_features: MediaPipeFaceFeatures
     ) -> str:
         """
         Build Gemini prompt with MediaPipe measurement hints
@@ -103,7 +102,7 @@ class GeminiAnalysisService:
         self,
         image_data: bytes,
         mp_features: Optional[MediaPipeFaceFeatures] = None,
-        retry_count: int = 0
+        retry_count: int = 0,
     ) -> Dict[str, Any]:
         """
         Internal method for Gemini API call (wrapped by circuit breaker)
@@ -136,6 +135,7 @@ class GeminiAnalysisService:
             # Call Gemini API
             import google.generativeai as genai
             from config.settings import settings
+
             model = genai.GenerativeModel(settings.MODEL_NAME)
 
             # Use temperature=0 for consistent responses
@@ -144,8 +144,7 @@ class GeminiAnalysisService:
             )
 
             response = model.generate_content(
-                [prompt, image],
-                generation_config=generation_config
+                [prompt, image], generation_config=generation_config
             )
 
             # Parse JSON response
@@ -177,14 +176,12 @@ class GeminiAnalysisService:
                     f"⚠️ JSON 파싱 실패, 재시도 {retry_count + 1}/{self.max_retries}"
                 )
                 return self._analyze_with_gemini_internal(
-                    image_data,
-                    mp_features,
-                    retry_count + 1
+                    image_data, mp_features, retry_count + 1
                 )
 
             raise HTTPException(
                 status_code=500,
-                detail=f"AI 응답 파싱 실패 (재시도 {self.max_retries}회 초과): {str(e)}"
+                detail=f"AI 응답 파싱 실패 (재시도 {self.max_retries}회 초과): {str(e)}",
             )
 
         except Exception as e:
@@ -197,21 +194,19 @@ class GeminiAnalysisService:
                     f"⚠️ Gemini API 오류, 재시도 {retry_count + 1}/{self.max_retries}"
                 )
                 return self._analyze_with_gemini_internal(
-                    image_data,
-                    mp_features,
-                    retry_count + 1
+                    image_data, mp_features, retry_count + 1
                 )
 
             raise HTTPException(
                 status_code=500,
-                detail=f"AI 분석 중 오류가 발생했습니다 (재시도 {self.max_retries}회 초과): {str(e)}"
+                detail=f"AI 분석 중 오류가 발생했습니다 (재시도 {self.max_retries}회 초과): {str(e)}",
             )
 
     def analyze_with_gemini(
         self,
         image_data: bytes,
         mp_features: Optional[MediaPipeFaceFeatures] = None,
-        retry_count: int = 0
+        retry_count: int = 0,
     ) -> Dict[str, Any]:
         """
         Analyze face with Gemini Vision API (with Circuit Breaker protection)
@@ -231,10 +226,7 @@ class GeminiAnalysisService:
         try:
             # Call through circuit breaker
             return gemini_breaker.call(
-                self._analyze_with_gemini_internal,
-                image_data,
-                mp_features,
-                retry_count
+                self._analyze_with_gemini_internal, image_data, mp_features, retry_count
             )
 
         except CircuitBreakerError:

@@ -14,12 +14,13 @@ class TestSecurityHeaders:
     def client(self):
         """Create test client"""
         # Mock settings to avoid AWS Secrets Manager calls
-        with patch('config.settings.is_aws_environment', return_value=False):
-            with patch.dict('os.environ', {
-                'GEMINI_API_KEY': 'test-key',
-                'ENVIRONMENT': 'development'
-            }):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "development"},
+            ):
                 from main import app
+
                 return TestClient(app)
 
     def test_health_endpoint_has_security_headers(self, client):
@@ -69,7 +70,7 @@ class TestSecurityHeaders:
         # HSTS should not be set in development over HTTP
         assert "Strict-Transport-Security" not in response.headers
 
-    @patch('config.settings.settings')
+    @patch("config.settings.settings")
     def test_hsts_in_production(self, mock_settings, client):
         """Test that HSTS IS set in production"""
         mock_settings.ENVIRONMENT = "production"
@@ -85,7 +86,10 @@ class TestSecurityHeaders:
         response = client.get("/api/health")
 
         # Server header should be removed
-        assert "Server" not in response.headers or response.headers.get("Server") != "uvicorn"
+        assert (
+            "Server" not in response.headers
+            or response.headers.get("Server") != "uvicorn"
+        )
 
     def test_error_response_has_security_headers(self, client):
         """Test that error responses also have security headers"""
@@ -105,12 +109,13 @@ class TestTrustedHostMiddleware:
     @pytest.fixture
     def client_dev(self):
         """Create test client in development mode"""
-        with patch('config.settings.is_aws_environment', return_value=False):
-            with patch.dict('os.environ', {
-                'GEMINI_API_KEY': 'test-key',
-                'ENVIRONMENT': 'development'
-            }):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "development"},
+            ):
                 from main import app
+
                 return TestClient(app)
 
     def test_trusted_host_allows_in_development(self, client_dev):
@@ -124,17 +129,19 @@ class TestTrustedHostMiddleware:
     @pytest.fixture
     def client_prod(self):
         """Create test client in production mode"""
-        with patch('config.settings.is_aws_environment', return_value=False):
-            with patch.dict('os.environ', {
-                'GEMINI_API_KEY': 'test-key',
-                'ENVIRONMENT': 'production'
-            }):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "production"},
+            ):
                 # Need to reimport to get production settings
                 import sys
-                if 'main' in sys.modules:
-                    del sys.modules['main']
+
+                if "main" in sys.modules:
+                    del sys.modules["main"]
 
                 from main import app
+
                 return TestClient(app, base_url="https://hairme.app")
 
     def test_trusted_host_restricts_in_production(self, client_prod):
@@ -151,12 +158,13 @@ class TestCSPPolicy:
     @pytest.fixture
     def client(self):
         """Create test client"""
-        with patch('config.settings.is_aws_environment', return_value=False):
-            with patch.dict('os.environ', {
-                'GEMINI_API_KEY': 'test-key',
-                'ENVIRONMENT': 'development'
-            }):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "development"},
+            ):
                 from main import app
+
                 return TestClient(app)
 
     def test_csp_prevents_inline_scripts(self, client):

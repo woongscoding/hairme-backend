@@ -36,13 +36,14 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Configuration
-S3_BUCKET = os.getenv('MLOPS_S3_BUCKET', 'hairme-mlops')
-MODEL_VERSION_PREFIX = 'v6'
+S3_BUCKET = os.getenv("MLOPS_S3_BUCKET", "hairme-mlops")
+MODEL_VERSION_PREFIX = "v6"
 MIN_SAMPLES_FOR_TRAINING = 50  # 최소 학습 샘플 수
 
 try:
     import boto3
     from botocore.exceptions import ClientError
+
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -52,6 +53,7 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     from torch.utils.data import DataLoader, TensorDataset
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -71,10 +73,10 @@ class ModelTrainer:
         self.device = None
 
         if BOTO3_AVAILABLE:
-            self.s3_client = boto3.client('s3')
+            self.s3_client = boto3.client("s3")
 
         if TORCH_AVAILABLE:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             logger.info(f"🔧 PyTorch device: {self.device}")
 
     def load_pending_data(self) -> Tuple[Optional[np.ndarray], ...]:
@@ -90,11 +92,10 @@ class ModelTrainer:
         try:
             # pending 폴더의 모든 NPZ 파일 목록
             response = self.s3_client.list_objects_v2(
-                Bucket=self.s3_bucket,
-                Prefix='feedback/pending/'
+                Bucket=self.s3_bucket, Prefix="feedback/pending/"
             )
 
-            if 'Contents' not in response:
+            if "Contents" not in response:
                 logger.info("ℹ️ 대기 중인 피드백 없음")
                 return None, None, None, None
 
@@ -103,24 +104,21 @@ class ModelTrainer:
             style_list = []
             gt_list = []
 
-            for obj in response['Contents']:
-                key = obj['Key']
-                if not key.endswith('.npz'):
+            for obj in response["Contents"]:
+                key = obj["Key"]
+                if not key.endswith(".npz"):
                     continue
 
                 # NPZ 파일 다운로드
-                obj_response = self.s3_client.get_object(
-                    Bucket=self.s3_bucket,
-                    Key=key
-                )
+                obj_response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=key)
 
-                buffer = io.BytesIO(obj_response['Body'].read())
+                buffer = io.BytesIO(obj_response["Body"].read())
                 data = np.load(buffer, allow_pickle=True)
 
-                face_list.append(data['face_features'])
-                skin_list.append(data['skin_features'])
-                style_list.append(data['style_embedding'])
-                gt_list.append(data['ground_truth'])
+                face_list.append(data["face_features"])
+                skin_list.append(data["skin_features"])
+                style_list.append(data["style_embedding"])
+                gt_list.append(data["ground_truth"])
 
             if not face_list:
                 return None, None, None, None
@@ -131,7 +129,7 @@ class ModelTrainer:
                 np.stack(face_list),
                 np.stack(skin_list),
                 np.stack(style_list),
-                np.concatenate(gt_list)
+                np.concatenate(gt_list),
             )
 
         except Exception as e:
@@ -150,22 +148,22 @@ class ModelTrainer:
 
         try:
             # 현재 모델 다운로드
-            with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
                 self.s3_client.download_file(
-                    self.s3_bucket,
-                    'models/current/model.pt',
-                    tmp.name
+                    self.s3_bucket, "models/current/model.pt", tmp.name
                 )
 
-                checkpoint = torch.load(tmp.name, map_location=self.device, weights_only=False)
+                checkpoint = torch.load(
+                    tmp.name, map_location=self.device, weights_only=False
+                )
 
                 # 모델 클래스 동적 임포트
                 from models.ml_recommender import RecommendationModelV6
 
                 model = RecommendationModelV6()
 
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    model.load_state_dict(checkpoint['model_state_dict'])
+                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                    model.load_state_dict(checkpoint["model_state_dict"])
                 else:
                     model.load_state_dict(checkpoint)
 
@@ -178,7 +176,7 @@ class ModelTrainer:
                 return model
 
         except ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 logger.warning("⚠️ 기존 모델 없음 - 새로 학습 시작")
                 return None
             raise
@@ -195,7 +193,7 @@ class ModelTrainer:
         base_model: Optional[nn.Module] = None,
         epochs: int = 10,
         learning_rate: float = 0.0001,
-        batch_size: int = 32
+        batch_size: int = 32,
     ) -> Tuple[nn.Module, Dict[str, Any]]:
         """
         모델 학습
@@ -233,6 +231,7 @@ class ModelTrainer:
         # 모델 생성 또는 로드
         if base_model is None:
             from models.ml_recommender import RecommendationModelV6
+
             model = RecommendationModelV6()
             model.to(self.device)
             logger.info("🆕 새 모델 생성")
@@ -248,10 +247,10 @@ class ModelTrainer:
 
         # 학습 히스토리
         history = {
-            'epochs': epochs,
-            'losses': [],
-            'samples': len(ground_truths),
-            'started_at': datetime.now(timezone.utc).isoformat()
+            "epochs": epochs,
+            "losses": [],
+            "samples": len(ground_truths),
+            "started_at": datetime.now(timezone.utc).isoformat(),
         }
 
         # 학습 루프
@@ -272,23 +271,20 @@ class ModelTrainer:
                 batch_count += 1
 
             avg_loss = epoch_loss / batch_count
-            history['losses'].append(avg_loss)
+            history["losses"].append(avg_loss)
 
             if (epoch + 1) % 2 == 0:
                 logger.info(f"  Epoch [{epoch+1}/{epochs}] Loss: {avg_loss:.6f}")
 
-        history['final_loss'] = history['losses'][-1]
-        history['finished_at'] = datetime.now(timezone.utc).isoformat()
+        history["final_loss"] = history["losses"][-1]
+        history["finished_at"] = datetime.now(timezone.utc).isoformat()
 
         logger.info(f"✅ 학습 완료: final_loss={history['final_loss']:.6f}")
 
         return model, history
 
     def save_model(
-        self,
-        model: nn.Module,
-        history: Dict[str, Any],
-        version: Optional[str] = None
+        self, model: nn.Module, history: Dict[str, Any], version: Optional[str] = None
     ) -> str:
         """
         학습된 모델을 S3에 저장
@@ -305,33 +301,33 @@ class ModelTrainer:
             raise RuntimeError("S3 client not initialized")
 
         # 버전 생성
-        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         version = version or f"{MODEL_VERSION_PREFIX}_{timestamp}"
 
         # 체크포인트 생성
         checkpoint = {
-            'model_state_dict': model.state_dict(),
-            'config': {
-                'version': 'v6',
-                'normalized': True,
-                'attention_type': 'multi_token',
-                'token_dim': 128,
-                'num_heads': 4
+            "model_state_dict": model.state_dict(),
+            "config": {
+                "version": "v6",
+                "normalized": True,
+                "attention_type": "multi_token",
+                "token_dim": 128,
+                "num_heads": 4,
             },
-            'training_history': history,
-            'created_at': datetime.now(timezone.utc).isoformat()
+            "training_history": history,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         # 임시 파일로 저장
-        with tempfile.NamedTemporaryFile(suffix='.pt', delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
             torch.save(checkpoint, tmp.name)
 
             # 현재 모델로 업로드
-            current_key = 'models/current/model.pt'
+            current_key = "models/current/model.pt"
             self.s3_client.upload_file(tmp.name, self.s3_bucket, current_key)
 
             # 아카이브에도 저장
-            archive_key = f'models/archive/{version}.pt'
+            archive_key = f"models/archive/{version}.pt"
             self.s3_client.upload_file(tmp.name, self.s3_bucket, archive_key)
 
             # 임시 파일 삭제
@@ -339,17 +335,17 @@ class ModelTrainer:
 
         # 메타데이터 업데이트
         metadata = {
-            'version': version,
-            'samples_trained': history.get('samples', 0),
-            'final_loss': history.get('final_loss', 0),
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            "version": version,
+            "samples_trained": history.get("samples", 0),
+            "final_loss": history.get("final_loss", 0),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         self.s3_client.put_object(
             Bucket=self.s3_bucket,
-            Key='models/current/metadata.json',
+            Key="models/current/metadata.json",
             Body=json.dumps(metadata, indent=2),
-            ContentType='application/json'
+            ContentType="application/json",
         )
 
         logger.info(f"✅ 모델 저장 완료: {current_key}")
@@ -362,52 +358,50 @@ class ModelTrainer:
             return
 
         try:
-            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H%M%S')
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")
             batch_name = f"batch_{timestamp}"
 
             # pending 파일 목록
             response = self.s3_client.list_objects_v2(
-                Bucket=self.s3_bucket,
-                Prefix='feedback/pending/'
+                Bucket=self.s3_bucket, Prefix="feedback/pending/"
             )
 
-            if 'Contents' not in response:
+            if "Contents" not in response:
                 return
 
-            for obj in response['Contents']:
-                old_key = obj['Key']
-                if not old_key.endswith('.npz'):
+            for obj in response["Contents"]:
+                old_key = obj["Key"]
+                if not old_key.endswith(".npz"):
                     continue
 
-                filename = old_key.split('/')[-1]
+                filename = old_key.split("/")[-1]
                 new_key = f"feedback/processed/{batch_name}/{filename}"
 
                 # Copy then delete
                 self.s3_client.copy_object(
                     Bucket=self.s3_bucket,
-                    CopySource={'Bucket': self.s3_bucket, 'Key': old_key},
-                    Key=new_key
+                    CopySource={"Bucket": self.s3_bucket, "Key": old_key},
+                    Key=new_key,
                 )
                 self.s3_client.delete_object(Bucket=self.s3_bucket, Key=old_key)
 
             # 메타데이터 업데이트
             try:
                 metadata_response = self.s3_client.get_object(
-                    Bucket=self.s3_bucket,
-                    Key='feedback/metadata.json'
+                    Bucket=self.s3_bucket, Key="feedback/metadata.json"
                 )
-                metadata = json.loads(metadata_response['Body'].read().decode('utf-8'))
+                metadata = json.loads(metadata_response["Body"].read().decode("utf-8"))
             except Exception:
                 metadata = {}
 
-            metadata['pending_count'] = 0
-            metadata['last_training_at'] = datetime.now(timezone.utc).isoformat()
+            metadata["pending_count"] = 0
+            metadata["last_training_at"] = datetime.now(timezone.utc).isoformat()
 
             self.s3_client.put_object(
                 Bucket=self.s3_bucket,
-                Key='feedback/metadata.json',
+                Key="feedback/metadata.json",
                 Body=json.dumps(metadata, indent=2),
-                ContentType='application/json'
+                ContentType="application/json",
             )
 
             logger.info(f"✅ 데이터 processed로 이동: {batch_name}")
@@ -438,7 +432,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     logger.info(f"🚀 Trainer Lambda 시작: {json.dumps(event)}")
 
-    trigger_type = event.get('trigger_type', 'unknown')
+    trigger_type = event.get("trigger_type", "unknown")
 
     try:
         trainer = ModelTrainer()
@@ -448,11 +442,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         if face is None or len(face) < MIN_SAMPLES_FOR_TRAINING:
             sample_count = len(face) if face is not None else 0
-            logger.info(f"ℹ️ 학습 데이터 부족: {sample_count}/{MIN_SAMPLES_FOR_TRAINING}")
+            logger.info(
+                f"ℹ️ 학습 데이터 부족: {sample_count}/{MIN_SAMPLES_FOR_TRAINING}"
+            )
             return {
                 "success": False,
                 "message": f"Insufficient data ({sample_count}/{MIN_SAMPLES_FOR_TRAINING})",
-                "trigger_type": trigger_type
+                "trigger_type": trigger_type,
             }
 
         logger.info(f"📊 학습 데이터: {len(labels)}개 샘플")
@@ -468,7 +464,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             ground_truths=labels,
             base_model=base_model,
             epochs=10,
-            learning_rate=0.0001
+            learning_rate=0.0001,
         )
 
         # 4. 모델 저장
@@ -485,18 +481,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "trigger_type": trigger_type,
             "model_key": model_key,
             "samples_trained": len(labels),
-            "final_loss": history.get('final_loss', 0)
+            "final_loss": history.get("final_loss", 0),
         }
 
     except Exception as e:
         logger.error(f"❌ 재학습 실패: {e}")
         import traceback
+
         traceback.print_exc()
 
         return {
             "success": False,
             "message": f"Training failed: {str(e)}",
-            "trigger_type": trigger_type
+            "trigger_type": trigger_type,
         }
 
 
@@ -504,9 +501,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    result = lambda_handler(
-        event={"trigger_type": "manual"},
-        context=None
-    )
+    result = lambda_handler(event={"trigger_type": "manual"}, context=None)
 
     print(json.dumps(result, indent=2))
