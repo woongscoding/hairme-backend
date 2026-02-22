@@ -36,16 +36,16 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Configuration
-S3_BUCKET = os.getenv('MLOPS_S3_BUCKET', 'hairme-mlops')
-MIN_SAMPLES = int(os.getenv('MLOPS_MIN_SAMPLES', '50'))
-ANALYZE_LAMBDA_NAME = os.getenv('ANALYZE_LAMBDA_NAME', 'hairme-analyze')
+S3_BUCKET = os.getenv("MLOPS_S3_BUCKET", "hairme-mlops")
+MIN_SAMPLES = int(os.getenv("MLOPS_MIN_SAMPLES", "50"))
+ANALYZE_LAMBDA_NAME = os.getenv("ANALYZE_LAMBDA_NAME", "hairme-analyze")
 # AWS_REGION은 Lambda 내장 환경변수 사용 (AWS_DEFAULT_REGION)
-AWS_REGION = os.getenv('AWS_DEFAULT_REGION', os.getenv('AWS_REGION', 'ap-northeast-2'))
+AWS_REGION = os.getenv("AWS_DEFAULT_REGION", os.getenv("AWS_REGION", "ap-northeast-2"))
 
 # 학습 하이퍼파라미터
-FINE_TUNE_EPOCHS = int(os.getenv('FINE_TUNE_EPOCHS', '10'))
-FINE_TUNE_LR = float(os.getenv('FINE_TUNE_LR', '0.0001'))
-BATCH_SIZE = int(os.getenv('BATCH_SIZE', '32'))
+FINE_TUNE_EPOCHS = int(os.getenv("FINE_TUNE_EPOCHS", "10"))
+FINE_TUNE_LR = float(os.getenv("FINE_TUNE_LR", "0.0001"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
 
 # 라벨 정규화 상수
 LABEL_MIN = 10.0
@@ -64,7 +64,7 @@ class MultiTokenAttentionLayer(nn.Module):
         style_dim: int = 384,
         token_dim: int = 128,
         num_heads: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.token_dim = token_dim
@@ -74,10 +74,7 @@ class MultiTokenAttentionLayer(nn.Module):
         self.style_to_token = nn.Linear(style_dim, token_dim)
 
         self.attention = nn.MultiheadAttention(
-            embed_dim=token_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            embed_dim=token_dim, num_heads=num_heads, dropout=dropout, batch_first=True
         )
         self.norm1 = nn.LayerNorm(token_dim)
 
@@ -85,16 +82,13 @@ class MultiTokenAttentionLayer(nn.Module):
             nn.Linear(token_dim, token_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(token_dim * 2, token_dim)
+            nn.Linear(token_dim * 2, token_dim),
         )
         self.norm2 = nn.LayerNorm(token_dim)
         self.dropout = nn.Dropout(dropout)
 
     def forward(
-        self,
-        face_proj: torch.Tensor,
-        skin_proj: torch.Tensor,
-        style_emb: torch.Tensor
+        self, face_proj: torch.Tensor, skin_proj: torch.Tensor, style_emb: torch.Tensor
     ) -> torch.Tensor:
         batch_size = face_proj.size(0)
 
@@ -124,7 +118,7 @@ class RecommendationModelV6(nn.Module):
         style_embed_dim: int = 384,
         token_dim: int = 128,
         num_heads: int = 4,
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -136,14 +130,14 @@ class RecommendationModelV6(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.multi_token_attention = MultiTokenAttentionLayer(
@@ -152,7 +146,7 @@ class RecommendationModelV6(nn.Module):
             style_dim=style_embed_dim,
             token_dim=token_dim,
             num_heads=num_heads,
-            dropout=dropout_rate * 0.3
+            dropout=dropout_rate * 0.3,
         )
 
         attention_out_dim = token_dim * 3
@@ -180,7 +174,7 @@ class RecommendationModelV6(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         face_proj = self.face_projection(face_features)
         skin_proj = self.skin_projection(skin_features)
@@ -223,7 +217,7 @@ class FeedbackDataset(Dataset):
         face_features: np.ndarray,
         skin_features: np.ndarray,
         style_embeddings: np.ndarray,
-        ground_truths: np.ndarray
+        ground_truths: np.ndarray,
     ):
         self.face_features = torch.tensor(face_features, dtype=torch.float32)
         self.skin_features = torch.tensor(skin_features, dtype=torch.float32)
@@ -241,20 +235,22 @@ class FeedbackDataset(Dataset):
             self.face_features[idx],
             self.skin_features[idx],
             self.style_embeddings[idx],
-            self.ground_truths[idx]
+            self.ground_truths[idx],
         )
 
 
 def get_s3_client():
     """S3 클라이언트 싱글톤"""
     import boto3
-    return boto3.client('s3', region_name=AWS_REGION)
+
+    return boto3.client("s3", region_name=AWS_REGION)
 
 
 def get_lambda_client():
     """Lambda 클라이언트"""
     import boto3
-    return boto3.client('lambda', region_name=AWS_REGION)
+
+    return boto3.client("lambda", region_name=AWS_REGION)
 
 
 def get_pending_count() -> int:
@@ -262,12 +258,9 @@ def get_pending_count() -> int:
     s3 = get_s3_client()
 
     try:
-        response = s3.get_object(
-            Bucket=S3_BUCKET,
-            Key='feedback/metadata.json'
-        )
-        metadata = json.loads(response['Body'].read().decode('utf-8'))
-        return metadata.get('pending_count', 0)
+        response = s3.get_object(Bucket=S3_BUCKET, Key="feedback/metadata.json")
+        metadata = json.loads(response["Body"].read().decode("utf-8"))
+        return metadata.get("pending_count", 0)
     except Exception as e:
         logger.error(f"Failed to get metadata: {e}")
         return 0
@@ -278,17 +271,14 @@ def get_metadata() -> Dict[str, Any]:
     s3 = get_s3_client()
 
     try:
-        response = s3.get_object(
-            Bucket=S3_BUCKET,
-            Key='feedback/metadata.json'
-        )
-        return json.loads(response['Body'].read().decode('utf-8'))
+        response = s3.get_object(Bucket=S3_BUCKET, Key="feedback/metadata.json")
+        return json.loads(response["Body"].read().decode("utf-8"))
     except s3.exceptions.NoSuchKey:
         return {
             "total_feedback_count": 0,
             "pending_count": 0,
             "last_training_at": None,
-            "model_version": "v6"
+            "model_version": "v6",
         }
     except Exception as e:
         logger.error(f"Failed to get metadata: {e}")
@@ -298,7 +288,7 @@ def get_metadata() -> Dict[str, Any]:
 def update_metadata(
     pending_count: int = None,
     training_triggered: bool = False,
-    new_model_version: str = None
+    new_model_version: str = None,
 ):
     """메타데이터 업데이트"""
     s3 = get_s3_client()
@@ -307,20 +297,20 @@ def update_metadata(
         metadata = get_metadata()
 
         if training_triggered:
-            metadata['last_training_at'] = datetime.now(timezone.utc).isoformat()
-            metadata['pending_count'] = 0
+            metadata["last_training_at"] = datetime.now(timezone.utc).isoformat()
+            metadata["pending_count"] = 0
 
         if pending_count is not None:
-            metadata['pending_count'] = pending_count
+            metadata["pending_count"] = pending_count
 
         if new_model_version:
-            metadata['model_version'] = new_model_version
+            metadata["model_version"] = new_model_version
 
         s3.put_object(
             Bucket=S3_BUCKET,
-            Key='feedback/metadata.json',
+            Key="feedback/metadata.json",
             Body=json.dumps(metadata, indent=2, ensure_ascii=False),
-            ContentType='application/json'
+            ContentType="application/json",
         )
         logger.info(f"✅ 메타데이터 업데이트 완료: {metadata}")
 
@@ -328,7 +318,9 @@ def update_metadata(
         logger.error(f"Failed to update metadata: {e}")
 
 
-def load_pending_feedbacks() -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str]]:
+def load_pending_feedbacks() -> (
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str]]
+):
     """
     S3에서 pending 피드백 데이터 로드
 
@@ -338,12 +330,9 @@ def load_pending_feedbacks() -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.nda
     s3 = get_s3_client()
 
     try:
-        response = s3.list_objects_v2(
-            Bucket=S3_BUCKET,
-            Prefix='feedback/pending/'
-        )
+        response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="feedback/pending/")
 
-        if 'Contents' not in response:
+        if "Contents" not in response:
             logger.info("No pending feedbacks found")
             return None, None, None, None, 0, []
 
@@ -353,20 +342,20 @@ def load_pending_feedbacks() -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.nda
         gt_list = []
         file_keys = []
 
-        for obj in response['Contents']:
-            key = obj['Key']
-            if not key.endswith('.npz'):
+        for obj in response["Contents"]:
+            key = obj["Key"]
+            if not key.endswith(".npz"):
                 continue
 
             try:
                 obj_response = s3.get_object(Bucket=S3_BUCKET, Key=key)
-                buffer = io.BytesIO(obj_response['Body'].read())
+                buffer = io.BytesIO(obj_response["Body"].read())
                 data = np.load(buffer, allow_pickle=True)
 
-                face_list.append(data['face_features'])
-                skin_list.append(data['skin_features'])
-                style_list.append(data['style_embedding'])
-                gt_list.append(data['ground_truth'])
+                face_list.append(data["face_features"])
+                skin_list.append(data["skin_features"])
+                style_list.append(data["style_embedding"])
+                gt_list.append(data["ground_truth"])
                 file_keys.append(key)
 
             except Exception as e:
@@ -383,7 +372,14 @@ def load_pending_feedbacks() -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.nda
 
         logger.info(f"✅ {len(face_list)}개 피드백 데이터 로드 완료")
 
-        return face_features, skin_features, style_embeddings, ground_truths, len(face_list), file_keys
+        return (
+            face_features,
+            skin_features,
+            style_embeddings,
+            ground_truths,
+            len(face_list),
+            file_keys,
+        )
 
     except Exception as e:
         logger.error(f"❌ 피드백 데이터 로드 실패: {e}")
@@ -401,46 +397,42 @@ def load_base_model() -> Tuple[Optional[RecommendationModelV6], Dict[str, Any]]:
 
     try:
         # S3에서 현재 모델 다운로드
-        response = s3.get_object(
-            Bucket=S3_BUCKET,
-            Key='models/current/model.pt'
-        )
+        response = s3.get_object(Bucket=S3_BUCKET, Key="models/current/model.pt")
 
-        buffer = io.BytesIO(response['Body'].read())
+        buffer = io.BytesIO(response["Body"].read())
 
         # CPU에서 로드
-        checkpoint = torch.load(buffer, map_location='cpu', weights_only=False)
+        checkpoint = torch.load(buffer, map_location="cpu", weights_only=False)
 
         # 설정 추출
-        config = checkpoint.get('config', {
-            'version': 'v6',
-            'token_dim': 128,
-            'num_heads': 4,
-            'normalized': True
-        })
+        config = checkpoint.get(
+            "config",
+            {"version": "v6", "token_dim": 128, "num_heads": 4, "normalized": True},
+        )
 
         # 모델 생성 및 가중치 로드
         model = RecommendationModelV6(
-            token_dim=config.get('token_dim', 128),
-            num_heads=config.get('num_heads', 4)
+            token_dim=config.get("token_dim", 128), num_heads=config.get("num_heads", 4)
         )
-        model.load_state_dict(checkpoint['model_state_dict'])
+        model.load_state_dict(checkpoint["model_state_dict"])
 
-        logger.info(f"✅ 기존 모델 로드 완료: version={config.get('version', 'unknown')}")
+        logger.info(
+            f"✅ 기존 모델 로드 완료: version={config.get('version', 'unknown')}"
+        )
         return model, config
 
     except s3.exceptions.NoSuchKey:
         logger.warning("⚠️ 기존 모델이 없음 - 새 모델 생성")
         model = RecommendationModelV6()
         config = {
-            'version': 'v6',
-            'token_dim': 128,
-            'num_heads': 4,
-            'normalized': True,
-            'label_min': LABEL_MIN,
-            'label_max': LABEL_MAX,
-            'label_range': LABEL_RANGE,
-            'attention_type': 'multi_token'
+            "version": "v6",
+            "token_dim": 128,
+            "num_heads": 4,
+            "normalized": True,
+            "label_min": LABEL_MIN,
+            "label_max": LABEL_MAX,
+            "label_range": LABEL_RANGE,
+            "attention_type": "multi_token",
         }
         return model, config
 
@@ -457,7 +449,7 @@ def fine_tune_model(
     style_embeddings: np.ndarray,
     ground_truths: np.ndarray,
     epochs: int = FINE_TUNE_EPOCHS,
-    lr: float = FINE_TUNE_LR
+    lr: float = FINE_TUNE_LR,
 ) -> Tuple[RecommendationModelV6, Dict[str, Any]]:
     """
     피드백 데이터로 모델 Fine-tuning
@@ -465,12 +457,14 @@ def fine_tune_model(
     Returns:
         (fine_tuned_model, training_stats)
     """
-    device = torch.device('cpu')  # Lambda는 CPU만 사용
+    device = torch.device("cpu")  # Lambda는 CPU만 사용
     model = model.to(device)
     model.train()
 
     # 데이터셋 및 데이터로더
-    dataset = FeedbackDataset(face_features, skin_features, style_embeddings, ground_truths)
+    dataset = FeedbackDataset(
+        face_features, skin_features, style_embeddings, ground_truths
+    )
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     # 옵티마이저 및 손실 함수
@@ -478,11 +472,7 @@ def fine_tune_model(
     criterion = nn.MSELoss()
 
     # 학습 기록
-    training_stats = {
-        'epochs': epochs,
-        'samples': len(dataset),
-        'losses': []
-    }
+    training_stats = {"epochs": epochs, "samples": len(dataset), "losses": []}
 
     logger.info(f"🏋️ Fine-tuning 시작: {len(dataset)}개 샘플, {epochs} 에폭")
 
@@ -506,13 +496,15 @@ def fine_tune_model(
             num_batches += 1
 
         avg_loss = total_loss / num_batches if num_batches > 0 else 0
-        training_stats['losses'].append(avg_loss)
+        training_stats["losses"].append(avg_loss)
 
         if (epoch + 1) % 2 == 0 or epoch == 0:
             logger.info(f"  Epoch {epoch + 1}/{epochs}: loss = {avg_loss:.4f}")
 
     model.eval()
-    training_stats['final_loss'] = training_stats['losses'][-1] if training_stats['losses'] else 0
+    training_stats["final_loss"] = (
+        training_stats["losses"][-1] if training_stats["losses"] else 0
+    )
 
     logger.info(f"✅ Fine-tuning 완료: final_loss = {training_stats['final_loss']:.4f}")
 
@@ -524,7 +516,7 @@ def evaluate_model(
     face_features: np.ndarray,
     skin_features: np.ndarray,
     style_embeddings: np.ndarray,
-    ground_truths: np.ndarray
+    ground_truths: np.ndarray,
 ) -> Dict[str, Any]:
     """
     모델 평가 (학습 전후 비교용)
@@ -541,7 +533,7 @@ def evaluate_model(
     Returns:
         평가 지표 딕셔너리
     """
-    device = torch.device('cpu')
+    device = torch.device("cpu")
     model = model.to(device)
     model.eval()
 
@@ -577,9 +569,21 @@ def evaluate_model(
     false_positives = np.sum((pred_positive == 1) & (gt_positive == 0))
     false_negatives = np.sum((pred_positive == 0) & (gt_positive == 1))
 
-    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+    precision = (
+        true_positives / (true_positives + false_positives)
+        if (true_positives + false_positives) > 0
+        else 0.0
+    )
+    recall = (
+        true_positives / (true_positives + false_negatives)
+        if (true_positives + false_negatives) > 0
+        else 0.0
+    )
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0
+        else 0.0
+    )
 
     # 상관계수 (예측과 실제의 관계)
     if len(preds) > 1:
@@ -608,24 +612,20 @@ def evaluate_model(
         "mse": mse,
         "mae": mae,
         "rmse": rmse,
-
         # 분류 지표 (임계값 70점 기준)
         "precision": precision,
         "recall": recall,
         "f1_score": f1,
-
         # 상관관계
         "correlation": correlation,
-
         # Top-K 정확도
         "top_k_accuracy": top_k_accuracy,
-
         # 통계
         "num_samples": int(n_samples),
         "avg_prediction": float(np.mean(preds_original)),
         "avg_ground_truth": float(np.mean(gts_original)),
         "std_prediction": float(np.std(preds_original)),
-        "std_ground_truth": float(np.std(gts_original))
+        "std_ground_truth": float(np.std(gts_original)),
     }
 
     logger.info(f"📊 모델 평가 완료:")
@@ -641,7 +641,7 @@ def save_evaluation_report(
     before_metrics: Dict[str, Any],
     after_metrics: Dict[str, Any],
     training_stats: Dict[str, Any],
-    version: str
+    version: str,
 ) -> bool:
     """
     평가 리포트를 S3에 저장
@@ -660,7 +660,7 @@ def save_evaluation_report(
     try:
         # 개선율 계산
         improvements = {}
-        for key in ['mse', 'mae', 'rmse']:
+        for key in ["mse", "mae", "rmse"]:
             if key in before_metrics and key in after_metrics:
                 before_val = before_metrics[key]
                 after_val = after_metrics[key]
@@ -668,7 +668,7 @@ def save_evaluation_report(
                     # 손실 지표는 감소가 개선
                     improvements[key] = (before_val - after_val) / before_val * 100
 
-        for key in ['precision', 'recall', 'f1_score', 'correlation']:
+        for key in ["precision", "recall", "f1_score", "correlation"]:
             if key in before_metrics and key in after_metrics:
                 before_val = before_metrics[key]
                 after_val = after_metrics[key]
@@ -684,19 +684,20 @@ def save_evaluation_report(
             "improvements": improvements,
             "training_stats": training_stats,
             "summary": {
-                "mse_improved": improvements.get('mse', 0) > 0,
-                "precision_improved": improvements.get('precision', 0) > 0,
-                "overall_improved": sum(1 for v in improvements.values() if v > 0) > len(improvements) / 2
-            }
+                "mse_improved": improvements.get("mse", 0) > 0,
+                "precision_improved": improvements.get("precision", 0) > 0,
+                "overall_improved": sum(1 for v in improvements.values() if v > 0)
+                > len(improvements) / 2,
+            },
         }
 
         # S3에 저장
-        report_key = f'evaluations/{version}_report.json'
+        report_key = f"evaluations/{version}_report.json"
         s3.put_object(
             Bucket=S3_BUCKET,
             Key=report_key,
             Body=json.dumps(report, indent=2, ensure_ascii=False),
-            ContentType='application/json'
+            ContentType="application/json",
         )
 
         logger.info(f"✅ 평가 리포트 저장: {report_key}")
@@ -711,9 +712,7 @@ def save_evaluation_report(
 
 
 def save_model_to_s3(
-    model: RecommendationModelV6,
-    config: Dict[str, Any],
-    new_version: str
+    model: RecommendationModelV6, config: Dict[str, Any], new_version: str
 ) -> bool:
     """
     학습된 모델을 S3에 저장
@@ -729,10 +728,10 @@ def save_model_to_s3(
     try:
         # 체크포인트 생성
         checkpoint = {
-            'model_state_dict': model.state_dict(),
-            'config': config,
-            'version': new_version,
-            'trained_at': datetime.now(timezone.utc).isoformat()
+            "model_state_dict": model.state_dict(),
+            "config": config,
+            "version": new_version,
+            "trained_at": datetime.now(timezone.utc).isoformat(),
         }
 
         # 바이너리로 직렬화
@@ -742,21 +741,21 @@ def save_model_to_s3(
         model_bytes = buffer.getvalue()
 
         # 1. 아카이브에 백업
-        archive_key = f'models/archive/{new_version}.pt'
+        archive_key = f"models/archive/{new_version}.pt"
         s3.put_object(
             Bucket=S3_BUCKET,
             Key=archive_key,
             Body=model_bytes,
-            ContentType='application/octet-stream'
+            ContentType="application/octet-stream",
         )
         logger.info(f"✅ 모델 아카이브 저장: {archive_key}")
 
         # 2. 현재 모델 교체
         s3.put_object(
             Bucket=S3_BUCKET,
-            Key='models/current/model.pt',
+            Key="models/current/model.pt",
             Body=model_bytes,
-            ContentType='application/octet-stream'
+            ContentType="application/octet-stream",
         )
         logger.info(f"✅ 현재 모델 교체 완료")
 
@@ -780,14 +779,14 @@ def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
     try:
         moved_count = 0
         for old_key in file_keys:
-            filename = old_key.split('/')[-1]
-            new_key = f'feedback/processed/{batch_name}/{filename}'
+            filename = old_key.split("/")[-1]
+            new_key = f"feedback/processed/{batch_name}/{filename}"
 
             # Copy then delete
             s3.copy_object(
                 Bucket=S3_BUCKET,
-                CopySource={'Bucket': S3_BUCKET, 'Key': old_key},
-                Key=new_key
+                CopySource={"Bucket": S3_BUCKET, "Key": old_key},
+                Key=new_key,
             )
             s3.delete_object(Bucket=S3_BUCKET, Key=old_key)
             moved_count += 1
@@ -813,7 +812,7 @@ def backup_lambda_config() -> Optional[Dict[str, Any]]:
         response = lambda_client.get_function_configuration(
             FunctionName=ANALYZE_LAMBDA_NAME
         )
-        env_vars = response.get('Environment', {}).get('Variables', {})
+        env_vars = response.get("Environment", {}).get("Variables", {})
 
         # S3에 백업
         s3 = get_s3_client()
@@ -822,7 +821,7 @@ def backup_lambda_config() -> Optional[Dict[str, Any]]:
             Bucket=S3_BUCKET,
             Key=backup_key,
             Body=json.dumps(env_vars, indent=2),
-            ContentType='application/json'
+            ContentType="application/json",
         )
         logger.info(f"✅ Lambda 환경변수 백업: {backup_key}")
 
@@ -850,16 +849,15 @@ def update_analyze_lambda_envvars(new_version: str, experiment_id: str) -> bool:
         response = lambda_client.get_function_configuration(
             FunctionName=ANALYZE_LAMBDA_NAME
         )
-        current_env = response.get('Environment', {}).get('Variables', {})
+        current_env = response.get("Environment", {}).get("Variables", {})
 
         # 환경변수 업데이트
-        current_env['ABTEST_CHALLENGER_VERSION'] = new_version
-        current_env['ABTEST_EXPERIMENT_ID'] = experiment_id
+        current_env["ABTEST_CHALLENGER_VERSION"] = new_version
+        current_env["ABTEST_EXPERIMENT_ID"] = experiment_id
 
         # Lambda 업데이트
         lambda_client.update_function_configuration(
-            FunctionName=ANALYZE_LAMBDA_NAME,
-            Environment={'Variables': current_env}
+            FunctionName=ANALYZE_LAMBDA_NAME, Environment={"Variables": current_env}
         )
 
         logger.info(
@@ -882,18 +880,18 @@ def run_training_pipeline() -> Dict[str, Any]:
         결과 딕셔너리
     """
     timestamp = datetime.now(timezone.utc)
-    date_str = timestamp.strftime('%Y%m%d')
-    new_version = f'v6_feedback_{date_str}'
+    date_str = timestamp.strftime("%Y%m%d")
+    new_version = f"v6_feedback_{date_str}"
     experiment_id = f'exp_{timestamp.strftime("%Y_%m_%d")}'
     batch_name = f'batch_{timestamp.strftime("%Y%m%d_%H%M%S")}'
 
     result = {
-        'success': False,
-        'new_version': new_version,
-        'experiment_id': experiment_id,
-        'samples_trained': 0,
-        'final_loss': None,
-        'steps_completed': []
+        "success": False,
+        "new_version": new_version,
+        "experiment_id": experiment_id,
+        "samples_trained": 0,
+        "final_loss": None,
+        "steps_completed": [],
     }
 
     try:
@@ -902,86 +900,86 @@ def run_training_pipeline() -> Dict[str, Any]:
         face, skin, style, gt, count, file_keys = load_pending_feedbacks()
 
         if count == 0:
-            result['message'] = 'No pending feedbacks'
+            result["message"] = "No pending feedbacks"
             return result
 
-        result['samples_trained'] = count
-        result['steps_completed'].append('load_feedbacks')
+        result["samples_trained"] = count
+        result["steps_completed"].append("load_feedbacks")
 
         # 2. 기존 모델 로드
         logger.info("📥 Step 2: 기존 모델 로드")
         model, config = load_base_model()
 
         if model is None:
-            result['message'] = 'Failed to load base model'
+            result["message"] = "Failed to load base model"
             return result
 
-        result['steps_completed'].append('load_model')
+        result["steps_completed"].append("load_model")
 
         # 2.5. 학습 전 평가
         logger.info("📊 Step 2.5: 학습 전 모델 평가")
         before_metrics = evaluate_model(model, face, skin, style, gt)
-        result['before_metrics'] = before_metrics
-        result['steps_completed'].append('evaluate_before')
+        result["before_metrics"] = before_metrics
+        result["steps_completed"].append("evaluate_before")
 
         # 3. Fine-tuning
         logger.info("🏋️ Step 3: Fine-tuning")
         model, stats = fine_tune_model(model, face, skin, style, gt)
-        result['final_loss'] = stats['final_loss']
-        result['steps_completed'].append('fine_tune')
+        result["final_loss"] = stats["final_loss"]
+        result["steps_completed"].append("fine_tune")
 
         # 3.5. 학습 후 평가
         logger.info("📊 Step 3.5: 학습 후 모델 평가")
         after_metrics = evaluate_model(model, face, skin, style, gt)
-        result['after_metrics'] = after_metrics
-        result['steps_completed'].append('evaluate_after')
+        result["after_metrics"] = after_metrics
+        result["steps_completed"].append("evaluate_after")
 
         # 4. 설정 업데이트
-        config['version'] = new_version
-        config['fine_tuned_at'] = timestamp.isoformat()
-        config['samples_count'] = count
+        config["version"] = new_version
+        config["fine_tuned_at"] = timestamp.isoformat()
+        config["samples_count"] = count
 
         # 5. Lambda 환경변수 백업
         logger.info("💾 Step 4: Lambda 설정 백업")
         backup_lambda_config()
-        result['steps_completed'].append('backup_config')
+        result["steps_completed"].append("backup_config")
 
         # 6. 모델 저장
         logger.info("💾 Step 5: 모델 저장")
         if not save_model_to_s3(model, config, new_version):
-            result['message'] = 'Failed to save model'
+            result["message"] = "Failed to save model"
             return result
 
-        result['steps_completed'].append('save_model')
+        result["steps_completed"].append("save_model")
 
         # 7. pending → processed 이동
         logger.info("📦 Step 6: 피드백 파일 이동")
         move_pending_to_processed(file_keys, batch_name)
-        result['steps_completed'].append('move_feedbacks')
+        result["steps_completed"].append("move_feedbacks")
 
         # 8. Lambda 환경변수 업데이트
         logger.info("🔧 Step 7: Lambda 환경변수 업데이트")
         if not update_analyze_lambda_envvars(new_version, experiment_id):
-            result['message'] = 'Model saved but Lambda update failed'
+            result["message"] = "Model saved but Lambda update failed"
             # 모델은 저장되었으므로 부분 성공으로 처리
-            result['success'] = True
-            result['steps_completed'].append('lambda_update_failed')
+            result["success"] = True
+            result["steps_completed"].append("lambda_update_failed")
             return result
 
-        result['steps_completed'].append('update_lambda')
+        result["steps_completed"].append("update_lambda")
 
         # 9. 메타데이터 업데이트
         logger.info("📝 Step 8: 메타데이터 업데이트")
         update_metadata(training_triggered=True, new_model_version=new_version)
-        result['steps_completed'].append('update_metadata')
+        result["steps_completed"].append("update_metadata")
 
         # 10. 평가 리포트 저장
         logger.info("📊 Step 9: 평가 리포트 저장")
         save_evaluation_report(before_metrics, after_metrics, stats, new_version)
-        result['steps_completed'].append('save_evaluation_report')
+        result["steps_completed"].append("save_evaluation_report")
 
-        result['success'] = True
-        result['message'] = 'Training completed successfully'
+        result["success"] = True
+        result["message"] = "Training completed successfully"
 
         logger.info(f"✅ 학습 파이프라인 완료: {new_version}")
 
@@ -990,7 +988,7 @@ def run_training_pipeline() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ 학습 파이프라인 실패: {e}")
         traceback.print_exc()
-        result['message'] = str(e)
+        result["message"] = str(e)
         return result
 
 
@@ -1020,8 +1018,8 @@ def lambda_handler(event, context):
     logger.info(f"🚀 Trainer Lambda 시작")
     logger.info(f"Event: {json.dumps(event)}")
 
-    trigger_type = event.get('trigger_type', 'unknown')
-    force_train = event.get('force', False)
+    trigger_type = event.get("trigger_type", "unknown")
+    force_train = event.get("force", False)
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # Pending 피드백 수 확인
@@ -1034,48 +1032,56 @@ def lambda_handler(event, context):
         logger.info(f"⏸️ {message}")
 
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'success': False,
-                'message': message,
-                'trigger_type': trigger_type,
-                'pending_count': pending_count,
-                'min_samples': MIN_SAMPLES,
-                'timestamp': timestamp
-            })
+            "statusCode": 200,
+            "body": json.dumps(
+                {
+                    "success": False,
+                    "message": message,
+                    "trigger_type": trigger_type,
+                    "pending_count": pending_count,
+                    "min_samples": MIN_SAMPLES,
+                    "timestamp": timestamp,
+                }
+            ),
         }
 
     # 실제 학습 파이프라인 실행
-    logger.info(f"🏋️ Training triggered with {pending_count} samples (force={force_train})")
+    logger.info(
+        f"🏋️ Training triggered with {pending_count} samples (force={force_train})"
+    )
 
     try:
         training_result = run_training_pipeline()
 
-        if training_result['success']:
+        if training_result["success"]:
             logger.info(f"✅ 학습 완료: {training_result['new_version']}")
             return {
-                'statusCode': 200,
-                'body': json.dumps({
-                    'success': True,
-                    'message': 'Training completed successfully',
-                    'trigger_type': trigger_type,
-                    'pending_count': pending_count,
-                    'training_result': training_result,
-                    'timestamp': timestamp
-                })
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "success": True,
+                        "message": "Training completed successfully",
+                        "trigger_type": trigger_type,
+                        "pending_count": pending_count,
+                        "training_result": training_result,
+                        "timestamp": timestamp,
+                    }
+                ),
             }
         else:
             logger.error(f"❌ 학습 실패: {training_result.get('message')}")
             return {
-                'statusCode': 200,  # Lambda 자체는 성공, 학습만 실패
-                'body': json.dumps({
-                    'success': False,
-                    'message': training_result.get('message', 'Training failed'),
-                    'trigger_type': trigger_type,
-                    'pending_count': pending_count,
-                    'training_result': training_result,
-                    'timestamp': timestamp
-                })
+                "statusCode": 200,  # Lambda 자체는 성공, 학습만 실패
+                "body": json.dumps(
+                    {
+                        "success": False,
+                        "message": training_result.get("message", "Training failed"),
+                        "trigger_type": trigger_type,
+                        "pending_count": pending_count,
+                        "training_result": training_result,
+                        "timestamp": timestamp,
+                    }
+                ),
             }
 
     except Exception as e:
@@ -1083,12 +1089,14 @@ def lambda_handler(event, context):
         traceback.print_exc()
 
         return {
-            'statusCode': 500,
-            'body': json.dumps({
-                'success': False,
-                'message': str(e),
-                'trigger_type': trigger_type,
-                'pending_count': pending_count,
-                'timestamp': timestamp
-            })
+            "statusCode": 500,
+            "body": json.dumps(
+                {
+                    "success": False,
+                    "message": str(e),
+                    "trigger_type": trigger_type,
+                    "pending_count": pending_count,
+                    "timestamp": timestamp,
+                }
+            ),
         }
