@@ -45,7 +45,7 @@ pybreaker==1.0.1
 chromadb>=0.4.0
 
 # 기타
-pydantic==2.5.3
+pydantic==2.10.0
 pydantic-settings==2.1.0
 tqdm==4.67.1  # Progress bar for migrations
 slowapi==0.1.9  # Rate limiting
