@@ -26,6 +26,7 @@ numpy==1.26.3
 mediapipe==0.10.9
 
 # ML/데이터 분석
+scipy==1.11.4
 scikit-learn==1.3.0
 pandas==2.1.4
 matplotlib==3.8.2
