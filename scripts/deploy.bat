@@ -93,7 +93,7 @@ if %errorlevel% neq 0 (
         --role !ROLE_ARN! ^
         --memory-size %MEMORY_SIZE% ^
         --timeout 30 ^
-        --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest}" ^
+        --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash}" ^
         --architectures x86_64 ^
         --region %REGION%
         
@@ -113,7 +113,7 @@ if %errorlevel% neq 0 (
     aws lambda update-function-configuration ^
         --function-name %FUNCTION_NAME% ^
         --memory-size %MEMORY_SIZE% ^
-        --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest}" ^
+        --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash}" ^
         --region %REGION%
     if !errorlevel! neq 0 exit /b !errorlevel!
     

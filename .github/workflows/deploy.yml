@@ -147,7 +147,7 @@ jobs:
           echo "Note: API keys are now managed via AWS Secrets Manager"
           aws lambda update-function-configuration \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,ALLOWED_ORIGINS=${{'{{'}} secrets.ALLOWED_ORIGINS {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-1.5-flash-latest,ENVIRONMENT=production}" \
+            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,ALLOWED_ORIGINS=${{'{{'}} secrets.ALLOWED_ORIGINS {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production}" \
             --memory-size 2048 \
             --timeout 30 \
             --region $AWS_REGION \

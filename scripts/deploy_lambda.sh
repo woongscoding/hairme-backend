@@ -1,4 +1,4 @@
-#!/bin/bash
+2#!/bin/bash
 ################################################################################
 # AWS Lambda Deployment Script for HairMe Backend
 #
@@ -336,7 +336,7 @@ if aws lambda get-function \
                 DYNAMODB_TABLE_NAME=hairme-analysis,
                 GEMINI_API_KEY=${GEMINI_API_KEY:-},
                 LOG_LEVEL=INFO,
-                MODEL_NAME=gemini-1.5-flash-latest
+                MODEL_NAME=gemini-2.5-flash
             }" \
             --region "$AWS_REGION" \
             --output json > /dev/null
@@ -412,7 +412,7 @@ EOF
                 DYNAMODB_TABLE_NAME=hairme-analysis,
                 GEMINI_API_KEY=${GEMINI_API_KEY:-},
                 LOG_LEVEL=INFO,
-                MODEL_NAME=gemini-1.5-flash-latest
+                MODEL_NAME=gemini-2.5-flash
             }" \
 
             --region "$AWS_REGION"
