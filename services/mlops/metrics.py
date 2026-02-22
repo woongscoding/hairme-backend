@@ -53,7 +53,7 @@ class RecommendationMetrics:
             "coverage": self.coverage,
             "avg_score": self.avg_score,
             "num_samples": self.num_samples,
-            "evaluated_at": self.evaluated_at
+            "evaluated_at": self.evaluated_at,
         }
 
     def to_json(self) -> str:
@@ -83,14 +83,16 @@ class RecommendationMetrics:
         for k, v in sorted(self.hit_rate_at_k.items()):
             lines.append(f"  Hit Rate@{k}: {v:.4f} ({v*100:.2f}%)")
 
-        lines.extend([
-            f"  MRR: {self.mrr:.4f}",
-            f"  Coverage: {self.coverage:.4f} ({self.coverage*100:.2f}%)",
-            f"  평균 추천 점수: {self.avg_score:.2f}",
-            "",
-            f"평가 시각: {self.evaluated_at}",
-            "=" * 50
-        ])
+        lines.extend(
+            [
+                f"  MRR: {self.mrr:.4f}",
+                f"  Coverage: {self.coverage:.4f} ({self.coverage*100:.2f}%)",
+                f"  평균 추천 점수: {self.avg_score:.2f}",
+                "",
+                f"평가 시각: {self.evaluated_at}",
+                "=" * 50,
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -114,10 +116,7 @@ class RecommendationEvaluator:
         self.k_values = k_values or [1, 3, 5]
 
     def precision_at_k(
-        self,
-        recommended: List[str],
-        relevant: List[str],
-        k: int
+        self, recommended: List[str], relevant: List[str], k: int
     ) -> float:
         """
         Precision@K: Top-K 추천 중 관련 아이템 비율
@@ -139,12 +138,7 @@ class RecommendationEvaluator:
 
         return hits / k
 
-    def recall_at_k(
-        self,
-        recommended: List[str],
-        relevant: List[str],
-        k: int
-    ) -> float:
+    def recall_at_k(self, recommended: List[str], relevant: List[str], k: int) -> float:
         """
         Recall@K: 전체 관련 아이템 중 Top-K에서 적중한 비율
 
@@ -170,7 +164,7 @@ class RecommendationEvaluator:
         recommended: List[str],
         relevant: List[str],
         k: int,
-        relevance_scores: Dict[str, float] = None
+        relevance_scores: Dict[str, float] = None,
     ) -> float:
         """
         DCG@K: 할인 누적 이득 (순위에 따른 가중치 적용)
@@ -209,7 +203,7 @@ class RecommendationEvaluator:
         recommended: List[str],
         relevant: List[str],
         k: int,
-        relevance_scores: Dict[str, float] = None
+        relevance_scores: Dict[str, float] = None,
     ) -> float:
         """
         NDCG@K: 정규화된 할인 누적 이득
@@ -233,9 +227,7 @@ class RecommendationEvaluator:
         # 이상적인 순서: 관련성 높은 순으로 정렬
         if relevance_scores:
             ideal_order = sorted(
-                relevant,
-                key=lambda x: relevance_scores.get(x, 0.0),
-                reverse=True
+                relevant, key=lambda x: relevance_scores.get(x, 0.0), reverse=True
             )
         else:
             ideal_order = relevant.copy()
@@ -247,11 +239,7 @@ class RecommendationEvaluator:
 
         return dcg / idcg
 
-    def mrr(
-        self,
-        recommended: List[str],
-        relevant: List[str]
-    ) -> float:
+    def mrr(self, recommended: List[str], relevant: List[str]) -> float:
         """
         MRR (Mean Reciprocal Rank): 첫 번째 적중 위치의 역수
 
@@ -277,10 +265,7 @@ class RecommendationEvaluator:
         return 0.0
 
     def hit_rate_at_k(
-        self,
-        recommended: List[str],
-        relevant: List[str],
-        k: int
+        self, recommended: List[str], relevant: List[str], k: int
     ) -> float:
         """
         Hit Rate@K: Top-K 중 하나라도 관련 아이템이 있으면 1, 없으면 0
@@ -309,7 +294,7 @@ class RecommendationEvaluator:
         self,
         recommended: List[str],
         relevant: List[str],
-        relevance_scores: Dict[str, float] = None
+        relevance_scores: Dict[str, float] = None,
     ) -> Dict[str, Any]:
         """
         단일 추천 결과 평가
@@ -327,13 +312,15 @@ class RecommendationEvaluator:
             "recall_at_k": {},
             "ndcg_at_k": {},
             "hit_rate_at_k": {},
-            "rr": self.mrr(recommended, relevant)
+            "rr": self.mrr(recommended, relevant),
         }
 
         for k in self.k_values:
             result["precision_at_k"][k] = self.precision_at_k(recommended, relevant, k)
             result["recall_at_k"][k] = self.recall_at_k(recommended, relevant, k)
-            result["ndcg_at_k"][k] = self.ndcg_at_k(recommended, relevant, k, relevance_scores)
+            result["ndcg_at_k"][k] = self.ndcg_at_k(
+                recommended, relevant, k, relevance_scores
+            )
             result["hit_rate_at_k"][k] = self.hit_rate_at_k(recommended, relevant, k)
 
         return result
@@ -342,7 +329,7 @@ class RecommendationEvaluator:
         self,
         predictions: List[Tuple[List[str], List[str]]],
         relevance_scores_list: List[Dict[str, float]] = None,
-        all_items: List[str] = None
+        all_items: List[str] = None,
     ) -> RecommendationMetrics:
         """
         여러 추천 결과를 배치로 평가
@@ -405,7 +392,7 @@ class RecommendationEvaluator:
             hit_rate_at_k={k: v / n for k, v in hit_rate_sums.items()},
             mrr=mrr_sum / n,
             num_samples=n,
-            avg_score=score_sum / score_count if score_count > 0 else 0.0
+            avg_score=score_sum / score_count if score_count > 0 else 0.0,
         )
 
         # Coverage 계산
@@ -422,11 +409,7 @@ class FeedbackEvaluator:
     실제 사용자 피드백 데이터를 기반으로 모델 성능을 평가합니다.
     """
 
-    def __init__(
-        self,
-        positive_threshold: float = 70.0,
-        k_values: List[int] = None
-    ):
+    def __init__(self, positive_threshold: float = 70.0, k_values: List[int] = None):
         """
         Args:
             positive_threshold: 긍정 피드백으로 간주할 점수 임계값
@@ -439,7 +422,7 @@ class FeedbackEvaluator:
         self,
         feedback_data: List[Dict[str, Any]],
         model_predictions: List[List[str]] = None,
-        all_styles: List[str] = None
+        all_styles: List[str] = None,
     ) -> RecommendationMetrics:
         """
         피드백 데이터로부터 평가
@@ -492,14 +475,11 @@ class FeedbackEvaluator:
         logger.info(f"📊 {len(predictions)}개 샘플로 평가 수행")
 
         return self.evaluator.evaluate_batch(
-            predictions,
-            relevance_scores_list,
-            all_styles
+            predictions, relevance_scores_list, all_styles
         )
 
     def calculate_business_metrics(
-        self,
-        feedback_data: List[Dict[str, Any]]
+        self, feedback_data: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         비즈니스 지표 계산
@@ -517,7 +497,7 @@ class FeedbackEvaluator:
                 "positive_rate": 0.0,
                 "negative_rate": 0.0,
                 "click_rate": 0.0,
-                "avg_score": 0.0
+                "avg_score": 0.0,
             }
 
         positive_count = 0
@@ -551,15 +531,15 @@ class FeedbackEvaluator:
             "negative_rate": negative_count / total,
             "click_rate": click_count / total,
             "avg_score": score_sum / score_count if score_count > 0 else 0.0,
-            "evaluated_at": datetime.utcnow().isoformat()
+            "evaluated_at": datetime.utcnow().isoformat(),
         }
 
 
 # ========== 편의 함수 ==========
 
+
 def evaluate_model_performance(
-    predictions: List[Tuple[List[str], List[str]]],
-    k_values: List[int] = None
+    predictions: List[Tuple[List[str], List[str]]], k_values: List[int] = None
 ) -> RecommendationMetrics:
     """
     모델 성능 평가 (편의 함수)
@@ -578,7 +558,7 @@ def evaluate_model_performance(
 def evaluate_from_s3_feedback(
     s3_bucket: str,
     feedback_prefix: str = "feedback/processed/",
-    positive_threshold: float = 70.0
+    positive_threshold: float = 70.0,
 ) -> RecommendationMetrics:
     """
     S3에 저장된 피드백으로 평가 (편의 함수)
@@ -595,33 +575,36 @@ def evaluate_from_s3_feedback(
         import boto3
         import numpy as np
 
-        s3 = boto3.client('s3')
+        s3 = boto3.client("s3")
 
         # 피드백 파일 리스트
-        response = s3.list_objects_v2(
-            Bucket=s3_bucket,
-            Prefix=feedback_prefix
-        )
+        response = s3.list_objects_v2(Bucket=s3_bucket, Prefix=feedback_prefix)
 
         feedback_data = []
 
-        for obj in response.get('Contents', []):
-            key = obj['Key']
-            if key.endswith('.npz'):
+        for obj in response.get("Contents", []):
+            key = obj["Key"]
+            if key.endswith(".npz"):
                 # NPZ 파일 로드
                 result = s3.get_object(Bucket=s3_bucket, Key=key)
-                data = np.load(result['Body'], allow_pickle=True)
+                data = np.load(result["Body"], allow_pickle=True)
 
                 # ground_truth를 점수로 사용
-                if 'ground_truth' in data:
-                    score = float(data['ground_truth'])
-                    feedback_data.append({
-                        "score": score,
-                        "feedback": "good" if score >= positive_threshold else "bad"
-                    })
+                if "ground_truth" in data:
+                    score = float(data["ground_truth"])
+                    feedback_data.append(
+                        {
+                            "score": score,
+                            "feedback": (
+                                "good" if score >= positive_threshold else "bad"
+                            ),
+                        }
+                    )
 
         if not feedback_data:
-            logger.warning(f"⚠️ {feedback_prefix}에서 피드백 데이터를 찾을 수 없습니다.")
+            logger.warning(
+                f"⚠️ {feedback_prefix}에서 피드백 데이터를 찾을 수 없습니다."
+            )
             return RecommendationMetrics()
 
         evaluator = FeedbackEvaluator(positive_threshold)

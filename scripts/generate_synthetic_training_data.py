@@ -40,54 +40,40 @@ class SyntheticDataGenerator:
             "긴형": {
                 "face_ratio": (1.4, 1.6),
                 "forehead_ratio": (0.85, 0.95),
-                "jaw_ratio": (0.75, 0.85)
+                "jaw_ratio": (0.75, 0.85),
             },
             "둥근형": {
                 "face_ratio": (0.8, 1.0),
                 "forehead_ratio": (0.95, 1.05),
-                "jaw_ratio": (0.90, 1.00)
+                "jaw_ratio": (0.90, 1.00),
             },
             "각진형": {
                 "face_ratio": (1.1, 1.3),
                 "forehead_ratio": (0.85, 0.95),
-                "jaw_ratio": (0.85, 1.00)
+                "jaw_ratio": (0.85, 1.00),
             },
             "계란형": {
                 "face_ratio": (1.1, 1.3),
                 "forehead_ratio": (0.88, 0.98),
-                "jaw_ratio": (0.80, 0.90)
+                "jaw_ratio": (0.80, 0.90),
             },
             "하트형": {
                 "face_ratio": (1.2, 1.4),
                 "forehead_ratio": (0.75, 0.85),
-                "jaw_ratio": (0.65, 0.75)
-            }
+                "jaw_ratio": (0.65, 0.75),
+            },
         }
 
         # 피부톤별 ITA/Hue 범위
         self.skin_templates = {
-            "봄웜": {
-                "ITA": (41, 70),
-                "hue": (8, 14)
-            },
-            "여름쿨": {
-                "ITA": (28, 55),
-                "hue": (15, 25)
-            },
-            "가을웜": {
-                "ITA": (10, 35),
-                "hue": (5, 12)
-            },
-            "겨울쿨": {
-                "ITA": (-10, 25),
-                "hue": (18, 30)
-            }
+            "봄웜": {"ITA": (41, 70), "hue": (8, 14)},
+            "여름쿨": {"ITA": (28, 55), "hue": (15, 25)},
+            "가을웜": {"ITA": (10, 35), "hue": (5, 12)},
+            "겨울쿨": {"ITA": (-10, 25), "hue": (18, 30)},
         }
 
     def generate_continuous_features(
-        self,
-        face_shape: str,
-        skin_tone: str
+        self, face_shape: str, skin_tone: str
     ) -> Dict[str, float]:
         """
         얼굴형/피부톤에 맞는 연속형 변수 샘플링
@@ -99,7 +85,9 @@ class SyntheticDataGenerator:
         Returns:
             연속형 변수 딕셔너리
         """
-        face_template = self.face_templates.get(face_shape, self.face_templates["계란형"])
+        face_template = self.face_templates.get(
+            face_shape, self.face_templates["계란형"]
+        )
         skin_template = self.skin_templates.get(skin_tone, self.skin_templates["봄웜"])
 
         # 랜덤 샘플링
@@ -123,14 +111,11 @@ class SyntheticDataGenerator:
             "forehead_ratio": round(forehead_ratio, 3),
             "jaw_ratio": round(jaw_ratio, 3),
             "ITA_value": round(ITA, 2),
-            "hue_value": round(hue, 2)
+            "hue_value": round(hue, 2),
         }
 
     def ask_gemini_for_recommendations(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        features: Dict[str, float]
+        self, face_shape: str, skin_tone: str, features: Dict[str, float]
     ) -> Dict[str, List[str]]:
         """
         Gemini Text API로 추천/비추천 스타일 요청
@@ -185,7 +170,7 @@ class SyntheticDataGenerator:
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.7,  # 다양성을 위해 0.7
-                )
+                ),
             )
 
             raw_text = response.text.strip()
@@ -200,7 +185,9 @@ class SyntheticDataGenerator:
 
             result = json.loads(raw_text.strip())
 
-            logger.info(f"✅ Gemini 응답: 추천 {len(result['recommended'])}개, 비추천 {len(result['not_recommended'])}개")
+            logger.info(
+                f"✅ Gemini 응답: 추천 {len(result['recommended'])}개, 비추천 {len(result['not_recommended'])}개"
+            )
 
             return result
 
@@ -210,12 +197,11 @@ class SyntheticDataGenerator:
             return {
                 "recommended": ["댄디 컷", "투 블럭 컷", "리젠트 컷"],
                 "not_recommended": ["애즈 펌", "히피 펌", "볼드 컷"],
-                "reasoning": "API 오류로 기본값 사용"
+                "reasoning": "API 오류로 기본값 사용",
             }
 
     def generate_training_samples(
-        self,
-        num_samples_per_combination: int = 3
+        self, num_samples_per_combination: int = 3
     ) -> List[Dict]:
         """
         모든 얼굴형/피부톤 조합에 대해 학습 데이터 생성
@@ -237,7 +223,9 @@ class SyntheticDataGenerator:
         for face_shape in face_shapes:
             for skin_tone in skin_tones:
                 current += 1
-                logger.info(f"\n[{current}/{total_combinations}] {face_shape} + {skin_tone}")
+                logger.info(
+                    f"\n[{current}/{total_combinations}] {face_shape} + {skin_tone}"
+                )
 
                 for sample_idx in range(num_samples_per_combination):
                     # 1. 연속형 변수 샘플링
@@ -253,32 +241,38 @@ class SyntheticDataGenerator:
                         # 순위별 점수: 1위(95), 2위(85), 3위(75)
                         score = 95 - (rank - 1) * 10
 
-                        training_data.append({
-                            "face_shape": face_shape,
-                            "skin_tone": skin_tone,
-                            "hairstyle": style,
-                            "score": score,
-                            "source": "gemini_recommended",
-                            "rank": rank,
-                            **features
-                        })
+                        training_data.append(
+                            {
+                                "face_shape": face_shape,
+                                "skin_tone": skin_tone,
+                                "hairstyle": style,
+                                "score": score,
+                                "source": "gemini_recommended",
+                                "rank": rank,
+                                **features,
+                            }
+                        )
 
                     # 4. 비추천 스타일 → 낮은 점수
                     for style in gemini_result["not_recommended"][:3]:
                         # 비추천 점수: 10~30 (랜덤)
                         score = np.random.uniform(10, 30)
 
-                        training_data.append({
-                            "face_shape": face_shape,
-                            "skin_tone": skin_tone,
-                            "hairstyle": style,
-                            "score": round(score, 1),
-                            "source": "gemini_not_recommended",
-                            "rank": None,
-                            **features
-                        })
+                        training_data.append(
+                            {
+                                "face_shape": face_shape,
+                                "skin_tone": skin_tone,
+                                "hairstyle": style,
+                                "score": round(score, 1),
+                                "source": "gemini_not_recommended",
+                                "rank": None,
+                                **features,
+                            }
+                        )
 
-                    logger.info(f"  샘플 {sample_idx+1}: {len(gemini_result['recommended'])}개 추천, {len(gemini_result['not_recommended'])}개 비추천")
+                    logger.info(
+                        f"  샘플 {sample_idx+1}: {len(gemini_result['recommended'])}개 추천, {len(gemini_result['not_recommended'])}개 비추천"
+                    )
 
                     # API 호출 제한 (1초 대기)
                     time.sleep(1.0)
@@ -303,29 +297,30 @@ class SyntheticDataGenerator:
         metadata = []
 
         for sample in training_data:
-            face_features.append([
-                sample["face_ratio"],
-                sample["forehead_width"],
-                sample["cheekbone_width"],
-                sample["jaw_width"],
-                sample["forehead_ratio"],
-                sample["jaw_ratio"]
-            ])
+            face_features.append(
+                [
+                    sample["face_ratio"],
+                    sample["forehead_width"],
+                    sample["cheekbone_width"],
+                    sample["jaw_width"],
+                    sample["forehead_ratio"],
+                    sample["jaw_ratio"],
+                ]
+            )
 
-            skin_features.append([
-                sample["ITA_value"],
-                sample["hue_value"]
-            ])
+            skin_features.append([sample["ITA_value"], sample["hue_value"]])
 
             hairstyles.append(sample["hairstyle"])
             scores.append(sample["score"])
 
-            metadata.append({
-                "face_shape": sample["face_shape"],
-                "skin_tone": sample["skin_tone"],
-                "source": sample["source"],
-                "rank": sample["rank"]
-            })
+            metadata.append(
+                {
+                    "face_shape": sample["face_shape"],
+                    "skin_tone": sample["skin_tone"],
+                    "source": sample["source"],
+                    "rank": sample["rank"],
+                }
+            )
 
         # NumPy 배열로 변환
         face_features = np.array(face_features, dtype=np.float32)
@@ -339,7 +334,7 @@ class SyntheticDataGenerator:
             skin_features=skin_features,
             hairstyles=np.array(hairstyles, dtype=object),
             scores=scores,
-            metadata=np.array(metadata, dtype=object)
+            metadata=np.array(metadata, dtype=object),
         )
 
         logger.info(f"✅ 학습 데이터 저장 완료: {output_path}")
@@ -369,7 +364,9 @@ def main():
     logger.info(f"  - 얼굴형: {len(generator.face_templates)}개")
     logger.info(f"  - 피부톤: {len(generator.skin_templates)}개")
     logger.info(f"  - 조합당 샘플: 3개")
-    logger.info(f"  - 예상 샘플 수: {len(generator.face_templates) * len(generator.skin_templates) * 3 * 6}개")
+    logger.info(
+        f"  - 예상 샘플 수: {len(generator.face_templates) * len(generator.skin_templates) * 3 * 6}개"
+    )
 
     training_data = generator.generate_training_samples(num_samples_per_combination=3)
 
@@ -379,7 +376,7 @@ def main():
 
     # JSON으로도 저장 (검증용)
     json_path = output_dir / "synthetic_training_data.json"
-    with open(json_path, 'w', encoding='utf-8') as f:
+    with open(json_path, "w", encoding="utf-8") as f:
         json.dump(training_data[:10], f, ensure_ascii=False, indent=2)  # 처음 10개만
 
     logger.info(f"✅ JSON 샘플 저장: {json_path}")

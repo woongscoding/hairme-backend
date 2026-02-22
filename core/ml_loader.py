@@ -13,11 +13,12 @@ skin_encoder: Optional[Any] = None
 style_encoder: Optional[Any] = None
 sentence_transformer: Optional[Any] = None
 
+
 # ========== Model Loaders ==========
 def load_ml_model() -> bool:
     """
     Load ML model and encoders
-    
+
     Returns:
         bool: True if successful, False otherwise
     """
@@ -27,52 +28,55 @@ def load_ml_model() -> bool:
         # Lazy import torch to avoid cold start overhead
         import torch
         import torch.nn as nn
-        
+
         # Define model class locally to avoid top-level dependency
         class HairstyleRecommender(nn.Module):
             """Hairstyle recommendation ML model"""
-    
-            def __init__(self, n_faces: int = 5, n_skins: int = 3, n_styles: int = 6,
-                         emb_dim: int = 16, hidden_dim: int = 64):
+
+            def __init__(
+                self,
+                n_faces: int = 5,
+                n_skins: int = 3,
+                n_styles: int = 6,
+                emb_dim: int = 16,
+                hidden_dim: int = 64,
+            ):
                 super().__init__()
-    
+
                 self.face_emb = nn.Embedding(n_faces, emb_dim)
                 self.skin_emb = nn.Embedding(n_skins, emb_dim)
                 self.style_emb = nn.Embedding(n_styles, emb_dim)
-    
+
                 self.shared_layers = nn.Sequential(
                     nn.Linear(emb_dim * 3, hidden_dim),
                     nn.ReLU(),
                     nn.Dropout(0.3),
                     nn.Linear(hidden_dim, hidden_dim),
                     nn.ReLU(),
-                    nn.Dropout(0.3)
+                    nn.Dropout(0.3),
                 )
-    
+
                 self.score_head = nn.Sequential(
-                    nn.Linear(hidden_dim, 32),
-                    nn.ReLU(),
-                    nn.Linear(32, 1),
-                    nn.Sigmoid()
+                    nn.Linear(hidden_dim, 32), nn.ReLU(), nn.Linear(32, 1), nn.Sigmoid()
                 )
-    
+
                 self.feedback_head = nn.Sequential(
-                    nn.Linear(hidden_dim, 32),
-                    nn.ReLU(),
-                    nn.Linear(32, 2)
+                    nn.Linear(hidden_dim, 32), nn.ReLU(), nn.Linear(32, 2)
                 )
-    
-            def forward(self, face: torch.Tensor, skin: torch.Tensor, style: torch.Tensor):
+
+            def forward(
+                self, face: torch.Tensor, skin: torch.Tensor, style: torch.Tensor
+            ):
                 face_emb = self.face_emb(face)
                 skin_emb = self.skin_emb(skin)
                 style_emb = self.style_emb(style)
-    
+
                 x = torch.cat([face_emb, skin_emb, style_emb], dim=1)
                 shared = self.shared_layers(x)
-    
+
                 score_pred = self.score_head(shared).squeeze(-1)
                 feedback_logits = self.feedback_head(shared)
-    
+
                 return score_pred, feedback_logits
 
         model_path = settings.ML_MODEL_PATH
@@ -89,19 +93,17 @@ def load_ml_model() -> bool:
 
         # Load model
         ml_model = HairstyleRecommender()
-        ml_model.load_state_dict(torch.load(
-            model_path,
-            map_location=torch.device('cpu'),
-            weights_only=True
-        ))
+        ml_model.load_state_dict(
+            torch.load(model_path, map_location=torch.device("cpu"), weights_only=True)
+        )
         ml_model.eval()
 
         # Load encoders
-        with open(encoder_path, 'rb') as f:
+        with open(encoder_path, "rb") as f:
             encoders = pickle.load(f)
-            face_encoder = encoders['face']
-            skin_encoder = encoders['skin']
-            style_encoder = encoders['style']
+            face_encoder = encoders["face"]
+            skin_encoder = encoders["skin"]
+            style_encoder = encoders["style"]
 
         logger.info("✅ ML 모델 로드 성공")
         logger.info(f"  - 얼굴형: {len(face_encoder.classes_)}개")
@@ -127,7 +129,7 @@ def load_sentence_transformer() -> bool:
 
     try:
         # Set cache directory to /tmp for Lambda
-        os.environ['SENTENCE_TRANSFORMERS_HOME'] = '/tmp/.cache/sentence-transformers'
+        os.environ["SENTENCE_TRANSFORMERS_HOME"] = "/tmp/.cache/sentence-transformers"
         from sentence_transformers import SentenceTransformer
 
         model_name = settings.SENTENCE_TRANSFORMER_MODEL
@@ -175,7 +177,7 @@ def predict_ml_score(face_shape: str, skin_tone: str, hairstyle: str) -> float:
             "봄웜": "웜톤",
             "가을웜": "웜톤",
             "여름쿨": "쿨톤",
-            "겨울쿨": "쿨톤"
+            "겨울쿨": "쿨톤",
         }
 
         mapped_skin = skin_tone_mapping.get(skin_tone, "중간톤")
@@ -201,6 +203,7 @@ def predict_ml_score(face_shape: str, skin_tone: str, hairstyle: str) -> float:
 
         # ========== Tensor conversion ==========
         import torch
+
         face_tensor = torch.tensor([face_encoded], dtype=torch.long)
         skin_tensor = torch.tensor([skin_encoded], dtype=torch.long)
         style_tensor = torch.tensor([style_encoded], dtype=torch.long)
@@ -210,7 +213,9 @@ def predict_ml_score(face_shape: str, skin_tone: str, hairstyle: str) -> float:
             score_pred, _ = ml_model(face_tensor, skin_tensor, style_tensor)
             score = score_pred.item()
 
-        logger.info(f"ML 예측: {face_shape} + {mapped_skin} + {hairstyle} → {score:.3f}")
+        logger.info(
+            f"ML 예측: {face_shape} + {mapped_skin} + {hairstyle} → {score:.3f}"
+        )
         return round(score, 3)
 
     except Exception as e:

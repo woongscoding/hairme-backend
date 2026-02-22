@@ -8,7 +8,6 @@ import redis
 from config.settings import settings
 from core.logging import logger, log_structured
 
-
 # Global Redis client
 redis_client: Optional[redis.Redis] = None
 
@@ -31,7 +30,7 @@ def init_redis() -> bool:
             settings.REDIS_URL,
             decode_responses=True,
             socket_connect_timeout=5,
-            socket_timeout=5
+            socket_timeout=5,
         )
         redis_client.ping()
         logger.info(f"✅ Redis 연결 성공: {settings.REDIS_URL}")
@@ -99,7 +98,7 @@ def save_to_cache(image_hash: str, result: Dict[str, Any]) -> bool:
         redis_client.setex(
             f"analysis:{image_hash}",
             settings.CACHE_TTL,
-            json.dumps(result, ensure_ascii=False)
+            json.dumps(result, ensure_ascii=False),
         )
         return True
 

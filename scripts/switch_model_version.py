@@ -37,9 +37,11 @@ def list_available_versions():
         print(f"   Version: {data.get('version', 'N/A')}")
         print(f"   Status: {data.get('status', 'N/A')}")
         print(f"   Description: {data.get('description', 'N/A')}")
-        if data.get('metrics'):
-            print(f"   Metrics: val_loss={data['metrics'].get('final_val_loss', 'N/A')}, "
-                  f"val_mae={data['metrics'].get('final_val_mae', 'N/A')}")
+        if data.get("metrics"):
+            print(
+                f"   Metrics: val_loss={data['metrics'].get('final_val_loss', 'N/A')}, "
+                f"val_mae={data['metrics'].get('final_val_mae', 'N/A')}"
+            )
         print()
 
     # Staging
@@ -132,19 +134,19 @@ def switch_version(target_env: str, dry_run: bool = False):
     model_env_found = False
 
     if env_file.exists():
-        with open(env_file, 'r', encoding='utf-8') as f:
+        with open(env_file, "r", encoding="utf-8") as f:
             env_content = f.readlines()
 
         # Update MODEL_ENVIRONMENT line if it exists
         for i, line in enumerate(env_content):
-            if line.startswith('MODEL_ENVIRONMENT='):
-                env_content[i] = f'MODEL_ENVIRONMENT={target_env}\n'
+            if line.startswith("MODEL_ENVIRONMENT="):
+                env_content[i] = f"MODEL_ENVIRONMENT={target_env}\n"
                 model_env_found = True
                 break
 
     # Add MODEL_ENVIRONMENT if not found
     if not model_env_found:
-        env_content.append(f'MODEL_ENVIRONMENT={target_env}\n')
+        env_content.append(f"MODEL_ENVIRONMENT={target_env}\n")
 
     # Show what will be changed
     print(f"\n=== Model Version Switch ===\n")
@@ -165,7 +167,7 @@ def switch_version(target_env: str, dry_run: bool = False):
         return True
 
     # Write updated .env file
-    with open(env_file, 'w', encoding='utf-8') as f:
+    with open(env_file, "w", encoding="utf-8") as f:
         f.writelines(env_content)
 
     print(f"\n[SUCCESS] Switched to: {target_env}")
@@ -192,28 +194,24 @@ Examples:
 
   # Switch to archived version (dry run)
   python scripts/switch_model_version.py --env archive/v3_2024-11-10 --dry-run
-        """
+        """,
     )
 
     parser.add_argument(
-        '--env',
+        "--env",
         type=str,
-        help='Target environment (production, staging, or archive/vX_YYYY-MM-DD)'
+        help="Target environment (production, staging, or archive/vX_YYYY-MM-DD)",
     )
     parser.add_argument(
-        '--list',
-        action='store_true',
-        help='List all available model versions'
+        "--list", action="store_true", help="List all available model versions"
     )
     parser.add_argument(
-        '--info',
-        type=str,
-        help='Show detailed information about a specific version'
+        "--info", type=str, help="Show detailed information about a specific version"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be changed without making actual changes'
+        "--dry-run",
+        action="store_true",
+        help="Show what would be changed without making actual changes",
     )
 
     args = parser.parse_args()

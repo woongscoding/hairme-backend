@@ -17,8 +17,7 @@ from typing import Dict
 import json
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s'
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -29,13 +28,13 @@ def load_dataset(data_path: str) -> Dict:
 
     data = np.load(data_path, allow_pickle=False)
 
-    face_features = data['face_features']  # [N, 6]
-    skin_features = data['skin_features']  # [N, 2]
-    hairstyles = data['hairstyles']  # [N]
-    scores = data['scores']  # [N]
+    face_features = data["face_features"]  # [N, 6]
+    skin_features = data["skin_features"]  # [N, 2]
+    hairstyles = data["hairstyles"]  # [N]
+    scores = data["scores"]  # [N]
 
     # 메타데이터 (있는 경우)
-    metadata = data.get('metadata', None)
+    metadata = data.get("metadata", None)
 
     logger.info(f"✅ 데이터 로드 완료:")
     logger.info(f"  - 샘플 수: {len(scores):,}")
@@ -44,11 +43,11 @@ def load_dataset(data_path: str) -> Dict:
     logger.info(f"  - Hairstyles: {len(hairstyles)}")
 
     return {
-        'face_features': face_features,
-        'skin_features': skin_features,
-        'hairstyles': hairstyles,
-        'scores': scores,
-        'metadata': metadata
+        "face_features": face_features,
+        "skin_features": skin_features,
+        "hairstyles": hairstyles,
+        "scores": scores,
+        "metadata": metadata,
     }
 
 
@@ -58,27 +57,27 @@ def validate_feature_ranges(data: Dict):
     logger.info("🔍 특징 값 범위 검증")
     logger.info("=" * 60)
 
-    face_features = data['face_features']
-    skin_features = data['skin_features']
+    face_features = data["face_features"]
+    skin_features = data["skin_features"]
 
     # Face features 검증
     face_names = [
-        'face_ratio',
-        'forehead_width',
-        'cheekbone_width',
-        'jaw_width',
-        'forehead_ratio',
-        'jaw_ratio'
+        "face_ratio",
+        "forehead_width",
+        "cheekbone_width",
+        "jaw_width",
+        "forehead_ratio",
+        "jaw_ratio",
     ]
 
     # 예상 범위 (MediaPipe 기준)
     expected_ranges = {
-        'face_ratio': (0.8, 1.6),
-        'forehead_width': (100, 300),
-        'cheekbone_width': (120, 350),
-        'jaw_width': (80, 280),
-        'forehead_ratio': (0.7, 1.2),
-        'jaw_ratio': (0.6, 1.1)
+        "face_ratio": (0.8, 1.6),
+        "forehead_width": (100, 300),
+        "cheekbone_width": (120, 350),
+        "jaw_width": (80, 280),
+        "forehead_ratio": (0.7, 1.2),
+        "jaw_ratio": (0.6, 1.1),
     }
 
     logger.info("\n📊 Face Features 범위:")
@@ -89,9 +88,11 @@ def validate_feature_ranges(data: Dict):
         out_of_range = ((values < min_val) | (values > max_val)).sum()
         out_of_range_pct = out_of_range / len(values) * 100
 
-        logger.info(f"  {name:20s}: [{values.min():7.2f}, {values.max():7.2f}]  "
-                   f"(예상: [{min_val:7.2f}, {max_val:7.2f}])  "
-                   f"범위 밖: {out_of_range:4d} ({out_of_range_pct:.1f}%)")
+        logger.info(
+            f"  {name:20s}: [{values.min():7.2f}, {values.max():7.2f}]  "
+            f"(예상: [{min_val:7.2f}, {max_val:7.2f}])  "
+            f"범위 밖: {out_of_range:4d} ({out_of_range_pct:.1f}%)"
+        )
 
     # Skin features 검증
     logger.info("\n📊 Skin Features 범위:")
@@ -99,10 +100,14 @@ def validate_feature_ranges(data: Dict):
     ita_values = skin_features[:, 0]
     hue_values = skin_features[:, 1]
 
-    logger.info(f"  ITA 피부톤:         [{ita_values.min():7.2f}, {ita_values.max():7.2f}]  "
-               f"(예상: [-50, 70])")
-    logger.info(f"  Hue:                [{hue_values.min():7.2f}, {hue_values.max():7.2f}]  "
-               f"(예상: [0, 179])")
+    logger.info(
+        f"  ITA 피부톤:         [{ita_values.min():7.2f}, {ita_values.max():7.2f}]  "
+        f"(예상: [-50, 70])"
+    )
+    logger.info(
+        f"  Hue:                [{hue_values.min():7.2f}, {hue_values.max():7.2f}]  "
+        f"(예상: [0, 179])"
+    )
 
     # 이상치 감지
     logger.info("\n⚠️  이상치 확인:")
@@ -113,7 +118,7 @@ def validate_feature_ranges(data: Dict):
         logger.warning(f"  - 극단적 face_ratio: {extreme_ratio}개")
 
     # 너비 값이 비정상적인 경우
-    for i, name in enumerate(['forehead_width', 'cheekbone_width', 'jaw_width']):
+    for i, name in enumerate(["forehead_width", "cheekbone_width", "jaw_width"]):
         idx = i + 1
         extreme = ((face_features[:, idx] < 50) | (face_features[:, idx] > 400)).sum()
         if extreme > 0:
@@ -126,7 +131,7 @@ def validate_score_distribution(data: Dict):
     logger.info("📊 점수 분포 검증")
     logger.info("=" * 60)
 
-    scores = data['scores']
+    scores = data["scores"]
 
     logger.info(f"\n기본 통계:")
     logger.info(f"  - 평균: {scores.mean():.2f}")
@@ -138,10 +143,16 @@ def validate_score_distribution(data: Dict):
     # 점수 구간별 분포
     logger.info(f"\n점수 구간별 분포:")
     bins = [0, 20, 40, 60, 80, 100]
-    labels = ['매우 낮음 (0-20)', '낮음 (20-40)', '중간 (40-60)', '높음 (60-80)', '매우 높음 (80-100)']
+    labels = [
+        "매우 낮음 (0-20)",
+        "낮음 (20-40)",
+        "중간 (40-60)",
+        "높음 (60-80)",
+        "매우 높음 (80-100)",
+    ]
 
     for i in range(len(bins) - 1):
-        count = ((scores >= bins[i]) & (scores < bins[i+1])).sum()
+        count = ((scores >= bins[i]) & (scores < bins[i + 1])).sum()
         pct = count / len(scores) * 100
         logger.info(f"  {labels[i]:20s}: {count:5d}개 ({pct:5.1f}%)")
 
@@ -165,8 +176,8 @@ def validate_hairstyle_distribution(data: Dict):
     logger.info("💇 헤어스타일 분포 검증")
     logger.info("=" * 60)
 
-    hairstyles = data['hairstyles']
-    scores = data['scores']
+    hairstyles = data["hairstyles"]
+    scores = data["scores"]
 
     # 고유 헤어스타일 개수
     unique_styles = np.unique(hairstyles)
@@ -174,6 +185,7 @@ def validate_hairstyle_distribution(data: Dict):
 
     # 상위 20개 헤어스타일
     from collections import Counter
+
     style_counts = Counter(hairstyles.tolist())
     most_common = style_counts.most_common(20)
 
@@ -185,7 +197,9 @@ def validate_hairstyle_distribution(data: Dict):
         style_scores = scores[hairstyles == style]
         avg_score = style_scores.mean()
 
-        logger.info(f"  {rank:2d}. {style:30s}: {count:4d}개 ({pct:4.1f}%)  평균점수: {avg_score:.1f}")
+        logger.info(
+            f"  {rank:2d}. {style:30s}: {count:4d}개 ({pct:4.1f}%)  평균점수: {avg_score:.1f}"
+        )
 
     # 저빈도 스타일 (3개 이하)
     low_freq_styles = [style for style, count in style_counts.items() if count <= 3]
@@ -195,7 +209,7 @@ def validate_hairstyle_distribution(data: Dict):
 
 def validate_metadata(data: Dict):
     """메타데이터 검증"""
-    if data['metadata'] is None:
+    if data["metadata"] is None:
         logger.info("\n⚠️ 메타데이터 없음")
         return
 
@@ -203,11 +217,12 @@ def validate_metadata(data: Dict):
     logger.info("📋 메타데이터 검증")
     logger.info("=" * 60)
 
-    metadata = data['metadata']
+    metadata = data["metadata"]
 
     # Face shape 분포
-    face_shapes = [m['face_shape'] for m in metadata]
+    face_shapes = [m["face_shape"] for m in metadata]
     from collections import Counter
+
     face_shape_counts = Counter(face_shapes)
 
     logger.info(f"\n얼굴형 분포:")
@@ -216,7 +231,7 @@ def validate_metadata(data: Dict):
         logger.info(f"  {shape:10s}: {count:4d}개 ({pct:5.1f}%)")
 
     # Skin tone 분포
-    skin_tones = [m['skin_tone'] for m in metadata]
+    skin_tones = [m["skin_tone"] for m in metadata]
     skin_tone_counts = Counter(skin_tones)
 
     logger.info(f"\n피부톤 분포:")
@@ -225,7 +240,7 @@ def validate_metadata(data: Dict):
         logger.info(f"  {tone:10s}: {count:4d}개 ({pct:5.1f}%)")
 
     # 신뢰도 분포
-    confidences = [m['confidence'] for m in metadata]
+    confidences = [m["confidence"] for m in metadata]
     avg_conf = np.mean(confidences)
     logger.info(f"\nMediaPipe 신뢰도:")
     logger.info(f"  - 평균: {avg_conf:.1%}")
@@ -242,21 +257,21 @@ def save_validation_report(data: Dict, output_path: str):
     logger.info(f"\n📄 검증 리포트 저장: {output_path}")
 
     report = {
-        'total_samples': len(data['scores']),
-        'face_features_shape': data['face_features'].shape,
-        'skin_features_shape': data['skin_features'].shape,
-        'score_stats': {
-            'mean': float(data['scores'].mean()),
-            'std': float(data['scores'].std()),
-            'min': float(data['scores'].min()),
-            'max': float(data['scores'].max()),
-            'median': float(np.median(data['scores']))
+        "total_samples": len(data["scores"]),
+        "face_features_shape": data["face_features"].shape,
+        "skin_features_shape": data["skin_features"].shape,
+        "score_stats": {
+            "mean": float(data["scores"].mean()),
+            "std": float(data["scores"].std()),
+            "min": float(data["scores"].min()),
+            "max": float(data["scores"].max()),
+            "median": float(np.median(data["scores"])),
         },
-        'unique_hairstyles': len(np.unique(data['hairstyles'])),
-        'has_metadata': data['metadata'] is not None
+        "unique_hairstyles": len(np.unique(data["hairstyles"])),
+        "has_metadata": data["metadata"] is not None,
     }
 
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
     logger.info("✅ 리포트 저장 완료")
@@ -265,16 +280,13 @@ def save_validation_report(data: Dict, output_path: str):
 def main():
     parser = argparse.ArgumentParser(description="데이터셋 검증")
     parser.add_argument(
-        "--data",
-        type=str,
-        required=True,
-        help="검증할 NPZ 데이터 경로"
+        "--data", type=str, required=True, help="검증할 NPZ 데이터 경로"
     )
     parser.add_argument(
         "--output",
         type=str,
         default="validation_report.json",
-        help="검증 리포트 저장 경로"
+        help="검증 리포트 저장 경로",
     )
 
     args = parser.parse_args()

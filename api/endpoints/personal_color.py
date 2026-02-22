@@ -27,6 +27,7 @@ def _get_service():
     global _personal_color_service
     if _personal_color_service is None:
         from services.personal_color_service import get_personal_color_service
+
         _personal_color_service = get_personal_color_service()
     return _personal_color_service
 
@@ -37,8 +38,10 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ========== Response Models ==========
 
+
 class ColorItem(BaseModel):
     """컬러 아이템"""
+
     name: str = Field(..., description="컬러명")
     hex: str = Field(..., description="HEX 코드")
     description: str = Field(default="", description="설명")
@@ -46,6 +49,7 @@ class ColorItem(BaseModel):
 
 class HairColorItem(BaseModel):
     """염색 추천 아이템"""
+
     name: str = Field(..., description="염색명")
     hex: str = Field(..., description="HEX 코드")
     description: str = Field(default="", description="설명")
@@ -53,6 +57,7 @@ class HairColorItem(BaseModel):
 
 class AnalysisDetail(BaseModel):
     """분석 상세"""
+
     ita_value: float = Field(..., description="ITA 값 (피부 밝기)")
     hue_value: float = Field(..., description="Hue 값 (색조)")
     brightness: str = Field(..., description="밝기 (bright/medium/muted)")
@@ -61,6 +66,7 @@ class AnalysisDetail(BaseModel):
 
 class ColorPalette(BaseModel):
     """컬러 팔레트"""
+
     best_colors: List[ColorItem] = Field(default=[], description="추천 컬러")
     avoid_colors: List[str] = Field(default=[], description="피해야 할 컬러")
     hair_colors: List[HairColorItem] = Field(default=[], description="추천 염색")
@@ -68,6 +74,7 @@ class ColorPalette(BaseModel):
 
 class StylingAdvice(BaseModel):
     """스타일링 조언"""
+
     makeup_tips: List[str] = Field(default=[], description="메이크업 팁")
     fashion_tips: List[str] = Field(default=[], description="패션 팁")
     description: str = Field(default="", description="상세 설명")
@@ -75,8 +82,11 @@ class StylingAdvice(BaseModel):
 
 class PersonalColorResponse(BaseModel):
     """퍼스널컬러 분석 응답"""
+
     success: bool
-    personal_color: str = Field(..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)")
+    personal_color: str = Field(
+        ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
+    )
     confidence: float = Field(..., description="신뢰도 (0.0~1.0)")
     season: str = Field(..., description="계절 (spring/summer/autumn/winter)")
     tone: str = Field(..., description="톤 (warm/cool)")
@@ -89,6 +99,7 @@ class PersonalColorResponse(BaseModel):
 
 class PaletteResponse(BaseModel):
     """컬러 팔레트 조회 응답"""
+
     success: bool
     personal_color: str
     colors: List[ColorItem]
@@ -96,6 +107,7 @@ class PaletteResponse(BaseModel):
 
 class StylingResponse(BaseModel):
     """스타일링 조언 응답"""
+
     success: bool
     personal_color: str
     makeup_tips: List[str]
@@ -105,11 +117,13 @@ class StylingResponse(BaseModel):
 
 # ========== Endpoints ==========
 
-@router.post("/personal-color", response_model=PersonalColorResponse, tags=["personal_color"])
+
+@router.post(
+    "/personal-color", response_model=PersonalColorResponse, tags=["personal_color"]
+)
 @limiter.limit("10/minute")
 async def analyze_personal_color(
-    request: Request,
-    file: UploadFile = File(..., description="얼굴 이미지 파일")
+    request: Request, file: UploadFile = File(..., description="얼굴 이미지 파일")
 ):
     """
     퍼스널컬러 분석
@@ -136,8 +150,8 @@ async def analyze_personal_color(
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
 
-        file_ext = file.filename.lower().split('.')[-1]
-        if file_ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        file_ext = file.filename.lower().split(".")[-1]
+        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
             raise InvalidFileFormatException()
 
         logger.info(f"🎨 퍼스널컬러 분석 시작: {file.filename}")
@@ -145,10 +159,13 @@ async def analyze_personal_color(
         # Read image
         image_data = await file.read()
 
-        log_structured("personal_color_start", {
-            "filename": file.filename,
-            "file_size_kb": round(len(image_data) / 1024, 2)
-        })
+        log_structured(
+            "personal_color_start",
+            {
+                "filename": file.filename,
+                "file_size_kb": round(len(image_data) / 1024, 2),
+            },
+        )
 
         # Analyze
         service = _get_service()
@@ -159,11 +176,14 @@ async def analyze_personal_color(
 
         processing_time = round(time.time() - start_time, 2)
 
-        log_structured("personal_color_complete", {
-            "personal_color": result.personal_color,
-            "confidence": result.confidence,
-            "processing_time": processing_time
-        })
+        log_structured(
+            "personal_color_complete",
+            {
+                "personal_color": result.personal_color,
+                "confidence": result.confidence,
+                "processing_time": processing_time,
+            },
+        )
 
         # Build response
         return PersonalColorResponse(
@@ -176,20 +196,20 @@ async def analyze_personal_color(
                 ita_value=result.ita_value,
                 hue_value=result.hue_value,
                 brightness=result.brightness,
-                undertone=result.undertone
+                undertone=result.undertone,
             ),
             characteristics=result.characteristics,
             palette=ColorPalette(
                 best_colors=[ColorItem(**c) for c in result.best_colors],
                 avoid_colors=result.avoid_colors,
-                hair_colors=[HairColorItem(**c) for c in result.hair_colors]
+                hair_colors=[HairColorItem(**c) for c in result.hair_colors],
             ),
             styling=StylingAdvice(
                 makeup_tips=result.makeup_tips,
                 fashion_tips=result.fashion_tips,
-                description=result.styling_description
+                description=result.styling_description,
             ),
-            processing_time=processing_time
+            processing_time=processing_time,
         )
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
@@ -198,22 +218,26 @@ async def analyze_personal_color(
             content={
                 "success": False,
                 "error": e.__class__.__name__.replace("Exception", "").lower(),
-                "message": str(e)
-            }
+                "message": str(e),
+            },
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ 퍼스널컬러 분석 오류: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"분석 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}"
         )
 
 
-@router.get("/personal-color/{color_type}/palette", response_model=PaletteResponse, tags=["personal_color"])
+@router.get(
+    "/personal-color/{color_type}/palette",
+    response_model=PaletteResponse,
+    tags=["personal_color"],
+)
 async def get_color_palette(color_type: str):
     """
     특정 퍼스널컬러의 컬러 팔레트 조회
@@ -228,20 +252,22 @@ async def get_color_palette(color_type: str):
     if color_type not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}"
+            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
         )
 
     service = _get_service()
     colors = service.get_color_palette(color_type)
 
     return PaletteResponse(
-        success=True,
-        personal_color=color_type,
-        colors=[ColorItem(**c) for c in colors]
+        success=True, personal_color=color_type, colors=[ColorItem(**c) for c in colors]
     )
 
 
-@router.get("/personal-color/{color_type}/styling", response_model=StylingResponse, tags=["personal_color"])
+@router.get(
+    "/personal-color/{color_type}/styling",
+    response_model=StylingResponse,
+    tags=["personal_color"],
+)
 async def get_styling_tips(color_type: str):
     """
     특정 퍼스널컬러의 스타일링 조언 조회
@@ -258,7 +284,7 @@ async def get_styling_tips(color_type: str):
     if color_type not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}"
+            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
         )
 
     service = _get_service()
@@ -269,7 +295,7 @@ async def get_styling_tips(color_type: str):
         personal_color=color_type,
         makeup_tips=tips.get("makeup_tips", []),
         fashion_tips=tips.get("fashion_tips", []),
-        description=tips.get("description", "")
+        description=tips.get("description", ""),
     )
 
 
@@ -289,7 +315,7 @@ async def get_hair_recommendations(color_type: str):
     if color_type not in valid_types:
         raise HTTPException(
             status_code=400,
-            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}"
+            detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
         )
 
     service = _get_service()
@@ -299,7 +325,7 @@ async def get_hair_recommendations(color_type: str):
         "success": True,
         "personal_color": color_type,
         "recommended": hair.get("recommended", []),
-        "avoid": hair.get("avoid", [])
+        "avoid": hair.get("avoid", []),
     }
 
 
@@ -316,16 +342,15 @@ async def get_all_types():
     types = []
     for pc_type in ["봄웜", "여름쿨", "가을웜", "겨울쿨"]:
         info = service.personal_color_data.get(pc_type, {})
-        types.append({
-            "type": pc_type,
-            "korean_name": info.get("korean_name", pc_type),
-            "english_name": info.get("english_name", ""),
-            "season": info.get("season", ""),
-            "tone": info.get("tone", ""),
-            "description": info.get("description", "")[:100] + "..."
-        })
+        types.append(
+            {
+                "type": pc_type,
+                "korean_name": info.get("korean_name", pc_type),
+                "english_name": info.get("english_name", ""),
+                "season": info.get("season", ""),
+                "tone": info.get("tone", ""),
+                "description": info.get("description", "")[:100] + "...",
+            }
+        )
 
-    return {
-        "success": True,
-        "types": types
-    }
+    return {"success": True, "types": types}

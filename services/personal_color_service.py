@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 @dataclass
 class PersonalColorResult:
     """퍼스널컬러 분석 결과"""
+
     personal_color: str  # 봄웜, 여름쿨, 가을웜, 겨울쿨
     confidence: float
     season: str  # spring, summer, autumn, winter
@@ -34,7 +35,9 @@ class PersonalColorResult:
 
     # 추천 정보
     characteristics: List[str] = field(default_factory=list)
-    best_colors: List[Dict[str, str]] = field(default_factory=list)  # [{name, hex, description}]
+    best_colors: List[Dict[str, str]] = field(
+        default_factory=list
+    )  # [{name, hex, description}]
     avoid_colors: List[str] = field(default_factory=list)
     hair_colors: List[Dict[str, str]] = field(default_factory=list)  # 추천 염색
 
@@ -53,19 +56,19 @@ class PersonalColorResult:
                 "ita_value": self.ita_value,
                 "hue_value": self.hue_value,
                 "brightness": self.brightness,
-                "undertone": self.undertone
+                "undertone": self.undertone,
             },
             "characteristics": self.characteristics,
             "palette": {
                 "best_colors": self.best_colors,
                 "avoid_colors": self.avoid_colors,
-                "hair_colors": self.hair_colors
+                "hair_colors": self.hair_colors,
             },
             "styling": {
                 "makeup_tips": self.makeup_tips,
                 "fashion_tips": self.fashion_tips,
-                "description": self.styling_description
-            }
+                "description": self.styling_description,
+            },
         }
 
 
@@ -86,7 +89,7 @@ class PersonalColorService:
             {"name": "밝은 오렌지", "hex": "#FFA500", "description": "활기찬 오렌지"},
             {"name": "라이트 브라운", "hex": "#C4A484", "description": "따뜻한 연갈색"},
             {"name": "민트 그린", "hex": "#98FF98", "description": "상쾌한 민트색"},
-            {"name": "카멜", "hex": "#C19A6B", "description": "고급스러운 카멜색"}
+            {"name": "카멜", "hex": "#C19A6B", "description": "고급스러운 카멜색"},
         ],
         "여름쿨": [
             {"name": "라벤더", "hex": "#E6E6FA", "description": "우아한 연보라"},
@@ -97,8 +100,12 @@ class PersonalColorService:
             {"name": "그레이시 블루", "hex": "#6699CC", "description": "차분한 청회색"},
             {"name": "더스티 핑크", "hex": "#D8A9A9", "description": "뮤트한 핑크"},
             {"name": "페리윙클", "hex": "#CCCCFF", "description": "은은한 보랏빛"},
-            {"name": "소프트 네이비", "hex": "#4169E1", "description": "부드러운 네이비"},
-            {"name": "라이트 그레이", "hex": "#D3D3D3", "description": "밝은 회색"}
+            {
+                "name": "소프트 네이비",
+                "hex": "#4169E1",
+                "description": "부드러운 네이비",
+            },
+            {"name": "라이트 그레이", "hex": "#D3D3D3", "description": "밝은 회색"},
         ],
         "가을웜": [
             {"name": "카키", "hex": "#8B8B00", "description": "자연스러운 카키"},
@@ -110,7 +117,7 @@ class PersonalColorService:
             {"name": "초콜릿", "hex": "#7B3F00", "description": "진한 초콜릿색"},
             {"name": "브릭", "hex": "#CB4154", "description": "벽돌색 레드"},
             {"name": "오렌지 브라운", "hex": "#CD853F", "description": "따뜻한 갈색"},
-            {"name": "포레스트 그린", "hex": "#228B22", "description": "깊은 숲 녹색"}
+            {"name": "포레스트 그린", "hex": "#228B22", "description": "깊은 숲 녹색"},
         ],
         "겨울쿨": [
             {"name": "퓨어 화이트", "hex": "#FFFFFF", "description": "순수한 흰색"},
@@ -122,8 +129,8 @@ class PersonalColorService:
             {"name": "에메랄드", "hex": "#50C878", "description": "선명한 에메랄드"},
             {"name": "버건디", "hex": "#722F37", "description": "깊은 버건디"},
             {"name": "실버", "hex": "#C0C0C0", "description": "차가운 은색"},
-            {"name": "아이시 핑크", "hex": "#F8B9D4", "description": "차가운 핑크"}
-        ]
+            {"name": "아이시 핑크", "hex": "#F8B9D4", "description": "차가운 핑크"},
+        ],
     }
 
     # 패션 스타일링 조언
@@ -133,29 +140,29 @@ class PersonalColorService:
             "골드 액세서리로 포인트",
             "베이지, 아이보리 계열 기본 아이템 추천",
             "파스텔 컬러 니트로 부드러운 이미지",
-            "코랄 또는 피치 컬러 블라우스로 얼굴 화사하게"
+            "코랄 또는 피치 컬러 블라우스로 얼굴 화사하게",
         ],
         "여름쿨": [
             "시원한 파스텔톤 의상으로 청초한 이미지",
             "실버 액세서리가 얼굴을 밝게",
             "라벤더, 로즈핑크 컬러로 우아한 분위기",
             "그레이 계열 기본 아이템 추천",
-            "소프트한 블루 계열로 청량감 연출"
+            "소프트한 블루 계열로 청량감 연출",
         ],
         "가을웜": [
             "차분한 어스톤 컬러로 고급스러운 룩",
             "골드 또는 브론즈 액세서리 추천",
             "카키, 머스타드 컬러로 세련된 스타일",
             "브라운 계열 코트로 클래식한 분위기",
-            "버건디 아이템으로 포인트"
+            "버건디 아이템으로 포인트",
         ],
         "겨울쿨": [
             "선명한 컬러 대비로 시크한 룩",
             "실버 또는 화이트골드 액세서리",
             "블랙 & 화이트 모노톤 스타일",
             "레드 또는 핫핑크로 강렬한 포인트",
-            "네이비 수트로 세련된 비즈니스 룩"
-        ]
+            "네이비 수트로 세련된 비즈니스 룩",
+        ],
     }
 
     def __init__(self):
@@ -169,6 +176,7 @@ class PersonalColorService:
         if self._analyzer is None:
             # Lazy import to reduce Lambda cold start time
             from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
+
             self._analyzer = MediaPipeFaceAnalyzer()
             logger.info("✅ PersonalColorService: MediaPipe analyzer loaded")
         return self._analyzer
@@ -178,7 +186,9 @@ class PersonalColorService:
         """Load personal color lookup data"""
         if self._personal_color_data is None:
             try:
-                with open(self.DATA_DIR / "personal_color.json", 'r', encoding='utf-8') as f:
+                with open(
+                    self.DATA_DIR / "personal_color.json", "r", encoding="utf-8"
+                ) as f:
                     self._personal_color_data = json.load(f)
                 logger.info("✅ Personal color data loaded")
             except Exception as e:
@@ -191,7 +201,9 @@ class PersonalColorService:
         """Load hair color recommendation data"""
         if self._hair_color_data is None:
             try:
-                with open(self.DATA_DIR / "pc_hair_color.json", 'r', encoding='utf-8') as f:
+                with open(
+                    self.DATA_DIR / "pc_hair_color.json", "r", encoding="utf-8"
+                ) as f:
                     self._hair_color_data = json.load(f)
                 logger.info("✅ Hair color data loaded")
             except Exception as e:
@@ -228,11 +240,13 @@ class PersonalColorService:
             # 추천 염색 컬러
             hair_colors = []
             for hc in hair_info.get("recommended", [])[:5]:
-                hair_colors.append({
-                    "name": hc.get("name", ""),
-                    "hex": hc.get("hex", "#000000"),
-                    "description": hc.get("description", "")
-                })
+                hair_colors.append(
+                    {
+                        "name": hc.get("name", ""),
+                        "hex": hc.get("hex", "#000000"),
+                        "description": hc.get("description", ""),
+                    }
+                )
 
             # 결과 생성
             result = PersonalColorResult(
@@ -250,7 +264,7 @@ class PersonalColorService:
                 hair_colors=hair_colors,
                 makeup_tips=pc_info.get("makeup_tips", []),
                 fashion_tips=self.FASHION_TIPS.get(features.skin_tone, []),
-                styling_description=pc_info.get("description", "")
+                styling_description=pc_info.get("description", ""),
             )
 
             logger.info(
@@ -283,7 +297,7 @@ class PersonalColorService:
         return {
             "makeup_tips": pc_info.get("makeup_tips", []),
             "fashion_tips": self.FASHION_TIPS.get(personal_color, []),
-            "description": pc_info.get("description", "")
+            "description": pc_info.get("description", ""),
         }
 
     def get_hair_recommendations(self, personal_color: str) -> Dict[str, Any]:
@@ -291,7 +305,7 @@ class PersonalColorService:
         hair_info = self.hair_color_data.get(personal_color, {})
         return {
             "recommended": hair_info.get("recommended", []),
-            "avoid": hair_info.get("avoid", [])
+            "avoid": hair_info.get("avoid", []),
         }
 
 

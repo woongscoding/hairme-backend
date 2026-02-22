@@ -45,11 +45,11 @@ def merge_npz_files(input_files, output_file):
             data = np.load(file_path, allow_pickle=False)
 
             # 데이터 추출
-            face_features = data['face_features']
-            skin_features = data['skin_features']
-            hairstyles = data['hairstyles']
-            scores = data['scores']
-            metadata = data['metadata']
+            face_features = data["face_features"]
+            skin_features = data["skin_features"]
+            hairstyles = data["hairstyles"]
+            scores = data["scores"]
+            metadata = data["metadata"]
 
             # 리스트에 추가
             all_face_features.append(face_features)
@@ -75,11 +75,11 @@ def merge_npz_files(input_files, output_file):
     logger.info("📊 데이터 병합 중...")
 
     merged_data = {
-        'face_features': np.concatenate(all_face_features, axis=0),
-        'skin_features': np.concatenate(all_skin_features, axis=0),
-        'hairstyles': np.concatenate(all_hairstyles, axis=0),
-        'scores': np.concatenate(all_scores, axis=0),
-        'metadata': np.concatenate(all_metadata, axis=0)
+        "face_features": np.concatenate(all_face_features, axis=0),
+        "skin_features": np.concatenate(all_skin_features, axis=0),
+        "hairstyles": np.concatenate(all_hairstyles, axis=0),
+        "scores": np.concatenate(all_scores, axis=0),
+        "metadata": np.concatenate(all_metadata, axis=0),
     }
 
     # 저장
@@ -100,7 +100,7 @@ def merge_npz_files(input_files, output_file):
     logger.info(f"{'='*60}")
 
     # 통계 출력
-    scores = merged_data['scores']
+    scores = merged_data["scores"]
     logger.info("\n📊 점수 통계:")
     logger.info(f"  - 추천 (≥70): {(scores >= 70).sum()}개")
     logger.info(f"  - 비추천 (<70): {(scores < 70).sum()}개")
@@ -109,15 +109,16 @@ def merge_npz_files(input_files, output_file):
 
     # 얼굴형 분포
     from collections import Counter
-    metadata = merged_data['metadata']
-    face_shapes = [m['face_shape'] for m in metadata]
+
+    metadata = merged_data["metadata"]
+    face_shapes = [m["face_shape"] for m in metadata]
 
     logger.info("\n📊 얼굴형 분포:")
     for shape, count in Counter(face_shapes).most_common():
         logger.info(f"  - {shape}: {count}개 ({count/len(face_shapes)*100:.1f}%)")
 
     # 피부톤 분포
-    skin_tones = [m['skin_tone'] for m in metadata]
+    skin_tones = [m["skin_tone"] for m in metadata]
     logger.info("\n📊 피부톤 분포:")
     for tone, count in Counter(skin_tones).most_common():
         logger.info(f"  - {tone}: {count}개 ({count/len(skin_tones)*100:.1f}%)")
@@ -126,15 +127,9 @@ def merge_npz_files(input_files, output_file):
 def main():
     parser = argparse.ArgumentParser(description="NPZ 파일 병합")
     parser.add_argument(
-        'input_files',
-        nargs='+',
-        help='입력 NPZ 파일들 (glob 패턴 사용 가능)'
+        "input_files", nargs="+", help="입력 NPZ 파일들 (glob 패턴 사용 가능)"
     )
-    parser.add_argument(
-        '-o', '--output',
-        required=True,
-        help='출력 NPZ 파일 경로'
-    )
+    parser.add_argument("-o", "--output", required=True, help="출력 NPZ 파일 경로")
 
     args = parser.parse_args()
 
@@ -142,7 +137,7 @@ def main():
     input_files = []
     for pattern in args.input_files:
         # Glob 패턴인지 확인
-        if '*' in pattern or '?' in pattern:
+        if "*" in pattern or "?" in pattern:
             matched = glob.glob(pattern)
             input_files.extend(matched)
         else:

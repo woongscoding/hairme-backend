@@ -20,24 +20,25 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MediaPipeFaceFeatures:
     """MediaPipe로 추출한 얼굴 특징"""
-    face_shape: str           # "계란형", "둥근형", "각진형", "긴형", "하트형"
-    skin_tone: str            # "봄웜", "가을웜", "여름쿨", "겨울쿨"
-    confidence: float         # 신뢰도 (0.0 ~ 1.0)
+
+    face_shape: str  # "계란형", "둥근형", "각진형", "긴형", "하트형"
+    skin_tone: str  # "봄웜", "가을웜", "여름쿨", "겨울쿨"
+    confidence: float  # 신뢰도 (0.0 ~ 1.0)
 
     # 측정값 (디버깅용)
-    face_ratio: float         # 높이/너비
-    forehead_width: float     # 이마 너비 (픽셀)
-    cheekbone_width: float    # 광대 너비 (픽셀)
-    jaw_width: float          # 턱 너비 (픽셀)
-    ITA_value: float          # 피부톤 ITA 값
-    hue_value: float          # 색조 값 (HSV)
+    face_ratio: float  # 높이/너비
+    forehead_width: float  # 이마 너비 (픽셀)
+    cheekbone_width: float  # 광대 너비 (픽셀)
+    jaw_width: float  # 턱 너비 (픽셀)
+    ITA_value: float  # 피부톤 ITA 값
+    hue_value: float  # 색조 값 (HSV)
 
     # ML 모델 입력용 특징 벡터 (학습 데이터와 동일한 형식)
-    face_features: list       # [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
-    skin_features: list       # [ITA_value, hue_value] (2차원)
+    face_features: list  # [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
+    skin_features: list  # [ITA_value, hue_value] (2차원)
 
     # 성별 추론 (NEW)
-    gender: str = "neutral"   # "male", "female", "neutral" (추론 실패 시)
+    gender: str = "neutral"  # "male", "female", "neutral" (추론 실패 시)
     gender_confidence: float = 0.0  # 성별 추론 신뢰도
 
     def to_dict(self) -> dict:
@@ -55,7 +56,7 @@ class MediaPipeFaceFeatures:
             "face_features": self.face_features,
             "skin_features": self.skin_features,
             "gender": self.gender,
-            "gender_confidence": self.gender_confidence
+            "gender_confidence": self.gender_confidence,
         }
 
 
@@ -64,28 +65,44 @@ class MediaPipeFaceAnalyzer:
 
     # MediaPipe 주요 랜드마크 인덱스
     # 얼굴 윤곽선 및 주요 포인트
-    FOREHEAD_TOP = 10          # 이마 상단
-    CHIN_BOTTOM = 152          # 턱 하단
-    LEFT_CHEEK = 234           # 왼쪽 광대
-    RIGHT_CHEEK = 454          # 오른쪽 광대
-    LEFT_FOREHEAD = 70         # 왼쪽 이마 측면
-    RIGHT_FOREHEAD = 300       # 오른쪽 이마 측면
-    LEFT_JAW = 172             # 왼쪽 턱선
-    RIGHT_JAW = 397            # 오른쪽 턱선
+    FOREHEAD_TOP = 10  # 이마 상단
+    CHIN_BOTTOM = 152  # 턱 하단
+    LEFT_CHEEK = 234  # 왼쪽 광대
+    RIGHT_CHEEK = 454  # 오른쪽 광대
+    LEFT_FOREHEAD = 70  # 왼쪽 이마 측면
+    RIGHT_FOREHEAD = 300  # 오른쪽 이마 측면
+    LEFT_JAW = 172  # 왼쪽 턱선
+    RIGHT_JAW = 397  # 오른쪽 턱선
 
     # 피부톤 분석용 얼굴 영역 (볼, 이마)
-    CHEEK_LANDMARKS = [205, 207, 187, 213, 216, 206, 203, 425, 427, 411, 433, 436, 426, 423]
+    CHEEK_LANDMARKS = [
+        205,
+        207,
+        187,
+        213,
+        216,
+        206,
+        203,
+        425,
+        427,
+        411,
+        433,
+        436,
+        426,
+        423,
+    ]
     FOREHEAD_LANDMARKS = [70, 63, 105, 66, 107, 55, 285, 300, 293, 334, 296, 336]
 
     def __init__(self):
         """MediaPipe Face Mesh 초기화"""
         import mediapipe as mp
+
         self.face_mesh = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=True,
             max_num_faces=1,
             refine_landmarks=True,  # 더 정밀한 랜드마크
             min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+            min_tracking_confidence=0.5,
         )
         logger.info("✅ MediaPipe Face Mesh 초기화 완료")
 
@@ -102,7 +119,7 @@ class MediaPipeFaceAnalyzer:
         try:
             import cv2
             import numpy as np
-            
+
             # 이미지 디코딩
             nparr = np.frombuffer(image_data, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -142,17 +159,14 @@ class MediaPipeFaceAnalyzer:
 
             # ML 모델 입력용 특징 벡터 생성 (학습 데이터와 동일한 형식)
             face_features = [
-                round(measurements['face_ratio'], 3),
-                round(measurements['forehead_width'], 1),
-                round(measurements['cheekbone_width'], 1),
-                round(measurements['jaw_width'], 1),
-                round(measurements['forehead_ratio'], 3),
-                round(measurements['jaw_ratio'], 3)
+                round(measurements["face_ratio"], 3),
+                round(measurements["forehead_width"], 1),
+                round(measurements["cheekbone_width"], 1),
+                round(measurements["jaw_width"], 1),
+                round(measurements["forehead_ratio"], 3),
+                round(measurements["jaw_ratio"], 3),
             ]
-            skin_features = [
-                round(ita_value, 2),
-                round(hue_value, 2)
-            ]
+            skin_features = [round(ita_value, 2), round(hue_value, 2)]
 
             # 성별 추론 (NEW)
             gender, gender_confidence = self._infer_gender(measurements)
@@ -169,16 +183,16 @@ class MediaPipeFaceAnalyzer:
                 face_shape=face_shape,
                 skin_tone=skin_tone,
                 confidence=round(final_confidence, 2),
-                face_ratio=round(measurements['face_ratio'], 3),
-                forehead_width=round(measurements['forehead_width'], 1),
-                cheekbone_width=round(measurements['cheekbone_width'], 1),
-                jaw_width=round(measurements['jaw_width'], 1),
+                face_ratio=round(measurements["face_ratio"], 3),
+                forehead_width=round(measurements["forehead_width"], 1),
+                cheekbone_width=round(measurements["cheekbone_width"], 1),
+                jaw_width=round(measurements["jaw_width"], 1),
                 ITA_value=round(ita_value, 2),
                 hue_value=round(hue_value, 2),
                 face_features=face_features,
                 skin_features=skin_features,
                 gender=gender,
-                gender_confidence=round(gender_confidence, 2)
+                gender_confidence=round(gender_confidence, 2),
             )
 
         except Exception as e:
@@ -186,9 +200,7 @@ class MediaPipeFaceAnalyzer:
             return None
 
     def _classify_face_shape(
-        self,
-        landmarks,
-        image_shape: Tuple[int, int]
+        self, landmarks, image_shape: Tuple[int, int]
     ) -> Tuple[str, float, dict]:
         """
         478개 랜드마크로 얼굴형 분류
@@ -215,7 +227,7 @@ class MediaPipeFaceAnalyzer:
 
         # 거리 계산
         def distance(p1, p2):
-            return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+            return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
         # 측정값
         face_height = distance(forehead_top, chin_bottom)
@@ -228,17 +240,19 @@ class MediaPipeFaceAnalyzer:
         face_ratio = face_height / face_width if face_width > 0 else 1.0
 
         # 너비 비율 (광대 대비)
-        forehead_ratio = forehead_width / cheekbone_width if cheekbone_width > 0 else 1.0
+        forehead_ratio = (
+            forehead_width / cheekbone_width if cheekbone_width > 0 else 1.0
+        )
         jaw_ratio = jaw_width / cheekbone_width if cheekbone_width > 0 else 1.0
 
         # 측정값 저장
         measurements = {
-            'face_ratio': face_ratio,
-            'forehead_width': forehead_width,
-            'cheekbone_width': cheekbone_width,
-            'jaw_width': jaw_width,
-            'forehead_ratio': forehead_ratio,
-            'jaw_ratio': jaw_ratio
+            "face_ratio": face_ratio,
+            "forehead_width": forehead_width,
+            "cheekbone_width": cheekbone_width,
+            "jaw_width": jaw_width,
+            "forehead_ratio": forehead_ratio,
+            "jaw_ratio": jaw_ratio,
         }
 
         # ========== 얼굴형 분류 로직 (개선됨 - 균형잡힌 분류) ==========
@@ -306,11 +320,9 @@ class MediaPipeFaceAnalyzer:
         )
 
         return face_shape, confidence, measurements
+
     def _analyze_skin_tone(
-        self,
-        image: Any,
-        landmarks,
-        image_shape: Tuple[int, int]
+        self, image: Any, landmarks, image_shape: Tuple[int, int]
     ) -> Tuple[str, float, float]:
         """
         피부톤 분석 (ITA + HSV 방식)
@@ -339,6 +351,7 @@ class MediaPipeFaceAnalyzer:
         # 마스크 생성
         import cv2
         import numpy as np
+
         mask = np.zeros((h, w), dtype=np.uint8)
         skin_points_np = np.array(skin_points, dtype=np.int32)
         cv2.fillConvexPoly(mask, cv2.convexHull(skin_points_np), 255)
@@ -360,7 +373,9 @@ class MediaPipeFaceAnalyzer:
 
         # L(명도), b(노란기/푸른기) 평균
         L_mean = np.mean(lab_pixels[:, 0])
-        b_mean = np.mean(lab_pixels[:, 2]) - 128  # LAB의 b는 0~255이므로 -128~127로 변환
+        b_mean = (
+            np.mean(lab_pixels[:, 2]) - 128
+        )  # LAB의 b는 0~255이므로 -128~127로 변환
 
         # ITA 계산: arctan((L - 50) / b) * 180 / π
         if abs(b_mean) > 0.1:
@@ -455,9 +470,9 @@ class MediaPipeFaceAnalyzer:
         - 여성: 턱이 좁고 부드러운 얼굴, jaw_ratio가 낮음
         - 이 방법은 100% 정확하지 않으므로 신뢰도를 함께 반환
         """
-        jaw_ratio = measurements.get('jaw_ratio', 1.0)
-        forehead_ratio = measurements.get('forehead_ratio', 1.0)
-        face_ratio = measurements.get('face_ratio', 1.0)
+        jaw_ratio = measurements.get("jaw_ratio", 1.0)
+        forehead_ratio = measurements.get("forehead_ratio", 1.0)
+        face_ratio = measurements.get("face_ratio", 1.0)
 
         # 점수 계산 (0~1 범위로 정규화)
         # 남성 점수: 턱이 넓고, 이마가 넓고, 얼굴이 각진 경우 높음
@@ -526,5 +541,5 @@ class MediaPipeFaceAnalyzer:
 
     def __del__(self):
         """리소스 정리"""
-        if hasattr(self, 'face_mesh'):
+        if hasattr(self, "face_mesh"):
             self.face_mesh.close()

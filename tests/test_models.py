@@ -9,7 +9,7 @@ from PIL import Image
 class TestMediaPipeAnalyzer:
     """Test MediaPipe face analyzer"""
 
-    @patch('models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh')
+    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
     def test_analyzer_initialization(self, mock_face_mesh):
         """Test that MediaPipe analyzer initializes correctly"""
         from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -17,7 +17,7 @@ class TestMediaPipeAnalyzer:
         analyzer = MediaPipeFaceAnalyzer()
         assert analyzer is not None
 
-    @patch('models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh')
+    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
     def test_analyze_face_with_valid_image(self, mock_face_mesh):
         """Test face analysis with valid image"""
         from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -37,7 +37,7 @@ class TestMediaPipeAnalyzer:
         mock_face_mesh.return_value.process.return_value = mock_result
 
         analyzer = MediaPipeFaceAnalyzer()
-        img = Image.new('RGB', (640, 480), color='white')
+        img = Image.new("RGB", (640, 480), color="white")
 
         # Should not raise exception
         try:
@@ -47,7 +47,7 @@ class TestMediaPipeAnalyzer:
             # If analyze_face expects different input, that's ok for now
             pass
 
-    @patch('models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh')
+    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
     def test_no_face_detected(self, mock_face_mesh):
         """Test behavior when no face is detected"""
         from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -60,7 +60,7 @@ class TestMediaPipeAnalyzer:
         mock_face_mesh.return_value.process.return_value = mock_result
 
         analyzer = MediaPipeFaceAnalyzer()
-        img = Image.new('RGB', (640, 480), color='white')
+        img = Image.new("RGB", (640, 480), color="white")
 
         # Should raise NoFaceDetectedException
         with pytest.raises((NoFaceDetectedException, Exception)):
@@ -70,7 +70,7 @@ class TestMediaPipeAnalyzer:
 class TestMLModel:
     """Test ML model predictions"""
 
-    @patch('models.ml_recommender.get_ml_recommender')
+    @patch("models.ml_recommender.get_ml_recommender")
     def test_ml_score_prediction(self, mock_get_recommender):
         """Test ML model score prediction"""
         from models.ml_recommender import predict_ml_score
@@ -85,7 +85,7 @@ class TestMLModel:
         assert isinstance(score, (int, float))
         assert 0 <= score <= 100
 
-    @patch('models.ml_recommender.get_ml_recommender')
+    @patch("models.ml_recommender.get_ml_recommender")
     def test_ml_score_fallback_on_error(self, mock_get_recommender):
         """Test ML score prediction falls back to default on error"""
         from models.ml_recommender import predict_ml_score
@@ -127,7 +127,7 @@ class TestRecommendationModelV6:
         assert model is not None
 
         # Check multi-token attention layer exists
-        assert hasattr(model, 'multi_token_attention')
+        assert hasattr(model, "multi_token_attention")
 
     def test_forward_pass(self):
         """Test forward pass with correct input shapes"""
@@ -155,11 +155,7 @@ class TestRecommendationModelV6:
         from models.ml_recommender import MultiTokenAttentionLayer
 
         layer = MultiTokenAttentionLayer(
-            face_dim=64,
-            skin_dim=32,
-            style_dim=384,
-            token_dim=128,
-            num_heads=4
+            face_dim=64, skin_dim=32, style_dim=384, token_dim=128, num_heads=4
         )
 
         batch_size = 4
@@ -176,14 +172,14 @@ class TestRecommendationModelV6:
 class TestHybridRecommender:
     """Test hybrid recommendation service"""
 
-    @patch('services.hybrid_recommender.genai.GenerativeModel')
+    @patch("services.hybrid_recommender.genai.GenerativeModel")
     def test_get_recommendations(self, mock_genai):
         """Test getting recommendations from hybrid service"""
         from services.hybrid_recommender import HybridRecommendationService
 
         # Mock Gemini response
         mock_response = Mock()
-        mock_response.text = '''```json
+        mock_response.text = """```json
 {
   "face_shape": "계란형",
   "personal_color": "봄웜",
@@ -191,7 +187,7 @@ class TestHybridRecommender:
     {"name": "레이어드 컷", "reason": "얼굴형과 잘 어울림"}
   ]
 }
-```'''
+```"""
 
         mock_model = Mock()
         mock_model.generate_content.return_value = mock_response
@@ -205,13 +201,13 @@ class TestHybridRecommender:
         assert "face_shape" in recommendations
         assert "recommended_hairstyles" in recommendations
 
-    @patch('services.hybrid_recommender.genai.GenerativeModel')
+    @patch("services.hybrid_recommender.genai.GenerativeModel")
     def test_recommendations_with_ml_enrichment(self, mock_genai):
         """Test that recommendations are enriched with ML scores"""
         from services.hybrid_recommender import HybridRecommendationService
 
         mock_response = Mock()
-        mock_response.text = '''```json
+        mock_response.text = """```json
 {
   "face_shape": "계란형",
   "personal_color": "봄웜",
@@ -219,13 +215,13 @@ class TestHybridRecommender:
     {"name": "레이어드 컷", "reason": "얼굴형과 잘 어울림"}
   ]
 }
-```'''
+```"""
 
         mock_model = Mock()
         mock_model.generate_content.return_value = mock_response
         mock_genai.return_value = mock_model
 
-        with patch('models.ml_recommender.predict_ml_score', return_value=85.0):
+        with patch("models.ml_recommender.predict_ml_score", return_value=85.0):
             service = HybridRecommendationService(api_key="test_key")
             face_features = {"face_shape": "계란형"}
 

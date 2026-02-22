@@ -12,7 +12,7 @@ def setup_logging() -> logging.Logger:
     """Configure application logging with proper formatting"""
     logging.basicConfig(
         level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     return logging.getLogger(__name__)
 
@@ -31,6 +31,6 @@ def log_structured(event_type: str, data: Dict[str, Any]) -> None:
     log_entry = {
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "event_type": event_type,
-        **data
+        **data,
     }
     logger.info(json.dumps(log_entry, ensure_ascii=False))

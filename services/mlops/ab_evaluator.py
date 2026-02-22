@@ -37,6 +37,7 @@ class ABTestMetrics:
         avg_score_for_bad: bad 받은 스타일의 평균 예측 점수
         score_discrimination: avg_good - avg_bad (클수록 좋음)
     """
+
     variant: str
     sample_count: int = 0
     positive_count: int = 0
@@ -49,14 +50,14 @@ class ABTestMetrics:
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환"""
         return {
-            'variant': self.variant,
-            'sample_count': self.sample_count,
-            'positive_count': self.positive_count,
-            'negative_count': self.negative_count,
-            'positive_feedback_rate': round(self.positive_feedback_rate, 4),
-            'avg_score_for_good': round(self.avg_score_for_good, 2),
-            'avg_score_for_bad': round(self.avg_score_for_bad, 2),
-            'score_discrimination': round(self.score_discrimination, 2)
+            "variant": self.variant,
+            "sample_count": self.sample_count,
+            "positive_count": self.positive_count,
+            "negative_count": self.negative_count,
+            "positive_feedback_rate": round(self.positive_feedback_rate, 4),
+            "avg_score_for_good": round(self.avg_score_for_good, 2),
+            "avg_score_for_bad": round(self.avg_score_for_bad, 2),
+            "score_discrimination": round(self.score_discrimination, 2),
         }
 
 
@@ -79,7 +80,7 @@ class ABTestEvaluator:
 
     def _init_dynamodb(self) -> bool:
         """DynamoDB 테이블 초기화"""
-        use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+        use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
         if not use_dynamodb:
             logger.warning("⚠️ DynamoDB가 활성화되지 않음 - A/B 테스트 평가 불가")
             return False
@@ -88,16 +89,14 @@ class ABTestEvaluator:
             import boto3
             from botocore.config import Config
 
-            aws_region = os.getenv('AWS_REGION', 'ap-northeast-2')
-            table_name = os.getenv('DYNAMODB_TABLE_NAME', 'hairme-analysis')
+            aws_region = os.getenv("AWS_REGION", "ap-northeast-2")
+            table_name = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
 
             config = Config(
-                connect_timeout=5,
-                read_timeout=10,
-                retries={'max_attempts': 3}
+                connect_timeout=5, read_timeout=10, retries={"max_attempts": 3}
             )
 
-            dynamodb = boto3.resource('dynamodb', region_name=aws_region, config=config)
+            dynamodb = boto3.resource("dynamodb", region_name=aws_region, config=config)
             self.dynamodb_table = dynamodb.Table(table_name)
             return True
 
@@ -106,9 +105,7 @@ class ABTestEvaluator:
             return False
 
     def get_metrics_by_variant(
-        self,
-        experiment_id: str,
-        limit: int = 10000
+        self, experiment_id: str, limit: int = 10000
     ) -> Dict[str, ABTestMetrics]:
         """
         실험 ID로 변형별 지표 계산
@@ -134,48 +131,43 @@ class ABTestEvaluator:
             # DynamoDB에서 실험 데이터 조회
             # Note: 실제 운영에서는 GSI (experiment_id-feedback_at-index)를 사용해야 함
             response = self.dynamodb_table.scan(
-                FilterExpression='experiment_id = :exp_id AND attribute_exists(feedback_at)',
-                ExpressionAttributeValues={
-                    ':exp_id': experiment_id
-                },
-                Limit=limit
+                FilterExpression="experiment_id = :exp_id AND attribute_exists(feedback_at)",
+                ExpressionAttributeValues={":exp_id": experiment_id},
+                Limit=limit,
             )
 
-            items = response.get('Items', [])
+            items = response.get("Items", [])
 
             # 페이지네이션 처리
-            while 'LastEvaluatedKey' in response and len(items) < limit:
+            while "LastEvaluatedKey" in response and len(items) < limit:
                 response = self.dynamodb_table.scan(
-                    FilterExpression='experiment_id = :exp_id AND attribute_exists(feedback_at)',
-                    ExpressionAttributeValues={
-                        ':exp_id': experiment_id
-                    },
-                    ExclusiveStartKey=response['LastEvaluatedKey'],
-                    Limit=limit - len(items)
+                    FilterExpression="experiment_id = :exp_id AND attribute_exists(feedback_at)",
+                    ExpressionAttributeValues={":exp_id": experiment_id},
+                    ExclusiveStartKey=response["LastEvaluatedKey"],
+                    Limit=limit - len(items),
                 )
-                items.extend(response.get('Items', []))
+                items.extend(response.get("Items", []))
 
-            logger.info(f"📊 A/B 테스트 데이터 조회: experiment={experiment_id}, count={len(items)}")
+            logger.info(
+                f"📊 A/B 테스트 데이터 조회: experiment={experiment_id}, count={len(items)}"
+            )
 
             # 변형별로 데이터 분류
             champion_data = []
             challenger_data = []
 
             for item in items:
-                variant = item.get('ab_variant', 'champion')
-                if variant == 'challenger':
+                variant = item.get("ab_variant", "champion")
+                if variant == "challenger":
                     challenger_data.append(item)
                 else:
                     champion_data.append(item)
 
             # 각 변형별 지표 계산
-            champion_metrics = self._calculate_metrics('champion', champion_data)
-            challenger_metrics = self._calculate_metrics('challenger', challenger_data)
+            champion_metrics = self._calculate_metrics("champion", champion_data)
+            challenger_metrics = self._calculate_metrics("challenger", challenger_data)
 
-            return {
-                'champion': champion_metrics,
-                'challenger': challenger_metrics
-            }
+            return {"champion": champion_metrics, "challenger": challenger_metrics}
 
         except Exception as e:
             logger.error(f"❌ A/B 테스트 데이터 조회 실패: {e}")
@@ -203,17 +195,17 @@ class ABTestEvaluator:
         for item in items:
             # 3개 스타일 각각에 대해 피드백 확인
             for i in range(1, 4):
-                feedback_key = f'style_{i}_feedback'
-                score_key = f'style_{i}_score'
+                feedback_key = f"style_{i}_feedback"
+                score_key = f"style_{i}_score"
 
                 feedback = item.get(feedback_key)
                 score = item.get(score_key)
 
-                if feedback in ['good', 'like']:
+                if feedback in ["good", "like"]:
                     metrics.positive_count += 1
                     if score is not None:
                         good_scores.append(float(score))
-                elif feedback in ['bad', 'dislike']:
+                elif feedback in ["bad", "dislike"]:
                     metrics.negative_count += 1
                     if score is not None:
                         bad_scores.append(float(score))
@@ -223,7 +215,9 @@ class ABTestEvaluator:
 
         # 긍정 피드백 비율
         if metrics.sample_count > 0:
-            metrics.positive_feedback_rate = metrics.positive_count / metrics.sample_count
+            metrics.positive_feedback_rate = (
+                metrics.positive_count / metrics.sample_count
+            )
 
         # 평균 점수 계산
         if good_scores:
@@ -234,7 +228,9 @@ class ABTestEvaluator:
 
         # 점수 구분력 (좋은 스타일과 나쁜 스타일의 점수 차이)
         if good_scores and bad_scores:
-            metrics.score_discrimination = metrics.avg_score_for_good - metrics.avg_score_for_bad
+            metrics.score_discrimination = (
+                metrics.avg_score_for_good - metrics.avg_score_for_bad
+            )
 
         return metrics
 
@@ -242,7 +238,7 @@ class ABTestEvaluator:
         self,
         metrics: Dict[str, ABTestMetrics],
         min_samples: int = 100,
-        min_improvement: float = 0.02
+        min_improvement: float = 0.02,
     ) -> Dict[str, Any]:
         """
         Challenger가 Champion보다 나은지 판단
@@ -262,27 +258,29 @@ class ABTestEvaluator:
                 "confidence": "high" | "medium" | "low"
             }
         """
-        champion = metrics.get('champion')
-        challenger = metrics.get('challenger')
+        champion = metrics.get("champion")
+        challenger = metrics.get("challenger")
 
         result = {
-            'champion_metrics': champion.to_dict() if champion else None,
-            'challenger_metrics': challenger.to_dict() if challenger else None,
-            'conclusion': 'insufficient_data',
-            'improvement': 0.0,
-            'recommendation': '',
-            'confidence': 'low',
-            'evaluated_at': datetime.now(timezone.utc).isoformat()
+            "champion_metrics": champion.to_dict() if champion else None,
+            "challenger_metrics": challenger.to_dict() if challenger else None,
+            "conclusion": "insufficient_data",
+            "improvement": 0.0,
+            "recommendation": "",
+            "confidence": "low",
+            "evaluated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         # 데이터 검증
         if not champion or not challenger:
-            result['recommendation'] = "변형별 데이터가 부족합니다. 더 많은 피드백을 수집해주세요."
+            result["recommendation"] = (
+                "변형별 데이터가 부족합니다. 더 많은 피드백을 수집해주세요."
+            )
             return result
 
         # 최소 샘플 수 확인
         if champion.sample_count < min_samples or challenger.sample_count < min_samples:
-            result['recommendation'] = (
+            result["recommendation"] = (
                 f"최소 샘플 수({min_samples})를 충족하지 않습니다. "
                 f"Champion: {champion.sample_count}, Challenger: {challenger.sample_count}"
             )
@@ -290,42 +288,42 @@ class ABTestEvaluator:
 
         # 긍정 피드백 비율 비교
         rate_diff = challenger.positive_feedback_rate - champion.positive_feedback_rate
-        result['improvement'] = round(rate_diff, 4)
+        result["improvement"] = round(rate_diff, 4)
 
         # 신뢰도 계산 (샘플 수 기반)
         total_samples = champion.sample_count + challenger.sample_count
         if total_samples >= 1000:
-            result['confidence'] = 'high'
+            result["confidence"] = "high"
         elif total_samples >= 500:
-            result['confidence'] = 'medium'
+            result["confidence"] = "medium"
         else:
-            result['confidence'] = 'low'
+            result["confidence"] = "low"
 
         # 결론 도출
         if rate_diff > min_improvement:
-            result['conclusion'] = 'challenger_wins'
-            result['recommendation'] = (
+            result["conclusion"] = "challenger_wins"
+            result["recommendation"] = (
                 f"Challenger 모델이 {rate_diff*100:.1f}% 더 높은 긍정 피드백 비율을 보입니다. "
                 f"새 모델로 교체를 권장합니다."
             )
         elif rate_diff < -min_improvement:
-            result['conclusion'] = 'champion_wins'
-            result['recommendation'] = (
+            result["conclusion"] = "champion_wins"
+            result["recommendation"] = (
                 f"Champion 모델이 {-rate_diff*100:.1f}% 더 높은 긍정 피드백 비율을 보입니다. "
                 f"기존 모델 유지를 권장합니다."
             )
         else:
-            result['conclusion'] = 'no_difference'
-            result['recommendation'] = (
+            result["conclusion"] = "no_difference"
+            result["recommendation"] = (
                 f"두 모델 간 유의미한 차이가 없습니다 (차이: {rate_diff*100:.1f}%). "
                 f"더 많은 데이터를 수집하거나 실험을 종료하세요."
             )
 
         # 점수 구분력도 함께 고려
         if challenger.score_discrimination > champion.score_discrimination:
-            result['recommendation'] += " Challenger의 점수 구분력이 더 좋습니다."
+            result["recommendation"] += " Challenger의 점수 구분력이 더 좋습니다."
         elif challenger.score_discrimination < champion.score_discrimination:
-            result['recommendation'] += " Champion의 점수 구분력이 더 좋습니다."
+            result["recommendation"] += " Champion의 점수 구분력이 더 좋습니다."
 
         logger.info(
             f"📊 A/B 테스트 평가 완료: {result['conclusion']} "
@@ -355,30 +353,30 @@ class ABTestEvaluator:
         """
         metrics = self.get_metrics_by_variant(experiment_id)
 
-        champion = metrics.get('champion', ABTestMetrics(variant='champion'))
-        challenger = metrics.get('challenger', ABTestMetrics(variant='challenger'))
+        champion = metrics.get("champion", ABTestMetrics(variant="champion"))
+        challenger = metrics.get("challenger", ABTestMetrics(variant="challenger"))
 
         total = champion.sample_count + challenger.sample_count
 
         # 현재 승자 판단 (단순 비율 비교)
         if total < 50:
-            current_winner = 'undetermined'
+            current_winner = "undetermined"
         elif challenger.positive_feedback_rate > champion.positive_feedback_rate:
-            current_winner = 'challenger'
+            current_winner = "challenger"
         elif champion.positive_feedback_rate > challenger.positive_feedback_rate:
-            current_winner = 'champion'
+            current_winner = "champion"
         else:
-            current_winner = 'tie'
+            current_winner = "tie"
 
         return {
-            'experiment_id': experiment_id,
-            'status': 'running' if total < 100 else 'analyzing',
-            'total_samples': total,
-            'champion_samples': champion.sample_count,
-            'challenger_samples': challenger.sample_count,
-            'champion_positive_rate': round(champion.positive_feedback_rate, 4),
-            'challenger_positive_rate': round(challenger.positive_feedback_rate, 4),
-            'current_winner': current_winner
+            "experiment_id": experiment_id,
+            "status": "running" if total < 100 else "analyzing",
+            "total_samples": total,
+            "champion_samples": champion.sample_count,
+            "challenger_samples": challenger.sample_count,
+            "champion_positive_rate": round(champion.positive_feedback_rate, 4),
+            "challenger_positive_rate": round(challenger.positive_feedback_rate, 4),
+            "current_winner": current_winner,
         }
 
 

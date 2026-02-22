@@ -29,7 +29,7 @@ class LegacyDataConverter:
             "cheekbone_width": 220,
             "jaw_width": 175,
             "forehead_ratio": 0.91,
-            "jaw_ratio": 0.80
+            "jaw_ratio": 0.80,
         },
         "둥근형": {
             "face_ratio": 0.95,
@@ -37,7 +37,7 @@ class LegacyDataConverter:
             "cheekbone_width": 245,
             "jaw_width": 235,
             "forehead_ratio": 0.94,
-            "jaw_ratio": 0.96
+            "jaw_ratio": 0.96,
         },
         "각진형": {
             "face_ratio": 1.20,
@@ -45,7 +45,7 @@ class LegacyDataConverter:
             "cheekbone_width": 235,
             "jaw_width": 220,
             "forehead_ratio": 0.89,
-            "jaw_ratio": 0.94
+            "jaw_ratio": 0.94,
         },
         "계란형": {
             "face_ratio": 1.25,
@@ -53,7 +53,7 @@ class LegacyDataConverter:
             "cheekbone_width": 235,
             "jaw_width": 195,
             "forehead_ratio": 0.89,
-            "jaw_ratio": 0.83
+            "jaw_ratio": 0.83,
         },
         "하트형": {
             "face_ratio": 1.30,
@@ -61,8 +61,8 @@ class LegacyDataConverter:
             "cheekbone_width": 235,
             "jaw_width": 165,
             "forehead_ratio": 0.81,
-            "jaw_ratio": 0.70
-        }
+            "jaw_ratio": 0.70,
+        },
     }
 
     # 피부톤별 평균 ITA/Hue 값
@@ -70,7 +70,7 @@ class LegacyDataConverter:
         "봄웜": {"ITA": 50, "hue": 11},
         "여름쿨": {"ITA": 40, "hue": 18},
         "가을웜": {"ITA": 25, "hue": 9},
-        "겨울쿨": {"ITA": 15, "hue": 22}
+        "겨울쿨": {"ITA": 15, "hue": 22},
     }
 
     def __init__(self, db_config: Dict):
@@ -83,9 +83,7 @@ class LegacyDataConverter:
         self.db_config = db_config
 
     def approximate_features(
-        self,
-        face_shape: str,
-        skin_tone: str
+        self, face_shape: str, skin_tone: str
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         범주형 → 연속형 근사 변환 (부정확!)
@@ -99,30 +97,34 @@ class LegacyDataConverter:
         """
         # 기본값 (알 수 없는 경우)
         face_approx = self.FACE_SHAPE_APPROXIMATIONS.get(
-            face_shape,
-            self.FACE_SHAPE_APPROXIMATIONS["계란형"]
+            face_shape, self.FACE_SHAPE_APPROXIMATIONS["계란형"]
         )
         skin_approx = self.SKIN_TONE_APPROXIMATIONS.get(
-            skin_tone,
-            self.SKIN_TONE_APPROXIMATIONS["봄웜"]
+            skin_tone, self.SKIN_TONE_APPROXIMATIONS["봄웜"]
         )
 
         # ⚠️ 노이즈 추가 (같은 카테고리도 약간씩 다르게)
         noise_scale = 0.05  # 5% 노이즈
 
-        face_features = np.array([
-            face_approx["face_ratio"] * (1 + np.random.normal(0, noise_scale)),
-            face_approx["forehead_width"] * (1 + np.random.normal(0, noise_scale)),
-            face_approx["cheekbone_width"] * (1 + np.random.normal(0, noise_scale)),
-            face_approx["jaw_width"] * (1 + np.random.normal(0, noise_scale)),
-            face_approx["forehead_ratio"] * (1 + np.random.normal(0, noise_scale)),
-            face_approx["jaw_ratio"] * (1 + np.random.normal(0, noise_scale))
-        ], dtype=np.float32)
+        face_features = np.array(
+            [
+                face_approx["face_ratio"] * (1 + np.random.normal(0, noise_scale)),
+                face_approx["forehead_width"] * (1 + np.random.normal(0, noise_scale)),
+                face_approx["cheekbone_width"] * (1 + np.random.normal(0, noise_scale)),
+                face_approx["jaw_width"] * (1 + np.random.normal(0, noise_scale)),
+                face_approx["forehead_ratio"] * (1 + np.random.normal(0, noise_scale)),
+                face_approx["jaw_ratio"] * (1 + np.random.normal(0, noise_scale)),
+            ],
+            dtype=np.float32,
+        )
 
-        skin_features = np.array([
-            skin_approx["ITA"] * (1 + np.random.normal(0, noise_scale)),
-            skin_approx["hue"] * (1 + np.random.normal(0, noise_scale))
-        ], dtype=np.float32)
+        skin_features = np.array(
+            [
+                skin_approx["ITA"] * (1 + np.random.normal(0, noise_scale)),
+                skin_approx["hue"] * (1 + np.random.normal(0, noise_scale)),
+            ],
+            dtype=np.float32,
+        )
 
         return face_features, skin_features
 
@@ -195,14 +197,16 @@ class LegacyDataConverter:
                 # 스타일명 정리 (JSON 따옴표 제거)
                 style = style.strip('"')
 
-                converted_data.append({
-                    "face_features": face_feat.copy(),
-                    "skin_features": skin_feat.copy(),
-                    "hairstyle": style,
-                    "score": score,
-                    "source": "legacy_approximated",
-                    "original_id": record["id"]
-                })
+                converted_data.append(
+                    {
+                        "face_features": face_feat.copy(),
+                        "skin_features": skin_feat.copy(),
+                        "hairstyle": style,
+                        "score": score,
+                        "source": "legacy_approximated",
+                        "original_id": record["id"],
+                    }
+                )
 
         cursor.close()
         conn.close()
@@ -213,7 +217,7 @@ class LegacyDataConverter:
         return {
             "samples": converted_data,
             "total_count": len(converted_data),
-            "source": "legacy_approximated"
+            "source": "legacy_approximated",
         }
 
 
@@ -223,7 +227,7 @@ if __name__ == "__main__":
         "host": "hairme-data.cr28a6uqo2k8.ap-northeast-2.rds.amazonaws.com",
         "user": "admin",
         "password": "Hairstyle!2580",
-        "database": "hairme"
+        "database": "hairme",
     }
 
     converter = LegacyDataConverter(db_config)
@@ -238,7 +242,7 @@ if __name__ == "__main__":
         face_features=np.array([s["face_features"] for s in samples]),
         skin_features=np.array([s["skin_features"] for s in samples]),
         hairstyles=np.array([s["hairstyle"] for s in samples]),
-        scores=np.array([s["score"] for s in samples])
+        scores=np.array([s["score"] for s in samples]),
     )
 
     logger.info("✅ 저장 완료: data_source/legacy_approximated_data.npz")

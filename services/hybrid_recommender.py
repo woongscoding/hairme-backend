@@ -30,6 +30,7 @@ class MLRecommendationService:
         # ML 추천기 로드 (Lazy import)
         try:
             from models.ml_recommender import get_ml_recommender
+
             self.ml_recommender = get_ml_recommender()
             self.ml_available = True
             logger.info("✅ ML 추천기 로드 성공")
@@ -42,6 +43,7 @@ class MLRecommendationService:
         # 추천 이유 생성기 로드 (Lazy import)
         try:
             from services.reason_generator import get_reason_generator
+
             self.reason_generator = get_reason_generator()
             logger.info("✅ 추천 이유 생성기 초기화 완료")
         except Exception as e:
@@ -49,10 +51,7 @@ class MLRecommendationService:
             self.reason_generator = None
 
     def _build_recommendations(
-        self,
-        ml_recommendations: List[Dict[str, Any]],
-        face_shape: str,
-        skin_tone: str
+        self, ml_recommendations: List[Dict[str, Any]], face_shape: str, skin_tone: str
     ) -> List[Dict[str, Any]]:
         """
         ML 추천 결과를 응답 형식으로 변환
@@ -94,14 +93,18 @@ class MLRecommendationService:
             else:
                 reason = f"ML 모델 추천 (점수: {ml_score:.1f})"
 
-            result.append({
-                "hairstyle_id": hairstyle_id,
-                "style_name": style_name,
-                "reason": reason,
-                "source": "ml",
-                "score": round(ml_score / 100.0, 2),  # 0-1 범위로 변환 (안드로이드 호환)
-                "rank": len(result) + 1
-            })
+            result.append(
+                {
+                    "hairstyle_id": hairstyle_id,
+                    "style_name": style_name,
+                    "reason": reason,
+                    "source": "ml",
+                    "score": round(
+                        ml_score / 100.0, 2
+                    ),  # 0-1 범위로 변환 (안드로이드 호환)
+                    "rank": len(result) + 1,
+                }
+            )
 
             seen_styles.add(normalized_name)
 
@@ -116,7 +119,7 @@ class MLRecommendationService:
         skin_tone: str,
         face_features: List[float] = None,
         skin_features: List[float] = None,
-        gender: str = None
+        gender: str = None,
     ) -> Dict[str, Any]:
         """
         ML 기반 헤어스타일 추천
@@ -133,10 +136,14 @@ class MLRecommendationService:
             추천 결과 딕셔너리
         """
         if face_features is not None and skin_features is not None:
-            logger.info(f"🎨 ML 추천 시작 (실제 측정값 사용): {face_shape} + {skin_tone}")
+            logger.info(
+                f"🎨 ML 추천 시작 (실제 측정값 사용): {face_shape} + {skin_tone}"
+            )
         else:
             logger.info(f"🎨 ML 추천 시작 (라벨 기반): {face_shape} + {skin_tone}")
-            logger.warning("⚠️ 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다.")
+            logger.warning(
+                "⚠️ 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다."
+            )
 
         # ML 추천 (Top-3, 성별 필터링 적용)
         ml_recommendations = []
@@ -148,7 +155,7 @@ class MLRecommendationService:
                     k=3,
                     face_features=face_features,
                     skin_features=skin_features,
-                    gender=gender
+                    gender=gender,
                 )
                 logger.info(f"✅ ML 추천 완료: {len(ml_recommendations)}개")
             except Exception as e:
@@ -156,21 +163,22 @@ class MLRecommendationService:
 
         # 추천 결과 변환
         recommendations = self._build_recommendations(
-            ml_recommendations,
-            face_shape,
-            skin_tone
+            ml_recommendations, face_shape, skin_tone
         )
 
         # rank 재조정 (1, 2, 3)
         for idx, rec in enumerate(recommendations, 1):
-            rec['rank'] = idx
+            rec["rank"] = idx
 
         # 트렌드 스타일 2개 추가 (ML 추천 뒤에 배치)
         trending_count = 0
         try:
             from services.trending_style_service import get_trending_style_service
+
             trending_service = get_trending_style_service()
-            ml_style_names = {normalize_style_name(r["style_name"]) for r in recommendations}
+            ml_style_names = {
+                normalize_style_name(r["style_name"]) for r in recommendations
+            }
             trending_recs = trending_service.pick_trending(
                 gender=gender or "neutral",
                 exclude_styles=ml_style_names,
@@ -187,15 +195,15 @@ class MLRecommendationService:
             "analysis": {
                 "face_shape": face_shape,
                 "personal_color": skin_tone,
-                "features": "ML 모델 기반 분석"
+                "features": "ML 모델 기반 분석",
             },
             "recommendations": recommendations,
             "meta": {
                 "total_count": len(recommendations),
                 "ml_count": len(recommendations) - trending_count,
                 "trending_count": trending_count,
-                "method": "ml"
-            }
+                "method": "ml",
+            },
         }
 
         logger.info(f"✅ ML 추천 완료: 총 {len(recommendations)}개")

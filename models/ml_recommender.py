@@ -36,20 +36,35 @@ from utils.style_preprocessor import normalize_style_name
 logger = logging.getLogger(__name__)
 
 # ========== 라벨 정규화 상수 (v5 모델용) ==========
-LABEL_MIN = 10.0   # 원본 점수 최소값
-LABEL_MAX = 95.0   # 원본 점수 최대값
+LABEL_MIN = 10.0  # 원본 점수 최소값
+LABEL_MAX = 95.0  # 원본 점수 최대값
 LABEL_RANGE = LABEL_MAX - LABEL_MIN  # 85
 
 
 # ========== 학습 데이터 특징 통계 (입력 스케일링용) ==========
 # ai_face_1000.npz에서 추출한 통계 (5910 샘플)
 FACE_FEATURE_STATS = {
-    0: {"min": 0.99, "max": 1.51, "mean": 1.20, "std": 0.06},   # face_ratio
-    1: {"min": 301.10, "max": 495.30, "mean": 458.13, "std": 14.31},  # forehead_width (pixel)
-    2: {"min": 421.40, "max": 641.00, "mean": 561.34, "std": 19.73},  # cheekbone_width (pixel)
-    3: {"min": 333.90, "max": 524.10, "mean": 447.70, "std": 19.82},  # jaw_width (pixel)
-    4: {"min": 0.71, "max": 0.89, "mean": 0.82, "std": 0.02},   # forehead_ratio
-    5: {"min": 0.73, "max": 0.86, "mean": 0.80, "std": 0.02},   # jaw_ratio
+    0: {"min": 0.99, "max": 1.51, "mean": 1.20, "std": 0.06},  # face_ratio
+    1: {
+        "min": 301.10,
+        "max": 495.30,
+        "mean": 458.13,
+        "std": 14.31,
+    },  # forehead_width (pixel)
+    2: {
+        "min": 421.40,
+        "max": 641.00,
+        "mean": 561.34,
+        "std": 19.73,
+    },  # cheekbone_width (pixel)
+    3: {
+        "min": 333.90,
+        "max": 524.10,
+        "mean": 447.70,
+        "std": 19.82,
+    },  # jaw_width (pixel)
+    4: {"min": 0.71, "max": 0.89, "mean": 0.82, "std": 0.02},  # forehead_ratio
+    5: {"min": 0.73, "max": 0.86, "mean": 0.80, "std": 0.02},  # jaw_ratio
 }
 
 SKIN_FEATURE_STATS = {
@@ -63,10 +78,7 @@ def denormalize_score(normalized: float) -> float:
     return normalized * LABEL_RANGE + LABEL_MIN
 
 
-def scale_input_features(
-    face_features: np.ndarray,
-    skin_features: np.ndarray
-) -> tuple:
+def scale_input_features(face_features: np.ndarray, skin_features: np.ndarray) -> tuple:
     """
     추론 입력을 학습 데이터 분포에 맞게 스케일링
 
@@ -140,10 +152,7 @@ class AttentionLayer(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
         self.attention = nn.MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
         )
         self.norm = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
@@ -178,7 +187,7 @@ class MultiTokenAttentionLayer(nn.Module):
         style_dim: int = 384,
         token_dim: int = 128,  # 통일된 토큰 차원
         num_heads: int = 4,
-        dropout: float = 0.1
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.token_dim = token_dim
@@ -190,10 +199,7 @@ class MultiTokenAttentionLayer(nn.Module):
 
         # Multi-head self-attention (3 tokens)
         self.attention = nn.MultiheadAttention(
-            embed_dim=token_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            embed_dim=token_dim, num_heads=num_heads, dropout=dropout, batch_first=True
         )
         self.norm1 = nn.LayerNorm(token_dim)
 
@@ -202,7 +208,7 @@ class MultiTokenAttentionLayer(nn.Module):
             nn.Linear(token_dim, token_dim * 2),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(token_dim * 2, token_dim)
+            nn.Linear(token_dim * 2, token_dim),
         )
         self.norm2 = nn.LayerNorm(token_dim)
         self.dropout = nn.Dropout(dropout)
@@ -211,7 +217,7 @@ class MultiTokenAttentionLayer(nn.Module):
         self,
         face_proj: torch.Tensor,  # (batch, 64)
         skin_proj: torch.Tensor,  # (batch, 32)
-        style_emb: torch.Tensor   # (batch, 384)
+        style_emb: torch.Tensor,  # (batch, 384)
     ) -> torch.Tensor:
         """
         Returns:
@@ -220,9 +226,9 @@ class MultiTokenAttentionLayer(nn.Module):
         batch_size = face_proj.size(0)
 
         # 각 특징을 token_dim으로 projection
-        face_token = self.face_to_token(face_proj)   # (batch, token_dim)
-        skin_token = self.skin_to_token(skin_proj)   # (batch, token_dim)
-        style_token = self.style_to_token(style_emb) # (batch, token_dim)
+        face_token = self.face_to_token(face_proj)  # (batch, token_dim)
+        skin_token = self.skin_to_token(skin_proj)  # (batch, token_dim)
+        style_token = self.style_to_token(style_emb)  # (batch, token_dim)
 
         # 3개 토큰으로 시퀀스 구성: (batch, 3, token_dim)
         tokens = torch.stack([face_token, skin_token, style_token], dim=1)
@@ -262,7 +268,7 @@ class RecommendationModel(nn.Module):
         skin_feat_dim: int = 2,
         style_embed_dim: int = 384,
         use_attention: bool = True,  # 기존 체크포인트 호환성 유지
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -275,14 +281,14 @@ class RecommendationModel(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         # Total dimension after projection
@@ -294,9 +300,7 @@ class RecommendationModel(nn.Module):
         self.use_attention = use_attention
         if use_attention:
             self.attention = AttentionLayer(
-                embed_dim=self.total_dim,
-                num_heads=8,
-                dropout=0.1
+                embed_dim=self.total_dim, num_heads=8, dropout=0.1
             )
 
         # Feature fusion network
@@ -322,7 +326,7 @@ class RecommendationModel(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass"""
         # Project features
@@ -398,7 +402,7 @@ class NormalizedRecommendationModel(nn.Module):
         skin_feat_dim: int = 2,
         style_embed_dim: int = 384,
         use_attention: bool = True,  # 기존 체크포인트 호환성 유지
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -411,14 +415,14 @@ class NormalizedRecommendationModel(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.total_dim = 64 + 32 + style_embed_dim  # 480
@@ -429,9 +433,7 @@ class NormalizedRecommendationModel(nn.Module):
         self.use_attention = use_attention
         if use_attention:
             self.attention = AttentionLayer(
-                embed_dim=self.total_dim,
-                num_heads=8,
-                dropout=0.1
+                embed_dim=self.total_dim, num_heads=8, dropout=0.1
             )
 
         self.fc1 = nn.Linear(self.total_dim, 256)
@@ -458,7 +460,7 @@ class NormalizedRecommendationModel(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
         face_proj = self.face_projection(face_features)
@@ -531,7 +533,7 @@ class RecommendationModelV6(nn.Module):
         style_embed_dim: int = 384,
         token_dim: int = 128,
         num_heads: int = 4,
-        dropout_rate: float = 0.3
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
 
@@ -544,14 +546,14 @@ class RecommendationModelV6(nn.Module):
             nn.Linear(face_feat_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         self.skin_projection = nn.Sequential(
             nn.Linear(skin_feat_dim, 32),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5)
+            nn.Dropout(dropout_rate * 0.5),
         )
 
         # Multi-Token Attention Layer (3개 토큰 간 상호작용)
@@ -561,7 +563,7 @@ class RecommendationModelV6(nn.Module):
             style_dim=style_embed_dim,
             token_dim=token_dim,
             num_heads=num_heads,
-            dropout=dropout_rate * 0.3
+            dropout=dropout_rate * 0.3,
         )
 
         # Attention 출력 차원: token_dim * 3 = 384
@@ -593,7 +595,7 @@ class RecommendationModelV6(nn.Module):
         self,
         face_features: torch.Tensor,
         skin_features: torch.Tensor,
-        style_emb: torch.Tensor
+        style_emb: torch.Tensor,
     ) -> torch.Tensor:
         """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
         # 1. Input projection
@@ -647,7 +649,7 @@ class MLHairstyleRecommender:
         self,
         model_path: str = "models/hairstyle_recommender_v6_multitoken.pt",
         embeddings_path: str = "data_source/style_embeddings.npz",
-        gender_metadata_path: str = "data_source/hairstyle_gender.json"
+        gender_metadata_path: str = "data_source/hairstyle_gender.json",
     ):
         """
         초기화
@@ -657,51 +659,60 @@ class MLHairstyleRecommender:
             embeddings_path: 헤어스타일 임베딩 경로
             gender_metadata_path: 헤어스타일 성별 메타데이터 경로
         """
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # 1. 모델 로드
         logger.info(f"📂 ML 모델 로딩: {model_path}")
 
         # 체크포인트 형식으로 저장된 경우 처리
         try:
-            checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+            checkpoint = torch.load(
+                model_path, map_location=self.device, weights_only=False
+            )
 
             # 모델 버전 및 설정 확인
-            if isinstance(checkpoint, dict) and 'config' in checkpoint:
-                config = checkpoint['config']
-                self.is_normalized_model = config.get('normalized', False)
-                self.model_version = config.get('version', 'v5' if self.is_normalized_model else 'v4')
-                self.attention_type = config.get('attention_type', 'single_token')
+            if isinstance(checkpoint, dict) and "config" in checkpoint:
+                config = checkpoint["config"]
+                self.is_normalized_model = config.get("normalized", False)
+                self.model_version = config.get(
+                    "version", "v5" if self.is_normalized_model else "v4"
+                )
+                self.attention_type = config.get("attention_type", "single_token")
                 logger.info(f"  - 모델 버전: {self.model_version}")
                 logger.info(f"  - 정규화 모델: {self.is_normalized_model}")
                 logger.info(f"  - Attention 타입: {self.attention_type}")
             else:
                 self.is_normalized_model = False
-                self.model_version = 'v4'
-                self.attention_type = 'single_token'
+                self.model_version = "v4"
+                self.attention_type = "single_token"
 
             # 모델 클래스 선택
-            if self.model_version == 'v6' or self.attention_type == 'multi_token':
+            if self.model_version == "v6" or self.attention_type == "multi_token":
                 # V6: Multi-Token Attention
-                token_dim = config.get('token_dim', 128)
-                num_heads = config.get('num_heads', 4)
+                token_dim = config.get("token_dim", 128)
+                num_heads = config.get("num_heads", 4)
                 self.model = RecommendationModelV6(
-                    token_dim=token_dim,
-                    num_heads=num_heads
+                    token_dim=token_dim, num_heads=num_heads
                 )
-                logger.info(f"  - 사용 모델: RecommendationModelV6 (Multi-Token Attention)")
+                logger.info(
+                    f"  - 사용 모델: RecommendationModelV6 (Multi-Token Attention)"
+                )
             elif self.is_normalized_model:
                 # V5: Normalized + Single-Token Attention
                 self.model = NormalizedRecommendationModel()
-                logger.info("  - 사용 모델: NormalizedRecommendationModel (v5 - Sigmoid 출력)")
+                logger.info(
+                    "  - 사용 모델: NormalizedRecommendationModel (v5 - Sigmoid 출력)"
+                )
             else:
                 # V4: Legacy
                 self.model = RecommendationModel()
                 logger.info("  - 사용 모델: RecommendationModel (v4)")
 
-            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                self.model.load_state_dict(checkpoint['model_state_dict'])
-                logger.info(f"✅ 체크포인트에서 모델 로드 완료 (epoch: {checkpoint.get('epoch', 'N/A')})")
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                self.model.load_state_dict(checkpoint["model_state_dict"])
+                logger.info(
+                    f"✅ 체크포인트에서 모델 로드 완료 (epoch: {checkpoint.get('epoch', 'N/A')})"
+                )
             else:
                 self.model.load_state_dict(checkpoint)
                 logger.info(f"✅ 모델 로드 완료")
@@ -717,8 +728,8 @@ class MLHairstyleRecommender:
         logger.info(f"📂 임베딩 로딩: {embeddings_path}")
         try:
             data = np.load(embeddings_path, allow_pickle=False)
-            self.styles = data['styles'].tolist()  # 헤어스타일명 리스트
-            self.embeddings = data['embeddings']  # (N, 384) 임베딩
+            self.styles = data["styles"].tolist()  # 헤어스타일명 리스트
+            self.embeddings = data["embeddings"]  # (N, 384) 임베딩
             logger.info(f"✅ 임베딩 로드 완료: {len(self.styles)}개 스타일")
         except Exception as e:
             logger.error(f"❌ 임베딩 로드 실패: {str(e)}")
@@ -732,10 +743,13 @@ class MLHairstyleRecommender:
         try:
             import json
             import os
+
             if os.path.exists(gender_metadata_path):
-                with open(gender_metadata_path, 'r', encoding='utf-8') as f:
+                with open(gender_metadata_path, "r", encoding="utf-8") as f:
                     self.gender_metadata = json.load(f)
-                logger.info(f"✅ 성별 메타데이터 로드 완료: {len(self.gender_metadata)}개 스타일")
+                logger.info(
+                    f"✅ 성별 메타데이터 로드 완료: {len(self.gender_metadata)}개 스타일"
+                )
             else:
                 logger.warning(f"⚠️ 성별 메타데이터 파일 없음 - 성별 필터링 비활성화")
                 self.gender_metadata = {}
@@ -745,13 +759,19 @@ class MLHairstyleRecommender:
 
         # 4. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
         import os
-        is_lambda = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+
+        is_lambda = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
         if not is_lambda:
-            logger.info("🔄 실시간 임베딩 모델 로딩 (paraphrase-multilingual-MiniLM-L12-v2)...")
+            logger.info(
+                "🔄 실시간 임베딩 모델 로딩 (paraphrase-multilingual-MiniLM-L12-v2)..."
+            )
             try:
                 from sentence_transformers import SentenceTransformer
-                self.sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+                self.sentence_model = SentenceTransformer(
+                    "paraphrase-multilingual-MiniLM-L12-v2"
+                )
                 logger.info("✅ 실시간 임베딩 모델 준비 완료")
             except Exception as e:
                 logger.error(f"❌ 실시간 임베딩 모델 로드 실패: {str(e)}")
@@ -825,7 +845,9 @@ class MLHairstyleRecommender:
                     return idx
         return -1
 
-    def _is_similar_style(self, style_a: str, style_b: str, threshold: float = 0.65) -> bool:
+    def _is_similar_style(
+        self, style_a: str, style_b: str, threshold: float = 0.65
+    ) -> bool:
         """
         두 스타일명의 유사도 계산 (문자열 유사도 + 카테고리 기반)
 
@@ -851,7 +873,9 @@ class MLHairstyleRecommender:
         cat_b = self._get_style_category(style_b)
 
         if cat_a >= 0 and cat_a == cat_b:
-            logger.debug(f"[DIVERSITY] 같은 카테고리: '{style_a}' vs '{style_b}' (category={cat_a})")
+            logger.debug(
+                f"[DIVERSITY] 같은 카테고리: '{style_a}' vs '{style_b}' (category={cat_a})"
+            )
             return True
 
         return False
@@ -883,12 +907,7 @@ class MLHairstyleRecommender:
 
         return None
 
-    def predict_score(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        hairstyle: str
-    ) -> float:
+    def predict_score(self, face_shape: str, skin_tone: str, hairstyle: str) -> float:
         """
         특정 헤어스타일의 추천 점수 예측 (띄어쓰기 정규화 적용)
 
@@ -909,20 +928,22 @@ class MLHairstyleRecommender:
         if style_embedding is None:
             # 원본 이름으로도 시도
             style_embedding = self._get_style_embedding(hairstyle)
-            
+
             if style_embedding is None:
                 logger.warning(f"임베딩 생성 불가: '{hairstyle}'")
                 return 0.0
 
         # 개별 특징 벡터 생성
         face_vec = self._encode_face_shape(face_shape)  # (4,)
-        tone_vec = self._encode_skin_tone(skin_tone)    # (4,)
+        tone_vec = self._encode_skin_tone(skin_tone)  # (4,)
 
         # 모델 추론 - 3개의 개별 텐서로 전달
         with torch.no_grad():
             face_tensor = torch.FloatTensor(face_vec).unsqueeze(0).to(self.device)
             skin_tensor = torch.FloatTensor(tone_vec).unsqueeze(0).to(self.device)
-            style_tensor = torch.FloatTensor(style_embedding).unsqueeze(0).to(self.device)
+            style_tensor = (
+                torch.FloatTensor(style_embedding).unsqueeze(0).to(self.device)
+            )
 
             score_tensor = self.model(face_tensor, skin_tensor, style_tensor)
             score = score_tensor.cpu().item()
@@ -946,7 +967,7 @@ class MLHairstyleRecommender:
         k: int = 3,
         face_features: List[float] = None,
         skin_features: List[float] = None,
-        gender: str = None
+        gender: str = None,
     ) -> List[Dict[str, any]]:
         """
         Top-K 헤어스타일 추천 (성별 필터링 적용)
@@ -974,9 +995,13 @@ class MLHairstyleRecommender:
 
             # 차원 검증
             if face_vec.shape[0] != 6:
-                raise ValueError(f"face_features는 6차원이어야 합니다. 현재: {face_vec.shape[0]}")
+                raise ValueError(
+                    f"face_features는 6차원이어야 합니다. 현재: {face_vec.shape[0]}"
+                )
             if tone_vec.shape[0] != 2:
-                raise ValueError(f"skin_features는 2차원이어야 합니다. 현재: {tone_vec.shape[0]}")
+                raise ValueError(
+                    f"skin_features는 2차원이어야 합니다. 현재: {tone_vec.shape[0]}"
+                )
 
             # 입력 스케일링 적용 (학습 데이터 분포에 맞게 변환)
             face_vec, tone_vec = scale_input_features(face_vec, tone_vec)
@@ -984,14 +1009,20 @@ class MLHairstyleRecommender:
             logger.info(f"[ML DEBUG] Skin features (스케일링 후): {tone_vec.tolist()}")
         else:
             # 하위 호환성: 라벨 기반 인코딩
-            logger.warning(f"[ML DEPRECATED] 라벨 기반 인코딩 사용: {face_shape} + {skin_tone}")
-            logger.warning("[ML DEPRECATED] 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다.")
+            logger.warning(
+                f"[ML DEPRECATED] 라벨 기반 인코딩 사용: {face_shape} + {skin_tone}"
+            )
+            logger.warning(
+                "[ML DEPRECATED] 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다."
+            )
 
             if face_shape is None or skin_tone is None:
-                raise ValueError("face_features와 skin_features가 없으면 face_shape과 skin_tone을 제공해야 합니다.")
+                raise ValueError(
+                    "face_features와 skin_features가 없으면 face_shape과 skin_tone을 제공해야 합니다."
+                )
 
             face_vec = self._encode_face_shape(face_shape)  # (6,)
-            tone_vec = self._encode_skin_tone(skin_tone)    # (2,)
+            tone_vec = self._encode_skin_tone(skin_tone)  # (2,)
 
         logger.info(f"[ML DEBUG] Face vector: {face_vec.tolist()}")
         logger.info(f"[ML DEBUG] Skin vector: {tone_vec.tolist()}")
@@ -1020,8 +1051,12 @@ class MLHairstyleRecommender:
 
                 # 첫 번째 배치에서만 디버그 정보 출력
                 if i == 0:
-                    logger.info(f"[ML DEBUG] First batch embedding shape: {batch_embeddings.shape}")
-                    logger.info(f"[ML DEBUG] First style embedding std: {batch_embeddings.std():.6f}")
+                    logger.info(
+                        f"[ML DEBUG] First batch embedding shape: {batch_embeddings.shape}"
+                    )
+                    logger.info(
+                        f"[ML DEBUG] First style embedding std: {batch_embeddings.std():.6f}"
+                    )
                     logger.info(f"[ML DEBUG] First 3 styles: {self.styles[i:i+3]}")
 
                 scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
@@ -1036,33 +1071,41 @@ class MLHairstyleRecommender:
                     logger.info(f"[ML DEBUG] First batch scores: {scores[:5].tolist()}")
                     logger.info(f"[ML DEBUG] Scores std: {scores.std():.6f}")
                     if self.is_normalized_model:
-                        logger.info(f"[ML DEBUG] 정규화 모델 - 역변환 적용됨 (0~1 → {LABEL_MIN}~{LABEL_MAX})")
+                        logger.info(
+                            f"[ML DEBUG] 정규화 모델 - 역변환 적용됨 (0~1 → {LABEL_MIN}~{LABEL_MAX})"
+                        )
 
             # 결과 저장
             for j, score in enumerate(scores):
                 style_idx = i + j
-                all_scores.append({
-                    "hairstyle_id": style_idx,  # DB ID 추가
-                    "hairstyle": self.styles[style_idx],
-                    "score": float(score),  # 역변환된 점수 (10~95 범위)
-                    "original_score": float(score)  # 피드백용 원본 점수 보존
-                })
+                all_scores.append(
+                    {
+                        "hairstyle_id": style_idx,  # DB ID 추가
+                        "hairstyle": self.styles[style_idx],
+                        "score": float(score),  # 역변환된 점수 (10~95 범위)
+                        "original_score": float(score),  # 피드백용 원본 점수 보존
+                    }
+                )
 
         # 점수 기준 정렬
-        all_scores.sort(key=lambda x: x['score'], reverse=True)
+        all_scores.sort(key=lambda x: x["score"], reverse=True)
 
         # 성별 필터링 (NEW)
         if gender and self.gender_metadata:
-            logger.info(f"[GENDER] 성별 필터링 시작 (gender={gender}, metadata_count={len(self.gender_metadata)})")
+            logger.info(
+                f"[GENDER] 성별 필터링 시작 (gender={gender}, metadata_count={len(self.gender_metadata)})"
+            )
             filtered_scores = []
             debug_count = 0
             for item in all_scores:
-                style_name = item['hairstyle']
+                style_name = item["hairstyle"]
                 style_gender = self.gender_metadata.get(style_name, "unisex")
 
                 # 처음 5개 스타일은 디버깅용 로깅
                 if debug_count < 5:
-                    logger.debug(f"[GENDER DEBUG] {style_name}: {style_gender} (score={item['score']:.2f})")
+                    logger.debug(
+                        f"[GENDER DEBUG] {style_name}: {style_gender} (score={item['score']:.2f})"
+                    )
                     debug_count += 1
 
                 # 성별 매칭 로직:
@@ -1083,9 +1126,13 @@ class MLHairstyleRecommender:
             all_scores = filtered_scores
         else:
             if not gender:
-                logger.warning("[GENDER] 성별 필터링 비활성화 - gender 파라미터가 비어있음!")
+                logger.warning(
+                    "[GENDER] 성별 필터링 비활성화 - gender 파라미터가 비어있음!"
+                )
             elif not self.gender_metadata:
-                logger.warning("[GENDER] 성별 필터링 비활성화 - metadata가 로드되지 않음!")
+                logger.warning(
+                    "[GENDER] 성별 필터링 비활성화 - metadata가 로드되지 않음!"
+                )
             else:
                 logger.info("[GENDER] 성별 필터링 비활성화")
 
@@ -1094,19 +1141,23 @@ class MLHairstyleRecommender:
         similarity_threshold = 0.65
         max_candidates = min(100, len(all_scores))  # 상위 100개까지 탐색
 
-        logger.info(f"[DIVERSITY] 다양성 필터링 시작 (threshold={similarity_threshold})")
+        logger.info(
+            f"[DIVERSITY] 다양성 필터링 시작 (threshold={similarity_threshold})"
+        )
 
         for candidate in all_scores[:max_candidates]:
             if len(top_k_recommendations) >= k:
                 break
 
-            candidate_style = candidate['hairstyle']
+            candidate_style = candidate["hairstyle"]
 
             # 이미 선택된 스타일과 유사도 체크
             is_duplicate = False
             for selected in top_k_recommendations:
-                selected_style = selected['hairstyle']
-                if self._is_similar_style(candidate_style, selected_style, similarity_threshold):
+                selected_style = selected["hairstyle"]
+                if self._is_similar_style(
+                    candidate_style, selected_style, similarity_threshold
+                ):
                     logger.debug(
                         f"[DIVERSITY] 유사한 스타일 제외: '{candidate_style}' "
                         f"(유사: '{selected_style}')"
@@ -1136,11 +1187,11 @@ class MLHairstyleRecommender:
             # v5 정규화 모델: 원본 점수 그대로 사용 (이미 10~95 범위)
             logger.info(f"[SCORE] v5 정규화 모델 - 원본 점수 사용")
             for rec in top_k_recommendations:
-                rec['score'] = round(rec['original_score'], 2)
+                rec["score"] = round(rec["original_score"], 2)
         elif len(top_k_recommendations) >= 2:
             # v4 기존 모델: Min-Max 정규화를 사용한 점수 스케일링
             # Top-K 내에서 점수를 75~95점 범위로 정규화
-            raw_scores = [rec['original_score'] for rec in top_k_recommendations]
+            raw_scores = [rec["original_score"] for rec in top_k_recommendations]
             min_raw = min(raw_scores)
             max_raw = max(raw_scores)
 
@@ -1151,24 +1202,32 @@ class MLHairstyleRecommender:
                 logger.info(f"[SCORE NORM] Raw range: {min_raw:.2f} ~ {max_raw:.2f}")
 
                 for rec in top_k_recommendations:
-                    raw = rec['original_score']
-                    normalized = (raw - min_raw) / (max_raw - min_raw) * (target_max - target_min) + target_min
-                    rec['score'] = round(normalized, 2)
+                    raw = rec["original_score"]
+                    normalized = (raw - min_raw) / (max_raw - min_raw) * (
+                        target_max - target_min
+                    ) + target_min
+                    rec["score"] = round(normalized, 2)
 
-                logger.info(f"[SCORE NORM] Normalized scores: {[r['score'] for r in top_k_recommendations]}")
+                logger.info(
+                    f"[SCORE NORM] Normalized scores: {[r['score'] for r in top_k_recommendations]}"
+                )
             else:
                 for i, rec in enumerate(top_k_recommendations):
-                    rec['score'] = round(95.0 - i * 3, 2)
-                logger.info(f"[SCORE NORM] Same scores - using fallback: {[r['score'] for r in top_k_recommendations]}")
+                    rec["score"] = round(95.0 - i * 3, 2)
+                logger.info(
+                    f"[SCORE NORM] Same scores - using fallback: {[r['score'] for r in top_k_recommendations]}"
+                )
         elif len(top_k_recommendations) == 1:
-            top_k_recommendations[0]['score'] = 90.0
+            top_k_recommendations[0]["score"] = 90.0
             logger.info("[SCORE NORM] Single recommendation - set to 90.0")
 
         # 디버그: Top-K 점수 분포
         if top_k_recommendations:
-            scores_list = [r['score'] for r in top_k_recommendations]
+            scores_list = [r["score"] for r in top_k_recommendations]
             logger.info(f"[ML DEBUG] Top-{k} final scores: {scores_list}")
-            logger.info(f"[ML DEBUG] Score range: {min(scores_list):.2f} ~ {max(scores_list):.2f}")
+            logger.info(
+                f"[ML DEBUG] Score range: {min(scores_list):.2f} ~ {max(scores_list):.2f}"
+            )
 
         logger.info(
             f"[ML RESULT] ML 추천 완료: {[r['hairstyle'] for r in top_k_recommendations]}"
@@ -1177,10 +1236,7 @@ class MLHairstyleRecommender:
         return top_k_recommendations
 
     def batch_predict(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        hairstyles: List[str]
+        self, face_shape: str, skin_tone: str, hairstyles: List[str]
     ) -> Dict[str, float]:
         """
         여러 헤어스타일의 점수를 한 번에 예측 (띄어쓰기 정규화 적용)
@@ -1194,19 +1250,19 @@ class MLHairstyleRecommender:
             {헤어스타일: 점수} 딕셔너리
         """
         results = {}
-        
+
         # 1. 임베딩 수집 (DB or 실시간)
         valid_styles = []
         batch_embeddings = []
-        
+
         for style in hairstyles:
             normalized = normalize_style_name(style)
             embedding = self._get_style_embedding(normalized)
-            
+
             if embedding is None:
                 # 원본 이름으로도 시도
                 embedding = self._get_style_embedding(style)
-            
+
             if embedding is not None:
                 valid_styles.append(style)
                 batch_embeddings.append(embedding)
@@ -1219,7 +1275,7 @@ class MLHairstyleRecommender:
 
         # 2. 얼굴형과 피부톤 특징 벡터 생성
         face_vec = self._encode_face_shape(face_shape)  # (4,)
-        tone_vec = self._encode_skin_tone(skin_tone)    # (4,)
+        tone_vec = self._encode_skin_tone(skin_tone)  # (4,)
 
         batch_embeddings = np.array(batch_embeddings, dtype=np.float32)
 
@@ -1274,6 +1330,7 @@ def get_ml_recommender() -> MLHairstyleRecommender:
 
 # ========== A/B 테스트 래퍼 클래스 ==========
 
+
 class ABTestRecommender:
     """
     A/B 테스트를 지원하는 ML 추천기 래퍼
@@ -1311,8 +1368,11 @@ class ABTestRecommender:
         """A/B 테스트 라우터 초기화"""
         try:
             from services.mlops.ab_test import get_ab_router
+
             self._router = get_ab_router()
-            logger.info(f"🔬 A/B 테스트 라우터 초기화 완료 (enabled={self._router.is_abtest_active()})")
+            logger.info(
+                f"🔬 A/B 테스트 라우터 초기화 완료 (enabled={self._router.is_abtest_active()})"
+            )
         except ImportError:
             logger.warning("⚠️ A/B 테스트 모듈 로드 실패 - Champion 모델만 사용")
             self._router = None
@@ -1329,7 +1389,11 @@ class ABTestRecommender:
     @property
     def challenger_model(self) -> Optional[MLHairstyleRecommender]:
         """Challenger 모델 (Lazy Loading, A/B 테스트 활성화 시에만)"""
-        if self._challenger_model is None and self._router and self._router.is_abtest_active():
+        if (
+            self._challenger_model is None
+            and self._router
+            and self._router.is_abtest_active()
+        ):
             logger.info("🔧 Challenger 모델 로딩...")
             try:
                 # Challenger 모델 경로 결정
@@ -1339,8 +1403,11 @@ class ABTestRecommender:
                 # S3에서 다운로드 필요시 여기서 처리
                 # 현재는 로컬 경로 사용
                 import os
+
                 if os.path.exists(challenger_path):
-                    self._challenger_model = MLHairstyleRecommender(model_path=challenger_path)
+                    self._challenger_model = MLHairstyleRecommender(
+                        model_path=challenger_path
+                    )
                     logger.info(f"✅ Challenger 모델 로드 완료: {challenger_version}")
                 else:
                     logger.warning(f"⚠️ Challenger 모델 파일 없음: {challenger_path}")
@@ -1357,7 +1424,7 @@ class ABTestRecommender:
         gender: str = None,
         k: int = 3,
         face_shape: str = None,
-        skin_tone: str = None
+        skin_tone: str = None,
     ) -> List[Dict[str, any]]:
         """
         Top-K 헤어스타일 추천 (A/B 테스트 적용)
@@ -1380,13 +1447,14 @@ class ABTestRecommender:
 
         if self._router:
             from services.mlops.ab_test import ModelVariant
+
             variant = self._router.get_variant(user_id)
             experiment_info = self._router.get_experiment_info(variant)
         else:
             experiment_info = {
-                'experiment_id': '',
-                'model_version': 'v6',
-                'ab_variant': 'champion'
+                "experiment_id": "",
+                "model_version": "v6",
+                "ab_variant": "champion",
             }
 
         # 모델 선택
@@ -1394,6 +1462,7 @@ class ABTestRecommender:
 
         if variant and self._router:
             from services.mlops.ab_test import ModelVariant
+
             if variant == ModelVariant.CHALLENGER and self.challenger_model:
                 model = self.challenger_model
                 logger.debug(f"[ABTEST] user={user_id} -> Challenger 모델 사용")
@@ -1407,14 +1476,14 @@ class ABTestRecommender:
             k=k,
             face_features=face_features,
             skin_features=skin_features,
-            gender=gender
+            gender=gender,
         )
 
         # 모델 버전 정보 추가 (피드백 분석용)
         for result in results:
-            result['model_version'] = experiment_info.get('model_version', 'v6')
-            result['experiment_id'] = experiment_info.get('experiment_id', '')
-            result['ab_variant'] = experiment_info.get('ab_variant', 'champion')
+            result["model_version"] = experiment_info.get("model_version", "v6")
+            result["experiment_id"] = experiment_info.get("experiment_id", "")
+            result["ab_variant"] = experiment_info.get("ab_variant", "champion")
 
         return results
 
@@ -1426,7 +1495,7 @@ class ABTestRecommender:
         """현재 A/B 테스트 설정 반환"""
         if self._router:
             return self._router.config.to_dict()
-        return {'enabled': False}
+        return {"enabled": False}
 
 
 # ========== A/B 테스트 추천기 싱글톤 ==========

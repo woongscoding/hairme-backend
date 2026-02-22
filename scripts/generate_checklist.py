@@ -20,15 +20,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
 
+
 # 컬러 출력
 class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    RESET = '\033[0m'
-    BOLD = '\033[1m'
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
 
 
 class ChecklistGenerator:
@@ -37,16 +38,16 @@ class ChecklistGenerator:
     def __init__(self):
         """초기화"""
         self.project_root = Path(__file__).parent.parent
-        self.region = os.getenv('AWS_REGION', 'ap-northeast-2')
+        self.region = os.getenv("AWS_REGION", "ap-northeast-2")
         self.data = {}
 
         # AWS 클라이언트
         try:
-            self.dynamodb = boto3.client('dynamodb', region_name=self.region)
-            self.rds = boto3.client('rds', region_name=self.region)
-            self.lambda_client = boto3.client('lambda', region_name=self.region)
-            self.elbv2 = boto3.client('elbv2', region_name=self.region)
-            self.ec2 = boto3.client('ec2', region_name=self.region)
+            self.dynamodb = boto3.client("dynamodb", region_name=self.region)
+            self.rds = boto3.client("rds", region_name=self.region)
+            self.lambda_client = boto3.client("lambda", region_name=self.region)
+            self.elbv2 = boto3.client("elbv2", region_name=self.region)
+            self.ec2 = boto3.client("ec2", region_name=self.region)
         except Exception as e:
             print(f"{Colors.YELLOW}⚠️  AWS 클라이언트 초기화 실패: {e}{Colors.RESET}")
 
@@ -55,176 +56,175 @@ class ChecklistGenerator:
         print(f"{Colors.CYAN}📊 데이터 수집 중...{Colors.RESET}")
 
         # 1. 파일 확인
-        self.data['files'] = self._check_files()
+        self.data["files"] = self._check_files()
 
         # 2. DynamoDB 정보
-        self.data['dynamodb'] = self._get_dynamodb_info()
+        self.data["dynamodb"] = self._get_dynamodb_info()
 
         # 3. 데이터 마이그레이션 정보
-        self.data['migration'] = self._get_migration_info()
+        self.data["migration"] = self._get_migration_info()
 
         # 4. Lambda 정보
-        self.data['lambda'] = self._get_lambda_info()
+        self.data["lambda"] = self._get_lambda_info()
 
         # 5. 인프라 정보
-        self.data['infrastructure'] = self._get_infrastructure_info()
+        self.data["infrastructure"] = self._get_infrastructure_info()
 
         # 6. 비용 정보 (JSON 파일에서)
-        self.data['cost'] = self._get_cost_info()
+        self.data["cost"] = self._get_cost_info()
 
         print(f"{Colors.GREEN}✅ 데이터 수집 완료{Colors.RESET}\n")
 
     def _check_files(self) -> Dict:
         """파일 확인"""
         required_files = [
-            'database/dynamodb_connection.py',
-            'infrastructure/dynamodb_table.json',
-            'infrastructure/lambda_iam_policy.json',
-            'scripts/create_dynamodb_table.sh',
-            'scripts/migrate_rds_to_dynamodb.py',
-            'scripts/deploy_lambda.sh',
-            'scripts/cleanup_infrastructure.sh',
-            'tests/test_dynamodb_integration.py',
-            '.env.example'
+            "database/dynamodb_connection.py",
+            "infrastructure/dynamodb_table.json",
+            "infrastructure/lambda_iam_policy.json",
+            "scripts/create_dynamodb_table.sh",
+            "scripts/migrate_rds_to_dynamodb.py",
+            "scripts/deploy_lambda.sh",
+            "scripts/cleanup_infrastructure.sh",
+            "tests/test_dynamodb_integration.py",
+            ".env.example",
         ]
 
-        files_info = {
-            'required': [],
-            'missing': [],
-            'total_size': 0
-        }
+        files_info = {"required": [], "missing": [], "total_size": 0}
 
         for file_path in required_files:
             full_path = self.project_root / file_path
             if full_path.exists():
                 size = full_path.stat().st_size
-                lines = len(full_path.read_text(encoding='utf-8', errors='ignore').splitlines())
-                files_info['required'].append({
-                    'path': file_path,
-                    'size': size,
-                    'lines': lines,
-                    'exists': True
-                })
-                files_info['total_size'] += size
+                lines = len(
+                    full_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                )
+                files_info["required"].append(
+                    {"path": file_path, "size": size, "lines": lines, "exists": True}
+                )
+                files_info["total_size"] += size
             else:
-                files_info['missing'].append(file_path)
-                files_info['required'].append({
-                    'path': file_path,
-                    'exists': False
-                })
+                files_info["missing"].append(file_path)
+                files_info["required"].append({"path": file_path, "exists": False})
 
         return files_info
 
     def _get_dynamodb_info(self) -> Dict:
         """DynamoDB 정보 수집"""
-        table_name = os.getenv('DYNAMODB_TABLE_NAME', 'hairme-analysis')
+        table_name = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
 
         try:
             response = self.dynamodb.describe_table(TableName=table_name)
-            table = response['Table']
+            table = response["Table"]
 
             return {
-                'exists': True,
-                'name': table_name,
-                'status': table['TableStatus'],
-                'item_count': table.get('ItemCount', 0),
-                'size_bytes': table.get('TableSizeBytes', 0),
-                'created_at': table.get('CreationDateTime', datetime.now()).strftime('%Y-%m-%d %H:%M:%S'),
-                'billing_mode': table.get('BillingModeSummary', {}).get('BillingMode', 'PROVISIONED'),
-                'has_gsi': len(table.get('GlobalSecondaryIndexes', [])) > 0
+                "exists": True,
+                "name": table_name,
+                "status": table["TableStatus"],
+                "item_count": table.get("ItemCount", 0),
+                "size_bytes": table.get("TableSizeBytes", 0),
+                "created_at": table.get("CreationDateTime", datetime.now()).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+                "billing_mode": table.get("BillingModeSummary", {}).get(
+                    "BillingMode", "PROVISIONED"
+                ),
+                "has_gsi": len(table.get("GlobalSecondaryIndexes", [])) > 0,
             }
         except Exception:
-            return {'exists': False, 'name': table_name}
+            return {"exists": False, "name": table_name}
 
     def _get_migration_info(self) -> Dict:
         """마이그레이션 정보 수집"""
-        migration_file = self.project_root / 'migration_record.json'
+        migration_file = self.project_root / "migration_record.json"
 
         if migration_file.exists():
-            with open(migration_file, 'r') as f:
+            with open(migration_file, "r") as f:
                 data = json.load(f)
                 return {
-                    'completed': True,
-                    'rds_count': data.get('rds_count', 0),
-                    'dynamodb_count': data.get('dynamodb_count', 0),
-                    'migration_date': data.get('migration_date', 'Unknown'),
-                    'success_rate': data.get('success_rate', 100)
+                    "completed": True,
+                    "rds_count": data.get("rds_count", 0),
+                    "dynamodb_count": data.get("dynamodb_count", 0),
+                    "migration_date": data.get("migration_date", "Unknown"),
+                    "success_rate": data.get("success_rate", 100),
                 }
         else:
             # DynamoDB에서 직접 카운트
-            table_name = os.getenv('DYNAMODB_TABLE_NAME', 'hairme-analysis')
+            table_name = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
             try:
                 response = self.dynamodb.describe_table(TableName=table_name)
-                item_count = response['Table'].get('ItemCount', 0)
+                item_count = response["Table"].get("ItemCount", 0)
                 return {
-                    'completed': True,
-                    'dynamodb_count': item_count,
-                    'rds_count': None
+                    "completed": True,
+                    "dynamodb_count": item_count,
+                    "rds_count": None,
                 }
             except Exception:
-                return {'completed': False}
+                return {"completed": False}
 
     def _get_lambda_info(self) -> Dict:
         """Lambda 정보 수집"""
-        function_name = os.getenv('LAMBDA_FUNCTION_NAME', 'hairme-backend')
+        function_name = os.getenv("LAMBDA_FUNCTION_NAME", "hairme-backend")
 
         try:
             response = self.lambda_client.get_function(FunctionName=function_name)
-            config = response['Configuration']
+            config = response["Configuration"]
 
             return {
-                'exists': True,
-                'name': function_name,
-                'runtime': config.get('Runtime', 'Unknown'),
-                'memory': config.get('MemorySize', 0),
-                'timeout': config.get('Timeout', 0),
-                'last_modified': config.get('LastModified', 'Unknown'),
-                'use_dynamodb': config.get('Environment', {}).get('Variables', {}).get('USE_DYNAMODB', 'false')
+                "exists": True,
+                "name": function_name,
+                "runtime": config.get("Runtime", "Unknown"),
+                "memory": config.get("MemorySize", 0),
+                "timeout": config.get("Timeout", 0),
+                "last_modified": config.get("LastModified", "Unknown"),
+                "use_dynamodb": config.get("Environment", {})
+                .get("Variables", {})
+                .get("USE_DYNAMODB", "false"),
             }
         except Exception:
-            return {'exists': False, 'name': function_name}
+            return {"exists": False, "name": function_name}
 
     def _get_infrastructure_info(self) -> Dict:
         """인프라 정보 수집"""
         info = {
-            'rds_instances': [],
-            'load_balancers': [],
-            'nat_gateways': [],
-            'snapshots': []
+            "rds_instances": [],
+            "load_balancers": [],
+            "nat_gateways": [],
+            "snapshots": [],
         }
 
         # RDS 인스턴스
         try:
             response = self.rds.describe_db_instances()
-            for db in response['DBInstances']:
-                if 'hairme' in db['DBInstanceIdentifier'].lower():
-                    info['rds_instances'].append({
-                        'id': db['DBInstanceIdentifier'],
-                        'status': db['DBInstanceStatus'],
-                        'size': db.get('AllocatedStorage', 0)
-                    })
+            for db in response["DBInstances"]:
+                if "hairme" in db["DBInstanceIdentifier"].lower():
+                    info["rds_instances"].append(
+                        {
+                            "id": db["DBInstanceIdentifier"],
+                            "status": db["DBInstanceStatus"],
+                            "size": db.get("AllocatedStorage", 0),
+                        }
+                    )
         except Exception:
             pass
 
         # ALB
         try:
             response = self.elbv2.describe_load_balancers()
-            for lb in response['LoadBalancers']:
-                if 'hairme' in lb['LoadBalancerName'].lower():
-                    info['load_balancers'].append({
-                        'name': lb['LoadBalancerName'],
-                        'dns': lb['DNSName']
-                    })
+            for lb in response["LoadBalancers"]:
+                if "hairme" in lb["LoadBalancerName"].lower():
+                    info["load_balancers"].append(
+                        {"name": lb["LoadBalancerName"], "dns": lb["DNSName"]}
+                    )
         except Exception:
             pass
 
         # NAT Gateway
         try:
             response = self.ec2.describe_nat_gateways(
-                Filters=[{'Name': 'state', 'Values': ['available', 'pending']}]
+                Filters=[{"Name": "state", "Values": ["available", "pending"]}]
             )
-            info['nat_gateways'] = [
-                ng['NatGatewayId'] for ng in response['NatGateways']
+            info["nat_gateways"] = [
+                ng["NatGatewayId"] for ng in response["NatGateways"]
             ]
         except Exception:
             pass
@@ -232,13 +232,15 @@ class ChecklistGenerator:
         # RDS Snapshots
         try:
             response = self.rds.describe_db_snapshots()
-            for snap in response['DBSnapshots']:
-                if 'hairme' in snap['DBSnapshotIdentifier'].lower():
-                    info['snapshots'].append({
-                        'id': snap['DBSnapshotIdentifier'],
-                        'size': snap.get('AllocatedStorage', 0),
-                        'created': snap['SnapshotCreateTime'].strftime('%Y-%m-%d')
-                    })
+            for snap in response["DBSnapshots"]:
+                if "hairme" in snap["DBSnapshotIdentifier"].lower():
+                    info["snapshots"].append(
+                        {
+                            "id": snap["DBSnapshotIdentifier"],
+                            "size": snap.get("AllocatedStorage", 0),
+                            "created": snap["SnapshotCreateTime"].strftime("%Y-%m-%d"),
+                        }
+                    )
         except Exception:
             pass
 
@@ -246,20 +248,22 @@ class ChecklistGenerator:
 
     def _get_cost_info(self) -> Dict:
         """비용 정보 수집 (cost_analysis.json에서)"""
-        cost_file = self.project_root / 'cost_analysis.json'
+        cost_file = self.project_root / "cost_analysis.json"
 
         if cost_file.exists():
-            with open(cost_file, 'r') as f:
+            with open(cost_file, "r") as f:
                 data = json.load(f)
                 return {
-                    'available': True,
-                    'last_month': data.get('last_month', {}).get('total', 0),
-                    'current_month': data.get('current_month', {}).get('total', 0),
-                    'savings': data.get('savings', {}).get('savings', 0),
-                    'savings_percent': data.get('savings', {}).get('savings_percent', 0)
+                    "available": True,
+                    "last_month": data.get("last_month", {}).get("total", 0),
+                    "current_month": data.get("current_month", {}).get("total", 0),
+                    "savings": data.get("savings", {}).get("savings", 0),
+                    "savings_percent": data.get("savings", {}).get(
+                        "savings_percent", 0
+                    ),
                 }
         else:
-            return {'available': False}
+            return {"available": False}
 
     def generate_checklist(self) -> str:
         """체크리스트 마크다운 생성"""
@@ -278,22 +282,25 @@ class ChecklistGenerator:
             else:
                 return "❌"
 
-        files = self.data.get('files', {})
-        dynamodb = self.data.get('dynamodb', {})
-        migration = self.data.get('migration', {})
-        lambda_info = self.data.get('lambda', {})
-        infra = self.data.get('infrastructure', {})
-        cost = self.data.get('cost', {})
+        files = self.data.get("files", {})
+        dynamodb = self.data.get("dynamodb", {})
+        migration = self.data.get("migration", {})
+        lambda_info = self.data.get("lambda", {})
+        infra = self.data.get("infrastructure", {})
+        cost = self.data.get("cost", {})
 
         # 파일 통계
-        files_exist = len([f for f in files.get('required', []) if f.get('exists')])
-        files_total = len(files.get('required', []))
+        files_exist = len([f for f in files.get("required", []) if f.get("exists")])
+        files_total = len(files.get("required", []))
 
         # 최종 판정
         all_files = files_exist == files_total
-        db_ok = dynamodb.get('exists') and dynamodb.get('status') == 'ACTIVE'
-        migration_ok = migration.get('completed')
-        infra_clean = len(infra.get('rds_instances', [])) == 0 and len(infra.get('load_balancers', [])) == 0
+        db_ok = dynamodb.get("exists") and dynamodb.get("status") == "ACTIVE"
+        migration_ok = migration.get("completed")
+        infra_clean = (
+            len(infra.get("rds_instances", [])) == 0
+            and len(infra.get("load_balancers", [])) == 0
+        )
 
         if all_files and db_ok and migration_ok:
             verdict = "✅ 배포 가능"
@@ -320,17 +327,17 @@ class ChecklistGenerator:
 """
 
         # 파일 목록
-        for file_info in files.get('required', []):
-            path = file_info['path']
-            exists = file_info.get('exists', False)
+        for file_info in files.get("required", []):
+            path = file_info["path"]
+            exists = file_info.get("exists", False)
             if exists:
-                size_kb = file_info.get('size', 0) / 1024
-                lines = file_info.get('lines', 0)
+                size_kb = file_info.get("size", 0) / 1024
+                lines = file_info.get("lines", 0)
                 md += f"- {checkbox(exists)} {path} (크기: {size_kb:.1f}KB, 라인: {lines})\n"
             else:
                 md += f"- {checkbox(exists)} {path} **[누락]**\n"
 
-        if files.get('missing'):
+        if files.get("missing"):
             md += f"\n**누락 파일**: {', '.join(files['missing'])}\n"
 
         md += f"""
@@ -365,8 +372,16 @@ class ChecklistGenerator:
 
 """
 
-        if migration.get('rds_count') is not None:
-            migration_rate = (migration.get('dynamodb_count', 0) / migration.get('rds_count', 1) * 100) if migration.get('rds_count', 0) > 0 else 0
+        if migration.get("rds_count") is not None:
+            migration_rate = (
+                (
+                    migration.get("dynamodb_count", 0)
+                    / migration.get("rds_count", 1)
+                    * 100
+                )
+                if migration.get("rds_count", 0) > 0
+                else 0
+            )
             md += f"""- {checkbox(migration_ok)} RDS 레코드 수: {migration.get('rds_count', 0):,}
 - {checkbox(migration_ok)} DynamoDB 레코드 수: {migration.get('dynamodb_count', 0):,}
 - {checkbox(migration_rate >= 95)} 마이그레이션율: {migration_rate:.1f}%
@@ -416,7 +431,7 @@ curl -X POST http://localhost:8000/api/analyze -F "file=@test_image.jpg"
 
 """
 
-        if lambda_info.get('exists'):
+        if lambda_info.get("exists"):
             md += f"""- {checkbox(True)} Lambda 함수: {lambda_info.get('name')} 존재
 - {checkbox(lambda_info.get('use_dynamodb') == 'true')} 환경 변수: USE_DYNAMODB={lambda_info.get('use_dynamodb')}
 - {checkbox(True)} Runtime: {lambda_info.get('runtime')}
@@ -445,21 +460,23 @@ curl -X POST http://localhost:8000/api/analyze -F "file=@test_image.jpg"
 """
 
         # RDS
-        if infra.get('rds_instances'):
-            for db in infra['rds_instances']:
-                md += f"- [ ] RDS 인스턴스: {db['id']} ({db['status']}) **[아직 존재]**\n"
+        if infra.get("rds_instances"):
+            for db in infra["rds_instances"]:
+                md += (
+                    f"- [ ] RDS 인스턴스: {db['id']} ({db['status']}) **[아직 존재]**\n"
+                )
         else:
             md += f"- {checkbox(True)} RDS 인스턴스: 모두 삭제됨\n"
 
         # ALB
-        if infra.get('load_balancers'):
-            for lb in infra['load_balancers']:
+        if infra.get("load_balancers"):
+            for lb in infra["load_balancers"]:
                 md += f"- [ ] ALB: {lb['name']} **[아직 존재]**\n"
         else:
             md += f"- {checkbox(True)} ALB: 모두 삭제됨\n"
 
         # NAT Gateway
-        if infra.get('nat_gateways'):
+        if infra.get("nat_gateways"):
             md += f"- [ ] NAT Gateway: {len(infra['nat_gateways'])}개 존재 **[비용 발생 중]**\n"
         else:
             md += f"- {checkbox(True)} NAT Gateway: 모두 삭제됨\n"
@@ -467,8 +484,8 @@ curl -X POST http://localhost:8000/api/analyze -F "file=@test_image.jpg"
         md += "\n### 백업 확인\n"
 
         # Snapshots
-        if infra.get('snapshots'):
-            for snap in infra['snapshots']:
+        if infra.get("snapshots"):
+            for snap in infra["snapshots"]:
                 md += f"- {checkbox(True)} RDS 스냅샷: {snap['id']} ({snap['size']}GB, {snap['created']})\n"
         else:
             md += f"- [ ] RDS 스냅샷 없음 **[롤백 불가]**\n"
@@ -484,7 +501,7 @@ curl -X POST http://localhost:8000/api/analyze -F "file=@test_image.jpg"
 
 """
 
-        if cost.get('available'):
+        if cost.get("available"):
             md += f"""### 이전 (RDS 기반)
 - **총 비용**: ${cost.get('last_month', 0):.2f}/월
 
@@ -516,8 +533,8 @@ python scripts/cost_verification.py
 
 """
 
-        if infra.get('snapshots'):
-            latest_snapshot = infra['snapshots'][0]  # 첫 번째가 최신이라 가정
+        if infra.get("snapshots"):
+            latest_snapshot = infra["snapshots"][0]  # 첫 번째가 최신이라 가정
             md += f"""- {checkbox(True)} RDS 스냅샷 존재: {latest_snapshot['id']}
 - {checkbox(True)} 스냅샷 크기: {latest_snapshot['size']} GB
 - {checkbox(True)} 생성일: {latest_snapshot['created']}
@@ -527,7 +544,7 @@ python scripts/cost_verification.py
 
 """
 
-        rollback_script = self.project_root / 'scripts' / 'rollback_to_rds.py'
+        rollback_script = self.project_root / "scripts" / "rollback_to_rds.py"
         md += f"""- {checkbox(rollback_script.exists())} rollback_to_rds.py 스크립트 존재
 - [ ] 롤백 매뉴얼 작성됨 (ROLLBACK.md)
 - [ ] 백업 데이터 검증 완료
@@ -562,7 +579,7 @@ python scripts/cost_verification.py
             passed_items.append("DynamoDB 테이블 정상")
         if migration_ok:
             passed_items.append("데이터 마이그레이션 완료")
-        if lambda_info.get('exists') and lambda_info.get('use_dynamodb') == 'true':
+        if lambda_info.get("exists") and lambda_info.get("use_dynamodb") == "true":
             passed_items.append("Lambda DynamoDB 모드 설정")
         if infra_clean:
             passed_items.append("불필요 인프라 정리 완료")
@@ -579,7 +596,7 @@ python scripts/cost_verification.py
             failed_items.append("DynamoDB 테이블 미생성 또는 비활성")
         if not migration_ok:
             failed_items.append("데이터 마이그레이션 미완료")
-        if not infra.get('snapshots'):
+        if not infra.get("snapshots"):
             failed_items.append("RDS 백업 스냅샷 없음")
 
         if failed_items:
@@ -591,13 +608,15 @@ python scripts/cost_verification.py
         md += "\n### ⚠️ 경고 항목\n"
 
         warnings = []
-        if not dynamodb.get('has_gsi'):
+        if not dynamodb.get("has_gsi"):
             warnings.append("GSI 없음 (최신 분석 조회가 느릴 수 있음)")
-        if not lambda_info.get('exists'):
+        if not lambda_info.get("exists"):
             warnings.append("Lambda 함수 없음 (ECS 사용 권장)")
         if not infra_clean:
-            warnings.append(f"정리되지 않은 리소스: RDS {len(infra.get('rds_instances', []))}, ALB {len(infra.get('load_balancers', []))}, NAT {len(infra.get('nat_gateways', []))}")
-        if not cost.get('available'):
+            warnings.append(
+                f"정리되지 않은 리소스: RDS {len(infra.get('rds_instances', []))}, ALB {len(infra.get('load_balancers', []))}, NAT {len(infra.get('nat_gateways', []))}"
+            )
+        if not cost.get("available"):
             warnings.append("비용 정보 미확인")
 
         if warnings:
@@ -666,13 +685,15 @@ python scripts/generate_checklist.py
 
     def save_checklist(self, content: str):
         """체크리스트 파일 저장"""
-        output_path = self.project_root / 'VERIFICATION_CHECKLIST.md'
+        output_path = self.project_root / "VERIFICATION_CHECKLIST.md"
 
-        with open(output_path, 'w', encoding='utf-8') as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
         print(f"{Colors.GREEN}✅ 체크리스트 생성 완료: {output_path}{Colors.RESET}")
-        print(f"{Colors.CYAN}ℹ️  파일 크기: {output_path.stat().st_size / 1024:.1f} KB{Colors.RESET}")
+        print(
+            f"{Colors.CYAN}ℹ️  파일 크기: {output_path.stat().st_size / 1024:.1f} KB{Colors.RESET}"
+        )
 
     def run(self):
         """실행"""

@@ -16,7 +16,7 @@ class MySQLAnalysisRepository(AnalysisRepository):
         analysis_result: Dict[str, Any],
         processing_time: float,
         detection_method: str,
-        mp_features: Optional[Any] = None
+        mp_features: Optional[Any] = None,
     ) -> Optional[int]:
         """
         Save analysis result to MySQL
@@ -36,8 +36,8 @@ class MySQLAnalysisRepository(AnalysisRepository):
             mediapipe_agreement = None
             if mp_features:
                 mediapipe_agreement = (
-                    mp_features.face_shape in gemini_shape or
-                    gemini_shape in mp_features.face_shape
+                    mp_features.face_shape in gemini_shape
+                    or gemini_shape in mp_features.face_shape
                 )
 
             recommendations = analysis_result.get("recommendations", [])
@@ -45,7 +45,9 @@ class MySQLAnalysisRepository(AnalysisRepository):
             history = AnalysisHistory(
                 image_hash=image_hash,
                 face_shape=gemini_shape,
-                personal_color=analysis_result.get("analysis", {}).get("personal_color"),
+                personal_color=analysis_result.get("analysis", {}).get(
+                    "personal_color"
+                ),
                 recommendations=recommendations,
                 recommended_styles=recommendations,
                 processing_time=processing_time,
@@ -63,8 +65,12 @@ class MySQLAnalysisRepository(AnalysisRepository):
 
                 # Ratios (division by zero protection)
                 if mp_features.cheekbone_width > 0:
-                    history.mediapipe_forehead_ratio = mp_features.forehead_width / mp_features.cheekbone_width
-                    history.mediapipe_jaw_ratio = mp_features.jaw_width / mp_features.cheekbone_width
+                    history.mediapipe_forehead_ratio = (
+                        mp_features.forehead_width / mp_features.cheekbone_width
+                    )
+                    history.mediapipe_jaw_ratio = (
+                        mp_features.jaw_width / mp_features.cheekbone_width
+                    )
 
                 # Skin measurements
                 history.mediapipe_ITA_value = mp_features.ITA_value
@@ -74,20 +80,25 @@ class MySQLAnalysisRepository(AnalysisRepository):
                 history.mediapipe_confidence = mp_features.confidence
                 history.mediapipe_features_complete = True
 
-                logger.info(f"✅ MediaPipe 연속형 변수 저장: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}")
+                logger.info(
+                    f"✅ MediaPipe 연속형 변수 저장: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}"
+                )
 
             db.add(history)
             db.commit()
             db.refresh(history)
 
             logger.info(f"✅ MySQL 저장 성공 (ID: {history.id})")
-            log_structured("database_saved", {
-                "backend": "mysql",
-                "record_id": history.id,
-                "mediapipe_enabled": mp_features is not None,
-                "mediapipe_agreement": mediapipe_agreement,
-                "recommendations_count": len(recommendations)
-            })
+            log_structured(
+                "database_saved",
+                {
+                    "backend": "mysql",
+                    "record_id": history.id,
+                    "mediapipe_enabled": mp_features is not None,
+                    "mediapipe_agreement": mediapipe_agreement,
+                    "recommendations_count": len(recommendations),
+                },
+            )
 
             db.close()
             return history.id
@@ -104,20 +115,24 @@ class MySQLAnalysisRepository(AnalysisRepository):
             return None
 
         try:
-            record = db.query(AnalysisHistory).filter(
-                AnalysisHistory.id == analysis_id
-            ).first()
+            record = (
+                db.query(AnalysisHistory)
+                .filter(AnalysisHistory.id == analysis_id)
+                .first()
+            )
 
             if record:
                 result = {
-                    'id': record.id,
-                    'image_hash': record.image_hash,
-                    'face_shape': record.face_shape,
-                    'personal_color': record.personal_color,
-                    'recommendations': record.recommendations,
-                    'processing_time': record.processing_time,
-                    'detection_method': record.detection_method,
-                    'created_at': record.created_at.isoformat() if record.created_at else None
+                    "id": record.id,
+                    "image_hash": record.image_hash,
+                    "face_shape": record.face_shape,
+                    "personal_color": record.personal_color,
+                    "recommendations": record.recommendations,
+                    "processing_time": record.processing_time,
+                    "detection_method": record.detection_method,
+                    "created_at": (
+                        record.created_at.isoformat() if record.created_at else None
+                    ),
                 }
                 db.close()
                 return result
@@ -131,11 +146,7 @@ class MySQLAnalysisRepository(AnalysisRepository):
             return None
 
     def save_feedback(
-        self,
-        analysis_id: int,
-        style_index: int,
-        feedback: str,
-        naver_clicked: bool
+        self, analysis_id: int, style_index: int, feedback: str, naver_clicked: bool
     ) -> bool:
         """Save user feedback to MySQL"""
         db = get_db_session()
@@ -143,9 +154,11 @@ class MySQLAnalysisRepository(AnalysisRepository):
             return False
 
         try:
-            record = db.query(AnalysisHistory).filter(
-                AnalysisHistory.id == analysis_id
-            ).first()
+            record = (
+                db.query(AnalysisHistory)
+                .filter(AnalysisHistory.id == analysis_id)
+                .first()
+            )
 
             if not record:
                 logger.error(f"❌ Analysis not found: {analysis_id}")
@@ -164,7 +177,9 @@ class MySQLAnalysisRepository(AnalysisRepository):
                 record.style_3_naver_clicked = naver_clicked
 
             db.commit()
-            logger.info(f"✅ MySQL 피드백 저장 완료: ID={analysis_id}, style={style_index}")
+            logger.info(
+                f"✅ MySQL 피드백 저장 완료: ID={analysis_id}, style={style_index}"
+            )
             db.close()
             return True
 
@@ -178,12 +193,12 @@ class MySQLAnalysisRepository(AnalysisRepository):
         db = get_db_session()
         if not db:
             return {
-                'success': False,
-                'total_analysis': 0,
-                'total_feedback': 0,
-                'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-                'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-                'recent_feedbacks': []
+                "success": False,
+                "total_analysis": 0,
+                "total_feedback": 0,
+                "like_counts": {"style_1": 0, "style_2": 0, "style_3": 0},
+                "dislike_counts": {"style_1": 0, "style_2": 0, "style_3": 0},
+                "recent_feedbacks": [],
             }
 
         try:
@@ -193,60 +208,72 @@ class MySQLAnalysisRepository(AnalysisRepository):
             # Feedback counts
             records = db.query(AnalysisHistory).all()
 
-            like_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0}
-            dislike_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0}
+            like_counts = {"style_1": 0, "style_2": 0, "style_3": 0}
+            dislike_counts = {"style_1": 0, "style_2": 0, "style_3": 0}
             total_feedback = 0
 
             for record in records:
                 for i in [1, 2, 3]:
-                    feedback_field = getattr(record, f'style_{i}_feedback', None)
-                    if feedback_field in ['good', 'like']:
-                        like_counts[f'style_{i}'] += 1
+                    feedback_field = getattr(record, f"style_{i}_feedback", None)
+                    if feedback_field in ["good", "like"]:
+                        like_counts[f"style_{i}"] += 1
                         total_feedback += 1
-                    elif feedback_field in ['bad', 'dislike']:
-                        dislike_counts[f'style_{i}'] += 1
+                    elif feedback_field in ["bad", "dislike"]:
+                        dislike_counts[f"style_{i}"] += 1
                         total_feedback += 1
 
             # Recent feedbacks
-            recent = db.query(AnalysisHistory).filter(
-                AnalysisHistory.feedback_at.isnot(None)
-            ).order_by(AnalysisHistory.feedback_at.desc()).limit(5).all()
+            recent = (
+                db.query(AnalysisHistory)
+                .filter(AnalysisHistory.feedback_at.isnot(None))
+                .order_by(AnalysisHistory.feedback_at.desc())
+                .limit(5)
+                .all()
+            )
 
             recent_data = []
             for record in recent:
-                recent_data.append({
-                    'id': record.id,
-                    'face_shape': record.face_shape,
-                    'personal_color': record.personal_color,
-                    'style_1_feedback': record.style_1_feedback,
-                    'style_2_feedback': record.style_2_feedback,
-                    'style_3_feedback': record.style_3_feedback,
-                    'style_1_naver_clicked': record.style_1_naver_clicked,
-                    'style_2_naver_clicked': record.style_2_naver_clicked,
-                    'style_3_naver_clicked': record.style_3_naver_clicked,
-                    'feedback_at': record.feedback_at.isoformat() if record.feedback_at else None,
-                    'created_at': record.created_at.isoformat() if record.created_at else None
-                })
+                recent_data.append(
+                    {
+                        "id": record.id,
+                        "face_shape": record.face_shape,
+                        "personal_color": record.personal_color,
+                        "style_1_feedback": record.style_1_feedback,
+                        "style_2_feedback": record.style_2_feedback,
+                        "style_3_feedback": record.style_3_feedback,
+                        "style_1_naver_clicked": record.style_1_naver_clicked,
+                        "style_2_naver_clicked": record.style_2_naver_clicked,
+                        "style_3_naver_clicked": record.style_3_naver_clicked,
+                        "feedback_at": (
+                            record.feedback_at.isoformat()
+                            if record.feedback_at
+                            else None
+                        ),
+                        "created_at": (
+                            record.created_at.isoformat() if record.created_at else None
+                        ),
+                    }
+                )
 
             db.close()
 
             return {
-                'success': True,
-                'total_analysis': total_analysis,
-                'total_feedback': total_feedback,
-                'like_counts': like_counts,
-                'dislike_counts': dislike_counts,
-                'recent_feedbacks': recent_data
+                "success": True,
+                "total_analysis": total_analysis,
+                "total_feedback": total_feedback,
+                "like_counts": like_counts,
+                "dislike_counts": dislike_counts,
+                "recent_feedbacks": recent_data,
             }
 
         except Exception as e:
             logger.error(f"❌ MySQL 통계 조회 실패: {str(e)}")
             db.close()
             return {
-                'success': False,
-                'total_analysis': 0,
-                'total_feedback': 0,
-                'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-                'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-                'recent_feedbacks': []
+                "success": False,
+                "total_analysis": 0,
+                "total_feedback": 0,
+                "like_counts": {"style_1": 0, "style_2": 0, "style_3": 0},
+                "dislike_counts": {"style_1": 0, "style_2": 0, "style_3": 0},
+                "recent_feedbacks": [],
             }

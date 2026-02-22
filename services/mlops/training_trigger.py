@@ -24,13 +24,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Configuration
-RETRAIN_THRESHOLD = int(os.getenv('MLOPS_RETRAIN_THRESHOLD', '100'))
-TRAINER_LAMBDA_NAME = os.getenv('MLOPS_TRAINER_LAMBDA', 'hairme-model-trainer')
-SNS_TOPIC_ARN = os.getenv('MLOPS_SNS_TOPIC_ARN', '')  # 알림용 (선택)
+RETRAIN_THRESHOLD = int(os.getenv("MLOPS_RETRAIN_THRESHOLD", "100"))
+TRAINER_LAMBDA_NAME = os.getenv("MLOPS_TRAINER_LAMBDA", "hairme-model-trainer")
+SNS_TOPIC_ARN = os.getenv("MLOPS_SNS_TOPIC_ARN", "")  # 알림용 (선택)
 
 try:
     import boto3
     from botocore.exceptions import ClientError
+
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
@@ -43,7 +44,7 @@ class TrainingTrigger:
     EventBridge 규칙 생성 및 Lambda 호출을 담당합니다.
     """
 
-    def __init__(self, region: str = 'ap-northeast-2'):
+    def __init__(self, region: str = "ap-northeast-2"):
         """
         초기화
 
@@ -64,17 +65,17 @@ class TrainingTrigger:
             logger.warning("⚠️ boto3 not installed - Training trigger 비활성화")
             return
 
-        mlops_enabled = os.getenv('MLOPS_ENABLED', 'false').lower() == 'true'
+        mlops_enabled = os.getenv("MLOPS_ENABLED", "false").lower() == "true"
         if not mlops_enabled:
             logger.info("ℹ️ MLOps 비활성화 (MLOPS_ENABLED=false)")
             return
 
         try:
-            self.lambda_client = boto3.client('lambda', region_name=self.region)
-            self.events_client = boto3.client('events', region_name=self.region)
+            self.lambda_client = boto3.client("lambda", region_name=self.region)
+            self.events_client = boto3.client("events", region_name=self.region)
 
             if SNS_TOPIC_ARN:
-                self.sns_client = boto3.client('sns', region_name=self.region)
+                self.sns_client = boto3.client("sns", region_name=self.region)
 
             self.enabled = True
             logger.info("✅ Training trigger 초기화 완료")
@@ -97,30 +98,22 @@ class TrainingTrigger:
             }
         """
         if not self.enabled:
-            return {
-                "triggered": False,
-                "reason": "MLOps disabled"
-            }
+            return {"triggered": False, "reason": "MLOps disabled"}
 
         if pending_count < RETRAIN_THRESHOLD:
             return {
                 "triggered": False,
-                "reason": f"Threshold not met ({pending_count}/{RETRAIN_THRESHOLD})"
+                "reason": f"Threshold not met ({pending_count}/{RETRAIN_THRESHOLD})",
             }
 
         # 트리거 실행
         return self.trigger_training(
             trigger_type="data_threshold",
-            metadata={
-                "pending_count": pending_count,
-                "threshold": RETRAIN_THRESHOLD
-            }
+            metadata={"pending_count": pending_count, "threshold": RETRAIN_THRESHOLD},
         )
 
     def trigger_training(
-        self,
-        trigger_type: str = "manual",
-        metadata: Optional[Dict[str, Any]] = None
+        self, trigger_type: str = "manual", metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         재학습 Lambda 호출
@@ -137,25 +130,24 @@ class TrainingTrigger:
             }
         """
         if not self.enabled:
-            return {
-                "triggered": False,
-                "reason": "MLOps disabled"
-            }
+            return {"triggered": False, "reason": "MLOps disabled"}
 
         try:
             payload = {
                 "trigger_type": trigger_type,
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
-                "metadata": metadata or {}
+                "metadata": metadata or {},
             }
 
             response = self.lambda_client.invoke(
                 FunctionName=TRAINER_LAMBDA_NAME,
-                InvocationType='Event',  # 비동기 호출
-                Payload=json.dumps(payload)
+                InvocationType="Event",  # 비동기 호출
+                Payload=json.dumps(payload),
             )
 
-            invocation_id = response.get('ResponseMetadata', {}).get('RequestId', 'unknown')
+            invocation_id = response.get("ResponseMetadata", {}).get(
+                "RequestId", "unknown"
+            )
 
             logger.info(
                 f"✅ 재학습 트리거 성공: type={trigger_type}, "
@@ -166,37 +158,32 @@ class TrainingTrigger:
             if self.sns_client and SNS_TOPIC_ARN:
                 self._send_notification(
                     subject=f"[HairMe MLOps] 재학습 시작 ({trigger_type})",
-                    message=json.dumps(payload, indent=2, ensure_ascii=False)
+                    message=json.dumps(payload, indent=2, ensure_ascii=False),
                 )
 
             return {
                 "triggered": True,
                 "reason": f"Training triggered ({trigger_type})",
-                "invocation_id": invocation_id
+                "invocation_id": invocation_id,
             }
 
         except ClientError as e:
-            error_msg = e.response['Error']['Message']
+            error_msg = e.response["Error"]["Message"]
             logger.error(f"❌ 재학습 트리거 실패: {error_msg}")
             return {
                 "triggered": False,
-                "reason": f"Lambda invocation failed: {error_msg}"
+                "reason": f"Lambda invocation failed: {error_msg}",
             }
 
         except Exception as e:
             logger.error(f"❌ 재학습 트리거 실패: {e}")
-            return {
-                "triggered": False,
-                "reason": f"Error: {str(e)}"
-            }
+            return {"triggered": False, "reason": f"Error: {str(e)}"}
 
     def _send_notification(self, subject: str, message: str):
         """SNS 알림 발송"""
         try:
             self.sns_client.publish(
-                TopicArn=SNS_TOPIC_ARN,
-                Subject=subject,
-                Message=message
+                TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=message
             )
             logger.info(f"✅ SNS 알림 발송: {subject}")
         except Exception as e:
@@ -206,7 +193,7 @@ class TrainingTrigger:
         self,
         rule_name: str = "hairme-weekly-retrain",
         schedule: str = "cron(0 3 ? * SUN *)",  # 매주 일요일 03:00 UTC
-        enabled: bool = True
+        enabled: bool = True,
     ) -> Dict[str, Any]:
         """
         EventBridge 스케줄 규칙 생성
@@ -227,34 +214,29 @@ class TrainingTrigger:
             response = self.events_client.put_rule(
                 Name=rule_name,
                 ScheduleExpression=schedule,
-                State='ENABLED' if enabled else 'DISABLED',
-                Description='HairMe ML 모델 주간 재학습 스케줄'
+                State="ENABLED" if enabled else "DISABLED",
+                Description="HairMe ML 모델 주간 재학습 스케줄",
             )
 
-            rule_arn = response['RuleArn']
+            rule_arn = response["RuleArn"]
 
             # Lambda 타겟 설정
             self.events_client.put_targets(
                 Rule=rule_name,
                 Targets=[
                     {
-                        'Id': 'trainer-lambda',
-                        'Arn': f'arn:aws:lambda:{self.region}:{self._get_account_id()}:function:{TRAINER_LAMBDA_NAME}',
-                        'Input': json.dumps({
-                            "trigger_type": "scheduled",
-                            "schedule": schedule
-                        })
+                        "Id": "trainer-lambda",
+                        "Arn": f"arn:aws:lambda:{self.region}:{self._get_account_id()}:function:{TRAINER_LAMBDA_NAME}",
+                        "Input": json.dumps(
+                            {"trigger_type": "scheduled", "schedule": schedule}
+                        ),
                     }
-                ]
+                ],
             )
 
             logger.info(f"✅ EventBridge 규칙 설정 완료: {rule_name}")
 
-            return {
-                "success": True,
-                "rule_arn": rule_arn,
-                "schedule": schedule
-            }
+            return {"success": True, "rule_arn": rule_arn, "schedule": schedule}
 
         except Exception as e:
             logger.error(f"❌ EventBridge 규칙 설정 실패: {e}")
@@ -263,12 +245,14 @@ class TrainingTrigger:
     def _get_account_id(self) -> str:
         """AWS 계정 ID 조회"""
         try:
-            sts = boto3.client('sts', region_name=self.region)
-            return sts.get_caller_identity()['Account']
+            sts = boto3.client("sts", region_name=self.region)
+            return sts.get_caller_identity()["Account"]
         except Exception:
-            return '000000000000'
+            return "000000000000"
 
-    def get_rule_status(self, rule_name: str = "hairme-weekly-retrain") -> Dict[str, Any]:
+    def get_rule_status(
+        self, rule_name: str = "hairme-weekly-retrain"
+    ) -> Dict[str, Any]:
         """
         EventBridge 규칙 상태 조회
 
@@ -285,14 +269,14 @@ class TrainingTrigger:
             response = self.events_client.describe_rule(Name=rule_name)
 
             return {
-                "name": response['Name'],
-                "state": response['State'],
-                "schedule": response.get('ScheduleExpression', ''),
-                "arn": response['Arn']
+                "name": response["Name"],
+                "state": response["State"],
+                "schedule": response.get("ScheduleExpression", ""),
+                "arn": response["Arn"],
             }
 
         except ClientError as e:
-            if e.response['Error']['Code'] == 'ResourceNotFoundException':
+            if e.response["Error"]["Code"] == "ResourceNotFoundException":
                 return {"name": rule_name, "state": "NOT_FOUND"}
             raise
 

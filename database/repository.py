@@ -20,7 +20,7 @@ class AnalysisRepository(ABC):
         analysis_result: Dict[str, Any],
         processing_time: float,
         detection_method: str,
-        mp_features: Optional[Any] = None
+        mp_features: Optional[Any] = None,
     ) -> Optional[Union[int, str]]:
         """
         Save analysis result to database
@@ -56,7 +56,7 @@ class AnalysisRepository(ABC):
         analysis_id: Union[int, str],
         style_index: int,
         feedback: str,
-        naver_clicked: bool
+        naver_clicked: bool,
     ) -> bool:
         """
         Save user feedback for a specific style recommendation
@@ -95,11 +95,13 @@ def get_repository() -> AnalysisRepository:
         >>> repo = get_repository()
         >>> analysis_id = repo.save_analysis(...)
     """
-    use_dynamodb = os.getenv('USE_DYNAMODB', 'false').lower() == 'true'
+    use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
 
     if use_dynamodb:
         from database.dynamodb_repository import DynamoDBAnalysisRepository
+
         return DynamoDBAnalysisRepository()
     else:
         from database.mysql_repository import MySQLAnalysisRepository
+
         return MySQLAnalysisRepository()

@@ -9,7 +9,7 @@ from core.dependencies import (
     get_gemini_analysis_service,
     get_hybrid_service,
     get_feedback_collector,
-    get_retrain_queue
+    get_retrain_queue,
 )
 from core import dependencies
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -55,7 +55,7 @@ class TestDependencies:
             mediapipe_analyzer=mock_analyzer,
             hybrid_service=mock_hybrid,
             feedback_collector=mock_feedback,
-            retrain_queue=mock_retrain
+            retrain_queue=mock_retrain,
         )
 
         assert dependencies._mediapipe_analyzer is mock_analyzer

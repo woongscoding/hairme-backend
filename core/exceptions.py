@@ -12,7 +12,10 @@ class HairMeException(Exception):
 class NoFaceDetectedException(HairMeException):
     """Raised when no face is detected in the uploaded image"""
 
-    def __init__(self, message: str = "얼굴이 감지되지 않았습니다.\n밝은 곳에서 정면 사진을 촬영해주세요."):
+    def __init__(
+        self,
+        message: str = "얼굴이 감지되지 않았습니다.\n밝은 곳에서 정면 사진을 촬영해주세요.",
+    ):
         super().__init__(message)
 
 
@@ -57,7 +60,10 @@ class GeminiAPIException(HairMeException):
 class GeminiRateLimitException(GeminiAPIException):
     """Raised when Gemini API rate limit is exceeded"""
 
-    def __init__(self, message: str = "Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요."):
+    def __init__(
+        self,
+        message: str = "Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+    ):
         super().__init__(message)
 
 
@@ -78,7 +84,10 @@ class GeminiAuthenticationException(GeminiAPIException):
 class InvalidFileFormatException(HairMeException):
     """Raised when uploaded file format is invalid"""
 
-    def __init__(self, message: str = "지원하지 않는 파일 형식입니다. (jpg, jpeg, png, webp만 가능)"):
+    def __init__(
+        self,
+        message: str = "지원하지 않는 파일 형식입니다. (jpg, jpeg, png, webp만 가능)",
+    ):
         super().__init__(message)
 
 

@@ -9,7 +9,6 @@ from config.settings import settings
 from database.models import Base
 from core.logging import logger, log_structured
 
-
 SessionLocal: Optional[sessionmaker] = None
 
 
@@ -35,11 +34,8 @@ def init_database() -> bool:
         if "://admin@" in settings.DATABASE_URL and settings.DB_PASSWORD:
             # URL-encode password (handle special characters)
             encoded_password = urllib.parse.quote_plus(settings.DB_PASSWORD)
-            sync_db_url = settings.DATABASE_URL.replace(
-                "asyncmy", "pymysql"
-            ).replace(
-                "://admin@",
-                f"://admin:{encoded_password}@"
+            sync_db_url = settings.DATABASE_URL.replace("asyncmy", "pymysql").replace(
+                "://admin@", f"://admin:{encoded_password}@"
             )
             logger.info("Using DATABASE_URL with DB_PASSWORD injection (URL-encoded)")
         else:
@@ -47,16 +43,13 @@ def init_database() -> bool:
             logger.info("Using DATABASE_URL as-is (already has password)")
 
         # Mask password for security in logs
-        masked_url = sync_db_url.split('@')[0].split(':')[:-1]
-        db_host = sync_db_url.split('@')[1] if '@' in sync_db_url else 'unknown'
+        masked_url = sync_db_url.split("@")[0].split(":")[:-1]
+        db_host = sync_db_url.split("@")[1] if "@" in sync_db_url else "unknown"
         logger.info(f"Connecting to DB (masked): mysql+pymysql://admin:***@{db_host}")
 
         # Create engine
         engine = create_engine(
-            sync_db_url,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            echo=False
+            sync_db_url, pool_pre_ping=True, pool_recycle=3600, echo=False
         )
 
         # Create session factory
@@ -66,10 +59,10 @@ def init_database() -> bool:
         Base.metadata.create_all(bind=engine)
 
         logger.info("✅ MySQL 데이터베이스 연결 성공")
-        log_structured("database_connected", {
-            "database": "hairme-data",
-            "tables": ["analysis_history"]
-        })
+        log_structured(
+            "database_connected",
+            {"database": "hairme-data", "tables": ["analysis_history"]},
+        )
 
         return True
 

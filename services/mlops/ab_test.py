@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ModelVariant(Enum):
     """A/B 테스트 모델 변형"""
+
     CHAMPION = "champion"
     CHALLENGER = "challenger"
 
@@ -43,6 +44,7 @@ class ABTestConfig:
         challenger_traffic_percent: 새 모델 트래픽 비율 (0-100)
         enabled: 실험 활성화 여부
     """
+
     experiment_id: str = ""
     champion_model_version: str = "v6"
     challenger_model_version: str = ""
@@ -51,28 +53,30 @@ class ABTestConfig:
     started_at: Optional[str] = None
 
     @classmethod
-    def from_env(cls) -> 'ABTestConfig':
+    def from_env(cls) -> "ABTestConfig":
         """환경변수에서 설정 로드"""
-        enabled = os.getenv('ABTEST_ENABLED', 'false').lower() == 'true'
+        enabled = os.getenv("ABTEST_ENABLED", "false").lower() == "true"
 
         return cls(
-            experiment_id=os.getenv('ABTEST_EXPERIMENT_ID', ''),
-            champion_model_version=os.getenv('ABTEST_CHAMPION_VERSION', 'v6'),
-            challenger_model_version=os.getenv('ABTEST_CHALLENGER_VERSION', ''),
-            challenger_traffic_percent=int(os.getenv('ABTEST_CHALLENGER_PERCENT', '10')),
+            experiment_id=os.getenv("ABTEST_EXPERIMENT_ID", ""),
+            champion_model_version=os.getenv("ABTEST_CHAMPION_VERSION", "v6"),
+            challenger_model_version=os.getenv("ABTEST_CHALLENGER_VERSION", ""),
+            challenger_traffic_percent=int(
+                os.getenv("ABTEST_CHALLENGER_PERCENT", "10")
+            ),
             enabled=enabled,
-            started_at=os.getenv('ABTEST_STARTED_AT', None)
+            started_at=os.getenv("ABTEST_STARTED_AT", None),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """딕셔너리로 변환"""
         return {
-            'experiment_id': self.experiment_id,
-            'champion_model_version': self.champion_model_version,
-            'challenger_model_version': self.challenger_model_version,
-            'challenger_traffic_percent': self.challenger_traffic_percent,
-            'enabled': self.enabled,
-            'started_at': self.started_at
+            "experiment_id": self.experiment_id,
+            "champion_model_version": self.champion_model_version,
+            "challenger_model_version": self.challenger_model_version,
+            "challenger_traffic_percent": self.challenger_traffic_percent,
+            "enabled": self.enabled,
+            "started_at": self.started_at,
         }
 
 
@@ -166,9 +170,9 @@ class ABTestRouter:
             }
         """
         return {
-            'experiment_id': self.config.experiment_id if self.config.enabled else '',
-            'model_version': self.get_model_version(variant),
-            'ab_variant': variant.value
+            "experiment_id": self.config.experiment_id if self.config.enabled else "",
+            "model_version": self.get_model_version(variant),
+            "ab_variant": variant.value,
         }
 
     def _get_hash_bucket(self, user_id: str) -> int:
@@ -191,7 +195,7 @@ class ABTestRouter:
         hash_bytes = hashlib.md5(hash_input.encode()).digest()
 
         # 첫 4바이트를 정수로 변환 후 0-99 범위로 모듈러
-        hash_int = int.from_bytes(hash_bytes[:4], byteorder='big')
+        hash_int = int.from_bytes(hash_bytes[:4], byteorder="big")
         return hash_int % 100
 
     def is_abtest_active(self) -> bool:

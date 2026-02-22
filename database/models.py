@@ -9,6 +9,7 @@ Base = declarative_base()
 
 class AnalysisHistory(Base):
     """Analysis history table - v20.2.0 (MediaPipe transition complete)"""
+
     __tablename__ = "analysis_history"
 
     id = Column(Integer, primary_key=True, index=True)

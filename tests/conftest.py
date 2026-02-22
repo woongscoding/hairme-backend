@@ -58,11 +58,15 @@ def client():
 @pytest.fixture(scope="function")
 def client_with_mocks():
     """Create a test client with all external dependencies mocked"""
-    with patch('api.endpoints.analyze.mediapipe_analyzer') as mock_mp, \
-         patch('api.endpoints.analyze.hybrid_service') as mock_hybrid, \
-         patch('api.endpoints.analyze.feedback_collector') as mock_feedback, \
-         patch('api.endpoints.analyze.retrain_queue') as mock_queue, \
-         patch('core.cache.redis_client') as mock_redis:
+    with patch("api.endpoints.analyze.mediapipe_analyzer") as mock_mp, patch(
+        "api.endpoints.analyze.hybrid_service"
+    ) as mock_hybrid, patch(
+        "api.endpoints.analyze.feedback_collector"
+    ) as mock_feedback, patch(
+        "api.endpoints.analyze.retrain_queue"
+    ) as mock_queue, patch(
+        "core.cache.redis_client"
+    ) as mock_redis:
 
         # Configure mocks
         mock_mp.analyze_face.return_value = create_mock_face_features()
@@ -81,7 +85,7 @@ def create_mock_face_features():
         "face_shape_confidence": 0.92,
         "face_ratio": 1.45,
         "jawline_angle": 125.3,
-        "landmarks": [[0.5, 0.5] for _ in range(478)]
+        "landmarks": [[0.5, 0.5] for _ in range(478)],
     }
 
 
@@ -95,21 +99,21 @@ def create_mock_recommendations():
                 "name": "레이어드 컷",
                 "reason": "얼굴형과 잘 어울림",
                 "confidence": 0.95,
-                "ml_score": 8.5
+                "ml_score": 8.5,
             },
             {
                 "name": "시스루 뱅",
                 "reason": "이마 비율 보완",
                 "confidence": 0.88,
-                "ml_score": 8.2
+                "ml_score": 8.2,
             },
             {
                 "name": "웨이브 펌",
                 "reason": "부드러운 인상",
                 "confidence": 0.82,
-                "ml_score": 7.8
-            }
-        ]
+                "ml_score": 7.8,
+            },
+        ],
     }
 
 
@@ -117,9 +121,9 @@ def create_mock_recommendations():
 def sample_image_bytes():
     """Create a sample image for testing"""
     # Create a simple RGB image
-    img = Image.new('RGB', (640, 480), color='white')
+    img = Image.new("RGB", (640, 480), color="white")
     img_bytes = io.BytesIO()
-    img.save(img_bytes, format='JPEG')
+    img.save(img_bytes, format="JPEG")
     img_bytes.seek(0)
     return img_bytes
 
@@ -127,19 +131,17 @@ def sample_image_bytes():
 @pytest.fixture
 def sample_image_file(sample_image_bytes):
     """Create a sample UploadFile for testing"""
-    return {
-        "file": ("test_image.jpg", sample_image_bytes, "image/jpeg")
-    }
+    return {"file": ("test_image.jpg", sample_image_bytes, "image/jpeg")}
 
 
 # ========== Mock External Services ==========
 @pytest.fixture
 def mock_gemini_api():
     """Mock Gemini API responses"""
-    with patch('google.generativeai.GenerativeModel') as mock:
+    with patch("google.generativeai.GenerativeModel") as mock:
         mock_model = Mock()
         mock_response = Mock()
-        mock_response.text = '''```json
+        mock_response.text = """```json
 {
   "face_shape": "계란형",
   "personal_color": "봄웜",
@@ -149,7 +151,7 @@ def mock_gemini_api():
     {"name": "웨이브 펌", "reason": "부드러운 인상"}
   ]
 }
-```'''
+```"""
         mock_model.generate_content.return_value = mock_response
         mock.return_value = mock_model
         yield mock
@@ -158,7 +160,7 @@ def mock_gemini_api():
 @pytest.fixture
 def mock_mediapipe():
     """Mock MediaPipe face analyzer"""
-    with patch('models.mediapipe_analyzer.MediaPipeFaceAnalyzer') as mock:
+    with patch("models.mediapipe_analyzer.MediaPipeFaceAnalyzer") as mock:
         mock_analyzer = Mock()
         mock_analyzer.analyze_face.return_value = create_mock_face_features()
         mock.return_value = mock_analyzer
@@ -168,7 +170,7 @@ def mock_mediapipe():
 @pytest.fixture
 def mock_redis():
     """Mock Redis client"""
-    with patch('core.cache.redis_client') as mock:
+    with patch("core.cache.redis_client") as mock:
         mock.get.return_value = None
         mock.setex.return_value = True
         mock.ping.return_value = True
@@ -178,7 +180,7 @@ def mock_redis():
 @pytest.fixture
 def mock_ml_model():
     """Mock ML model predictions"""
-    with patch('core.ml_loader.predict_ml_score') as mock:
+    with patch("core.ml_loader.predict_ml_score") as mock:
         mock.return_value = (8.5, 0.92)  # (score, confidence)
         yield mock
 

@@ -22,7 +22,7 @@ from core.logging import logger, log_structured
 from core.monitoring import init_sentry
 
 # Lambda 환경 감지 - 무거운 import를 지연 로딩
-IS_LAMBDA = os.environ.get('AWS_LAMBDA_FUNCTION_NAME') is not None
+IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
 # 경량 import만 즉시 로드
 from routers.admin import router as admin_router
@@ -60,14 +60,14 @@ startup_status = {
     "gemini": False,
     "ml_service": False,
     "feedback_collector": False,
-    "retrain_queue": False
+    "retrain_queue": False,
 }
 
 # ========== FastAPI App Initialization ==========
 app = FastAPI(
     title=settings.APP_TITLE,
     description=settings.APP_DESCRIPTION,
-    version=settings.APP_VERSION
+    version=settings.APP_VERSION,
 )
 
 # Attach limiter to app state
@@ -84,10 +84,7 @@ if settings.ENVIRONMENT == "production":
     allowed_hosts = ["*"]
     logger.info(f"🔒 Trusted hosts: {allowed_hosts}")
 
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=allowed_hosts
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 
 # ========== CORS Middleware ==========
@@ -180,6 +177,7 @@ def ensure_lambda_initialization():
 
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
         logger.info("✅ Gemini API configured for Lambda")
@@ -194,9 +192,10 @@ def ensure_lambda_initialization():
 
         db_initialized = init_database()
         if db_initialized:
-            use_dynamodb = os.environ.get('USE_DYNAMODB', 'false').lower() == 'true'
+            use_dynamodb = os.environ.get("USE_DYNAMODB", "false").lower() == "true"
             if not use_dynamodb:
                 from database.migration import migrate_database_schema
+
                 migrate_database_schema()
 
         init_redis()
@@ -220,16 +219,19 @@ async def lambda_init_middleware(request: Request, call_next):
 # ========== File Size Limit Middleware ==========
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
+
 @app.middleware("http")
 async def limit_upload_size(request: Request, call_next):
     """Limit file upload size to prevent DoS attacks"""
     if request.method == "POST":
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > MAX_FILE_SIZE:
-            logger.warning(f"🚫 File too large: {int(content_length)} bytes (max: {MAX_FILE_SIZE})")
+            logger.warning(
+                f"🚫 File too large: {int(content_length)} bytes (max: {MAX_FILE_SIZE})"
+            )
             raise HTTPException(
                 status_code=413,
-                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB",
             )
     return await call_next(request)
 
@@ -257,6 +259,7 @@ async def startup_event():
 
     try:
         import google.generativeai as genai
+
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
         logger.info("✅ Gemini API 설정 완료")
@@ -270,9 +273,10 @@ async def startup_event():
 
     db_initialized = init_database()
     if db_initialized:
-        use_dynamodb = os.environ.get('USE_DYNAMODB', 'false').lower() == 'true'
+        use_dynamodb = os.environ.get("USE_DYNAMODB", "false").lower() == "true"
         if not use_dynamodb:
             from database.migration import migrate_database_schema
+
             migrate_database_schema()
 
     init_redis()
@@ -296,14 +300,16 @@ async def root():
             "personal_color": "enabled (ITA algorithm)",
             "hair_color_recommendation": "enabled",
             "hairstyle_recommendation": "enabled",
-            "hair_color_synthesis": "enabled" if settings.GEMINI_API_KEY else "disabled"
+            "hair_color_synthesis": (
+                "enabled" if settings.GEMINI_API_KEY else "disabled"
+            ),
         },
         "endpoints": {
             "beauty": "/api/beauty/analyze",
             "personal_color": "/api/personal-color/analyze",
             "hair_color": "/api/hair-color/{type}",
-            "hairstyle": "/api/analyze"
-        }
+            "hairstyle": "/api/analyze",
+        },
     }
 
 
@@ -334,16 +340,14 @@ async def health_check(deep: bool = False):
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
         "startup": {
-            "required_services": {
-                "gemini": startup_status["gemini"]
-            },
+            "required_services": {"gemini": startup_status["gemini"]},
             "optional_services": {
                 "mediapipe": startup_status["mediapipe"],
                 "ml_service": startup_status["ml_service"],
                 "feedback_collector": startup_status["feedback_collector"],
-                "retrain_queue": startup_status["retrain_queue"]
-            }
-        }
+                "retrain_queue": startup_status["retrain_queue"],
+            },
+        },
     }
 
     # Run comprehensive health checks
@@ -353,11 +357,13 @@ async def health_check(deep: bool = False):
     )
 
     # Merge results
-    base_status.update({
-        "checks": comprehensive_result["checks"],
-        "check_duration_ms": comprehensive_result["check_duration_ms"],
-        "timestamp": comprehensive_result["timestamp"]
-    })
+    base_status.update(
+        {
+            "checks": comprehensive_result["checks"],
+            "check_duration_ms": comprehensive_result["check_duration_ms"],
+            "timestamp": comprehensive_result["timestamp"],
+        }
+    )
 
     # Update overall status based on checks
     if comprehensive_result["status"] == "degraded":
@@ -370,6 +376,7 @@ async def health_check(deep: bool = False):
 # For AWS Lambda deployment using Mangum
 try:
     from mangum import Mangum
+
     # lifespan="on" 으로 설정하면 첫 요청 시 startup 이벤트가 실행됨
     # Lambda init 단계에서는 import만 하고, 무거운 작업은 첫 요청 시 수행
     handler = Mangum(app, lifespan="on")
@@ -382,4 +389,5 @@ except ImportError:
 # ========== Main Entry Point ==========
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
