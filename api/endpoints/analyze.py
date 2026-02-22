@@ -111,7 +111,7 @@ async def analyze_face(
     ml_recommender: 'MLRecommendationService' = Depends(get_hybrid_service)
 ):
     """
-    ML 기반 얼굴 분석 및 헤어스타일 추천 (v21.0.0: ML-only mode)
+    ML 기반 얼굴 분석 및 헤어스타일 추천 (v20.2.0: ML-only mode)
 
     Gemini 의존성 제거 - MediaPipe + ML 모델만 사용
     """

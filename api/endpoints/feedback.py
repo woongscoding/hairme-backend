@@ -260,7 +260,7 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
 
             recent_data: List[Dict[str, Any]] = []
             for r in recent:
-                recent_data.append({
+                entry = {
                     "id": r.id,
                     "face_shape": r.face_shape,
                     "personal_color": r.personal_color,
@@ -272,18 +272,29 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
                     "style_3_naver_clicked": r.style_3_naver_clicked,
                     "feedback_at": r.feedback_at.isoformat() if r.feedback_at else None,
                     "created_at": r.created_at.isoformat() if r.created_at else None
-                })
+                }
+                # 트렌드 스타일 피드백 (컬럼이 존재하면 포함)
+                for i in [4, 5]:
+                    if hasattr(r, f'style_{i}_feedback'):
+                        entry[f'style_{i}_feedback'] = getattr(r, f'style_{i}_feedback', None)
+                    if hasattr(r, f'style_{i}_naver_clicked'):
+                        entry[f'style_{i}_naver_clicked'] = getattr(r, f'style_{i}_naver_clicked', False)
+                recent_data.append(entry)
 
             # Like/Dislike statistics
             like_counts = {
                 "style_1": 0,
                 "style_2": 0,
-                "style_3": 0
+                "style_3": 0,
+                "style_4": 0,
+                "style_5": 0
             }
             dislike_counts = {
                 "style_1": 0,
                 "style_2": 0,
-                "style_3": 0
+                "style_3": 0,
+                "style_4": 0,
+                "style_5": 0
             }
 
             all_feedback = db.query(AnalysisHistory).filter(
@@ -291,21 +302,12 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
             ).all()
 
             for record in all_feedback:
-                # Support both 'like'/'dislike' and 'good'/'bad' values
-                if record.style_1_feedback in ["like", "good"]:
-                    like_counts["style_1"] += 1
-                elif record.style_1_feedback in ["dislike", "bad"]:
-                    dislike_counts["style_1"] += 1
-
-                if record.style_2_feedback in ["like", "good"]:
-                    like_counts["style_2"] += 1
-                elif record.style_2_feedback in ["dislike", "bad"]:
-                    dislike_counts["style_2"] += 1
-
-                if record.style_3_feedback in ["like", "good"]:
-                    like_counts["style_3"] += 1
-                elif record.style_3_feedback in ["dislike", "bad"]:
-                    dislike_counts["style_3"] += 1
+                for i in [1, 2, 3, 4, 5]:
+                    fb_val = getattr(record, f'style_{i}_feedback', None)
+                    if fb_val in ["like", "good"]:
+                        like_counts[f"style_{i}"] += 1
+                    elif fb_val in ["dislike", "bad"]:
+                        dislike_counts[f"style_{i}"] += 1
 
             db.close()
 

@@ -374,6 +374,114 @@ class S3FeedbackStore:
                 "should_trigger_training": False
             }
 
+    def save_trending_feedback(
+        self,
+        analysis_id: str,
+        face_shape: str,
+        skin_tone: str,
+        style_name: str,
+        feedback: str,
+        face_features: Optional[List[float]] = None,
+        skin_features: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """
+        트렌드 스타일 피드백을 S3에 저장
+
+        hairstyle_id가 없는 트렌드 스타일에 대해
+        SentenceTransformer로 on-the-fly 임베딩을 생성한 후
+        기존 save_feedback()과 동일한 NPZ 포맷으로 저장합니다.
+
+        Args:
+            analysis_id: 분석 ID (UUID)
+            face_shape: 얼굴형
+            skin_tone: 피부톤
+            style_name: 트렌드 스타일명
+            feedback: 'good' or 'bad'
+            face_features: MediaPipe 얼굴 측정값 (6차원)
+            skin_features: MediaPipe 피부 측정값 (2차원)
+
+        Returns:
+            {"success": bool, "pending_count": int, "should_trigger_training": bool}
+        """
+        if not self.enabled:
+            return {"success": False, "pending_count": 0, "should_trigger_training": False}
+
+        try:
+            # 1. SentenceTransformer로 스타일명 임베딩 생성 (384D)
+            from models.ml_recommender import get_ml_recommender
+            recommender = get_ml_recommender()
+            style_embedding = recommender.sentence_model.encode(style_name)
+            style_embedding = np.array(style_embedding, dtype=np.float32)
+
+            # 2. Ground truth
+            ground_truth = 90.0 if feedback == 'good' else 10.0
+
+            # 3. Feature 벡터
+            if face_features is not None and skin_features is not None:
+                face_vec = np.array(face_features, dtype=np.float32)
+                skin_vec = np.array(skin_features, dtype=np.float32)
+            else:
+                face_vec = self._encode_face_shape(face_shape)
+                skin_vec = self._encode_skin_tone(skin_tone)
+
+            # 4. NPZ 데이터
+            timestamp = datetime.now(timezone.utc)
+            filename = f"{timestamp.strftime('%Y-%m-%d')}_trending_{analysis_id[:8]}.npz"
+
+            npz_data = {
+                'face_features': face_vec,
+                'skin_features': skin_vec,
+                'style_embedding': style_embedding,
+                'ground_truth': np.array([ground_truth], dtype=np.float32),
+                'metadata': np.array([json.dumps({
+                    'analysis_id': analysis_id,
+                    'face_shape': face_shape,
+                    'skin_tone': skin_tone,
+                    'style_name': style_name,
+                    'source': 'trending',
+                    'feedback': feedback,
+                    'timestamp': timestamp.isoformat()
+                })], dtype=str)
+            }
+
+            # 5. S3 업로드
+            buffer = io.BytesIO()
+            np.savez_compressed(buffer, **npz_data)
+            buffer.seek(0)
+
+            s3_key = f"{S3_FEEDBACK_PREFIX}{filename}"
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=buffer.getvalue(),
+                ContentType='application/octet-stream'
+            )
+
+            # 6. 메타데이터 업데이트
+            metadata = self._get_metadata()
+            metadata['total_feedback_count'] = metadata.get('total_feedback_count', 0) + 1
+            metadata['pending_count'] = metadata.get('pending_count', 0) + 1
+            metadata['last_feedback_at'] = timestamp.isoformat()
+            self._save_metadata(metadata)
+
+            pending_count = metadata['pending_count']
+            should_trigger = pending_count >= RETRAIN_THRESHOLD
+
+            logger.info(
+                f"트렌드 피드백 S3 저장 완료: {s3_key} | "
+                f"style: {style_name} | pending: {pending_count}/{RETRAIN_THRESHOLD}"
+            )
+
+            return {
+                "success": True,
+                "pending_count": pending_count,
+                "should_trigger_training": should_trigger
+            }
+
+        except Exception as e:
+            logger.error(f"트렌드 피드백 S3 저장 실패: {e}")
+            return {"success": False, "pending_count": 0, "should_trigger_training": False}
+
     def _encode_face_shape(self, face_shape: str) -> np.ndarray:
         """얼굴형 라벨 인코딩 (레거시 지원)"""
         FACE_SHAPES = ["각진형", "둥근형", "긴형", "계란형"]

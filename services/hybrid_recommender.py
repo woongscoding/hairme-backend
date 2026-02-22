@@ -165,6 +165,23 @@ class MLRecommendationService:
         for idx, rec in enumerate(recommendations, 1):
             rec['rank'] = idx
 
+        # 트렌드 스타일 2개 추가 (ML 추천 뒤에 배치)
+        trending_count = 0
+        try:
+            from services.trending_style_service import get_trending_style_service
+            trending_service = get_trending_style_service()
+            ml_style_names = {normalize_style_name(r["style_name"]) for r in recommendations}
+            trending_recs = trending_service.pick_trending(
+                gender=gender or "neutral",
+                exclude_styles=ml_style_names,
+            )
+            for idx, tr in enumerate(trending_recs):
+                tr["rank"] = len(recommendations) + idx + 1
+                recommendations.append(tr)
+            trending_count = len(trending_recs)
+        except Exception as e:
+            logger.warning(f"트렌드 스타일 추가 실패: {e}")
+
         # 결과 구성
         result = {
             "analysis": {
@@ -175,7 +192,8 @@ class MLRecommendationService:
             "recommendations": recommendations,
             "meta": {
                 "total_count": len(recommendations),
-                "ml_count": len(recommendations),
+                "ml_count": len(recommendations) - trending_count,
+                "trending_count": trending_count,
                 "method": "ml"
             }
         }

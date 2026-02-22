@@ -2,6 +2,7 @@
 
 import base64
 import io
+import time
 from typing import Dict, Any, Optional
 from PIL import Image
 
@@ -34,6 +35,10 @@ class HairstyleSynthesisService:
             from config.settings import settings
             self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
         return self._client
+
+    # 재시도 설정
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # seconds
 
     def synthesize_hairstyle(
         self,
@@ -81,34 +86,55 @@ class HairstyleSynthesisService:
 
             logger.info(f"🎨 헤어스타일 합성 시작: {hairstyle_name} ({gender})")
 
-            # Call Gemini 3 Pro Image API
-            response = self.client.models.generate_content(
-                model=self.IMAGE_MODEL,
-                contents=[prompt, original_image],
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                )
-            )
-
-            # Extract the generated image
+            # 재시도 로직으로 API 호출
             result_image = None
             result_text = None
+            last_error = None
 
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    # Image data
-                    result_image = part.inline_data
-                elif hasattr(part, 'text') and part.text:
-                    # Text response
-                    result_text = part.text
+            for attempt in range(self.MAX_RETRIES):
+                try:
+                    # Call Gemini 2.5 Flash Image API
+                    response = self.client.models.generate_content(
+                        model=self.IMAGE_MODEL,
+                        contents=[prompt, original_image],
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE", "TEXT"],
+                        )
+                    )
+
+                    # Extract the generated image
+                    result_image = None
+                    result_text = None
+
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data:
+                            # Image data
+                            result_image = part.inline_data
+                        elif hasattr(part, 'text') and part.text:
+                            # Text response
+                            result_text = part.text
+
+                    if result_image is not None:
+                        logger.info(f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})")
+                        break
+                    else:
+                        logger.warning(f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}")
+                        if attempt < self.MAX_RETRIES - 1:
+                            time.sleep(self.RETRY_DELAY)
+
+                except Exception as api_error:
+                    last_error = api_error
+                    logger.warning(f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}")
+                    if attempt < self.MAX_RETRIES - 1:
+                        time.sleep(self.RETRY_DELAY)
 
             if result_image is None:
-                logger.error("❌ Gemini가 이미지를 생성하지 않았습니다")
+                logger.error(f"❌ {self.MAX_RETRIES}번 시도 후에도 이미지 생성 실패")
                 return {
                     "success": False,
                     "image_base64": None,
                     "image_format": None,
-                    "message": "이미지 생성에 실패했습니다. 다시 시도해주세요.",
+                    "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text
                 }
 
@@ -174,7 +200,7 @@ class HairstyleSynthesisService:
                 "success": False,
                 "image_base64": None,
                 "image_format": None,
-                "message": f"합성 중 오류가 발생했습니다: {str(e)}",
+                "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
                 "gemini_response": None
             }
 
@@ -214,30 +240,52 @@ class HairstyleSynthesisService:
 
             logger.info(f"🎨 레퍼런스 기반 헤어스타일 합성 시작 ({gender})")
 
-            response = self.client.models.generate_content(
-                model=self.IMAGE_MODEL,
-                contents=[prompt, user_image, reference_image],
-                config=types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"],
-                )
-            )
-
-            # Extract result
+            # 재시도 로직으로 API 호출
             result_image = None
             result_text = None
+            last_error = None
 
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    result_image = part.inline_data
-                elif hasattr(part, 'text') and part.text:
-                    result_text = part.text
+            for attempt in range(self.MAX_RETRIES):
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.IMAGE_MODEL,
+                        contents=[prompt, user_image, reference_image],
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE", "TEXT"],
+                        )
+                    )
+
+                    # Extract result
+                    result_image = None
+                    result_text = None
+
+                    for part in response.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data') and part.inline_data:
+                            result_image = part.inline_data
+                        elif hasattr(part, 'text') and part.text:
+                            result_text = part.text
+
+                    if result_image is not None:
+                        logger.info(f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})")
+                        break
+                    else:
+                        logger.warning(f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}")
+                        if attempt < self.MAX_RETRIES - 1:
+                            time.sleep(self.RETRY_DELAY)
+
+                except Exception as api_error:
+                    last_error = api_error
+                    logger.warning(f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}")
+                    if attempt < self.MAX_RETRIES - 1:
+                        time.sleep(self.RETRY_DELAY)
 
             if result_image is None:
+                logger.error(f"❌ {self.MAX_RETRIES}번 시도 후에도 이미지 생성 실패")
                 return {
                     "success": False,
                     "image_base64": None,
                     "image_format": None,
-                    "message": "이미지 생성에 실패했습니다.",
+                    "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text
                 }
 
@@ -280,7 +328,7 @@ class HairstyleSynthesisService:
                 "success": False,
                 "image_base64": None,
                 "image_format": None,
-                "message": f"합성 중 오류가 발생했습니다: {str(e)}",
+                "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
                 "gemini_response": None
             }
 
