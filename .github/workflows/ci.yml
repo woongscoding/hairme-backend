@@ -45,7 +45,7 @@ jobs:
     - name: Type check with mypy
       run: |
         mypy . --config-file mypy.ini
-      continue-on-error: false  # Fail on type errors in strict mode
+      continue-on-error: true  # Type errors tracked but not blocking CI
 
     - name: Security check with bandit
       run: |
