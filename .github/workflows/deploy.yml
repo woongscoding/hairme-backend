@@ -72,9 +72,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{'{{'}} secrets.AWS_ACCESS_KEY_ID {{'}}'}}
-          aws-secret-access-key: ${{'{{'}} secrets.AWS_SECRET_ACCESS_KEY {{'}}'}}
-          aws-region: ${{'{{'}} env.AWS_REGION {{'}}'}}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -86,8 +86,8 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         id: build-image
         env:
-          ECR_REGISTRY: ${{'{{'}} steps.login-ecr.outputs.registry {{'}}'}}
-          IMAGE_TAG: ${{'{{'}} github.sha {{'}}'}}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build \
             -f Dockerfile.lambda \
@@ -127,7 +127,7 @@ jobs:
 
       - name: Update Lambda function
         env:
-          IMAGE_URI: ${{'{{'}} steps.build-image.outputs.image {{'}}'}}
+          IMAGE_URI: ${{ steps.build-image.outputs.image }}
         run: |
           echo "Updating Lambda function: $LAMBDA_FUNCTION_NAME"
           echo "New image: $IMAGE_URI"
@@ -147,7 +147,7 @@ jobs:
           echo "Note: API keys are now managed via AWS Secrets Manager"
           aws lambda update-function-configuration \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,ALLOWED_ORIGINS=${{'{{'}} secrets.ALLOWED_ORIGINS {{'}}'}},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production}" \
+            --environment "Variables={USE_DYNAMODB=true,AWS_REGION=$AWS_REGION,DYNAMODB_TABLE_NAME=hairme-analysis,ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production}" \
             --memory-size 2048 \
             --timeout 30 \
             --region $AWS_REGION \
@@ -197,14 +197,14 @@ jobs:
           echo "=========================================="
           echo "Function Name: $LAMBDA_FUNCTION_NAME"
           echo "Region: $AWS_REGION"
-          echo "Image: ${{'{{'}} steps.build-image.outputs.image {{'}}'}}"
-          echo "Git SHA: ${{'{{'}} github.sha {{'}}'}}"
-          echo "Function URL: ${{'{{'}} steps.get-url.outputs.function_url {{'}}'}}"
+          echo "Image: ${{ steps.build-image.outputs.image }}"
+          echo "Git SHA: ${{ github.sha }}"
+          echo "Function URL: ${{ steps.get-url.outputs.function_url }}"
           echo "=========================================="
 
       - name: Send deployment notification
         if: success()
         run: |
           echo "✅ HairMe Backend deployed successfully!"
-          echo "Version: ${{'{{'}} github.sha {{'}}'}}"
+          echo "Version: ${{ github.sha }}"
           echo "Deployed at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
