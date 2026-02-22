@@ -409,7 +409,8 @@ def setup_mlops():
     print("\n" + "=" * 60)
     print("✅ MLOps 인프라 설정 완료!")
     print("=" * 60)
-    print(f"""
+    print(
+        f"""
 다음 단계:
 1. Lambda 환경변수에서 MLOPS_ENABLED=true 설정
 2. API Lambda 재배포하여 S3 피드백 저장 활성화
@@ -425,7 +426,8 @@ def setup_mlops():
     - Lambda 실행: $0 (프리티어)
     - EventBridge: $0 (무료)
     - 총 예상 비용: $0.02/월
-""")
+"""
+    )
 
     return True
 

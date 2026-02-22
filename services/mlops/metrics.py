@@ -602,9 +602,7 @@ def evaluate_from_s3_feedback(
                     )
 
         if not feedback_data:
-            logger.warning(
-                f"⚠️ {feedback_prefix}에서 피드백 데이터를 찾을 수 없습니다."
-            )
+            logger.warning(f"⚠️ {feedback_prefix}에서 피드백 데이터를 찾을 수 없습니다.")
             return RecommendationMetrics()
 
         evaluator = FeedbackEvaluator(positive_threshold)
