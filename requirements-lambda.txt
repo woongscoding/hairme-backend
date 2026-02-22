@@ -16,8 +16,8 @@ boto3==1.35.0
 redis==5.0.1
 
 # Google Gemini AI
-google-generativeai==0.3.2
-google-genai==1.0.0
+google-generativeai>=0.8.0
+google-genai>=1.52.0
 
 # 이미지 처리
 pillow==10.2.0
@@ -41,7 +41,7 @@ pybreaker==1.0.1
 mangum==0.17.0
 
 # 기타
-pydantic==2.5.3
+pydantic==2.10.0
 pydantic-settings==2.1.0
 tqdm==4.67.1
 slowapi==0.1.9
