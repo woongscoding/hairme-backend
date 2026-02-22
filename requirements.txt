@@ -41,6 +41,9 @@ pytest-asyncio==0.21.1
 # Circuit Breaker
 pybreaker==1.0.1
 
+# RAG Vector Search
+chromadb>=0.4.0
+
 # 기타
 pydantic==2.5.3
 pydantic-settings==2.1.0

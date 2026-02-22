@@ -30,7 +30,6 @@ scikit-learn==1.3.0
 pandas==2.1.4
 matplotlib==3.8.2
 seaborn==0.13.1
-# sentence-transformers는 Dockerfile에서 별도 설치 (sentencepiece 빌드 이슈 회피)
 
 # MLOps
 pyyaml==6.0.1
