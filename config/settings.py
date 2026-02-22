@@ -53,7 +53,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
     # Gemini Model Configuration
-    MODEL_NAME: str = "gemini-flash-latest"
+    MODEL_NAME: str = "gemini-2.5-flash"
 
     # ML Model Paths
     ML_MODEL_PATH: str = "models/final_model.pth"

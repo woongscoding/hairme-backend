@@ -268,9 +268,13 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             'style_1_feedback': None,
             'style_2_feedback': None,
             'style_3_feedback': None,
+            'style_4_feedback': None,
+            'style_5_feedback': None,
             'style_1_naver_clicked': False,
             'style_2_naver_clicked': False,
             'style_3_naver_clicked': False,
+            'style_4_naver_clicked': False,
+            'style_5_naver_clicked': False,
             'feedback_at': None
         })
 
@@ -283,7 +287,7 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             item['ab_variant'] = data.get('ab_variant')
 
         # 스타일별 점수 저장 (A/B 테스트 평가용)
-        for i in range(1, 4):
+        for i in range(1, 6):
             score_key = f'style_{i}_score'
             if data.get(score_key) is not None:
                 item[score_key] = data.get(score_key)
@@ -384,8 +388,8 @@ def save_feedback(
         logger.error("❌ DynamoDB not initialized")
         return False
 
-    if style_index not in [1, 2, 3]:
-        logger.error(f"❌ Invalid style_index: {style_index} (must be 1, 2, or 3)")
+    if style_index not in [1, 2, 3, 4, 5]:
+        logger.error(f"❌ Invalid style_index: {style_index} (must be 1-5)")
         return False
 
     try:
@@ -523,8 +527,8 @@ def get_feedback_stats() -> Dict[str, Any]:
             'success': False,
             'total_analysis': 0,
             'total_feedback': 0,
-            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
+            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
+            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
             'recent_feedbacks': []
         }
 
@@ -565,11 +569,11 @@ def get_feedback_stats() -> Dict[str, Any]:
         total_feedback = len(feedback_records)
 
         # Count likes and dislikes
-        like_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0}
-        dislike_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0}
+        like_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0}
+        dislike_counts = {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0}
 
         for item in feedback_records:
-            for i in [1, 2, 3]:
+            for i in [1, 2, 3, 4, 5]:
                 feedback_field = f'style_{i}_feedback'
                 feedback_value = item.get(feedback_field)
 
@@ -594,9 +598,13 @@ def get_feedback_stats() -> Dict[str, Any]:
                 'style_1_feedback': item.get('style_1_feedback'),
                 'style_2_feedback': item.get('style_2_feedback'),
                 'style_3_feedback': item.get('style_3_feedback'),
+                'style_4_feedback': item.get('style_4_feedback'),
+                'style_5_feedback': item.get('style_5_feedback'),
                 'style_1_naver_clicked': item.get('style_1_naver_clicked', False),
                 'style_2_naver_clicked': item.get('style_2_naver_clicked', False),
                 'style_3_naver_clicked': item.get('style_3_naver_clicked', False),
+                'style_4_naver_clicked': item.get('style_4_naver_clicked', False),
+                'style_5_naver_clicked': item.get('style_5_naver_clicked', False),
                 'feedback_at': item.get('feedback_at'),
                 'created_at': item.get('created_at')
             })
@@ -632,8 +640,8 @@ def get_feedback_stats() -> Dict[str, Any]:
             'success': False,
             'total_analysis': 0,
             'total_feedback': 0,
-            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
+            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
+            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
             'recent_feedbacks': []
         }
 
@@ -643,8 +651,8 @@ def get_feedback_stats() -> Dict[str, Any]:
             'success': False,
             'total_analysis': 0,
             'total_feedback': 0,
-            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
-            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0},
+            'like_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
+            'dislike_counts': {'style_1': 0, 'style_2': 0, 'style_3': 0, 'style_4': 0, 'style_5': 0},
             'recent_feedbacks': []
         }
 
@@ -687,9 +695,31 @@ def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
             style_data = recommended_styles[style_index - 1]
             hairstyle_id = style_data.get('hairstyle_id')
 
-            # hairstyle_id가 None인 경우 스타일명으로 검색 시도
+            # hairstyle_id가 None인 경우: 트렌드 스타일이면 별도 처리
             if hairstyle_id is None:
                 style_name = style_data.get('style_name', '')
+                source = style_data.get('source', '')
+
+                if source == 'trending' and style_name:
+                    # 트렌드 스타일: on-the-fly 임베딩 생성 후 S3 저장
+                    try:
+                        from services.mlops.s3_feedback_store import get_s3_feedback_store
+                        s3_store = get_s3_feedback_store()
+                        result = s3_store.save_trending_feedback(
+                            analysis_id=analysis_id,
+                            face_shape=face_shape,
+                            skin_tone=skin_tone,
+                            style_name=style_name,
+                            feedback=feedback,
+                            face_features=face_features,
+                            skin_features=skin_features,
+                        )
+                        if result.get('success'):
+                            logger.info(f"트렌드 피드백 S3 저장 완료: {style_name}")
+                    except Exception as e:
+                        logger.warning(f"트렌드 피드백 S3 저장 실패: {e}")
+                    return
+
                 logger.warning(
                     f"⚠️ hairstyle_id 없음 - style_name: {style_name}"
                 )

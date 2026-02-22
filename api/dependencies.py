@@ -18,7 +18,7 @@ class FeedbackType(str, Enum):
 class FeedbackRequest(BaseModel):
     """Feedback submission request"""
     analysis_id: Union[int, str] = Field(..., description="분석 결과 ID (int for MySQL, UUID string for DynamoDB)")
-    style_index: int = Field(..., ge=1, le=3, description="스타일 인덱스 (1, 2, 3)")
+    style_index: int = Field(..., ge=1, le=5, description="스타일 인덱스 (1-5, 4-5는 트렌드 스타일)")
     feedback: FeedbackType = Field(..., description="좋아요 또는 싫어요")
     naver_clicked: bool = Field(default=False, description="네이버 이미지 검색 클릭 여부")
 
