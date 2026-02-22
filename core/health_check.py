@@ -105,7 +105,7 @@ class HealthCheckService:
             genai.configure(api_key=settings.GEMINI_API_KEY)
 
             # Use lightweight text generation (no image)
-            model = genai.GenerativeModel("gemini-1.5-flash-latest")
+            model = genai.GenerativeModel(settings.MODEL_NAME)
 
             # Minimal request to test API connectivity
             response = model.generate_content("test")

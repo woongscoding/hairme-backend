@@ -1,6 +1,12 @@
 """
-HairMe Backend - AI-powered Hairstyle Recommendation Service
-Version: 20.2.0 (MediaPipe transition complete)
+BeautyMe Backend - AI-powered Beauty Consulting Platform
+Version: 23.0.0 (Streamlined Lambda)
+
+Features:
+- Face Analysis (Face Shape + Personal Color with ITA algorithm)
+- Hair Color Recommendation (based on Personal Color)
+- Hairstyle Recommendation (ML-based)
+- Hair Color Synthesis (Gemini)
 """
 
 import os
@@ -23,6 +29,9 @@ from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
 from api.endpoints.feedback import router as feedback_router
 from api.endpoints.synthesis import router as synthesis_router
+from api.endpoints.personal_color import router as personal_color_router
+from api.endpoints.hair_color import router as hair_color_router
+from api.endpoints.beauty import router as beauty_router
 
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
@@ -228,9 +237,11 @@ async def limit_upload_size(request: Request, call_next):
 # ========== Register Routers ==========
 app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
-# app.include_router(analyze_improved_router, prefix="/api", tags=["analysis_improved"])  # Disabled: requires hybrid_recommender_improved
 app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 app.include_router(synthesis_router, prefix="/api/v2", tags=["synthesis"])
+app.include_router(personal_color_router, prefix="/api", tags=["personal_color"])
+app.include_router(hair_color_router, prefix="/api", tags=["hair_color"])
+app.include_router(beauty_router, prefix="/api", tags=["beauty"])
 
 
 # ========== Startup Event ==========
@@ -276,18 +287,22 @@ async def root():
     from core.dependencies import _mediapipe_analyzer
 
     return {
-        "message": f"{settings.APP_TITLE} - v{settings.APP_VERSION} (MediaPipe 전환 완료)",
-        "version": settings.APP_VERSION,
-        "model": settings.MODEL_NAME,
+        "name": "BeautyMe",
+        "message": "AI-powered Beauty Consulting Platform",
+        "version": "23.0.0",
         "status": "running",
         "features": {
-            "mediapipe_analysis": "enabled" if _mediapipe_analyzer else "disabled",
-            "gemini_analysis": "enabled" if settings.GEMINI_API_KEY else "disabled",
-            "redis_cache": "enabled",
-            "database": "enabled",
-            "feedback_system": "enabled",
-            "ml_prediction": "enabled",
-            "style_embedding": "enabled"
+            "face_analysis": "enabled" if _mediapipe_analyzer else "lazy_load",
+            "personal_color": "enabled (ITA algorithm)",
+            "hair_color_recommendation": "enabled",
+            "hairstyle_recommendation": "enabled",
+            "hair_color_synthesis": "enabled" if settings.GEMINI_API_KEY else "disabled"
+        },
+        "endpoints": {
+            "beauty": "/api/beauty/analyze",
+            "personal_color": "/api/personal-color/analyze",
+            "hair_color": "/api/hair-color/{type}",
+            "hairstyle": "/api/analyze"
         }
     }
 
