@@ -1,14 +1,115 @@
-# .dockerignore
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+# .dockerignore - Docker 빌드 시 제외할 파일들
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 .Python
-env/
+
+# Virtual environments
+.venv/
 venv/
-.venv
-.git
+env/
+ENV/
+
+# Git
+.git/
 .gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+
+# Environment files
 .env
+.env.*
+
+# Logs and temp files
 *.log
+*.tmp
+nul
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Test files
+tests/
+test_*.py
+pytest.ini
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+testsprite_tests/
+
+# Type checking
+.mypy_cache/
+mypy.ini
+
+# Documentation (not needed in runtime)
+*.md
+!data/rag/knowledge/*.md
+docs/
+
+# Development scripts (not needed in production)
+scripts/train_*.py
+scripts/evaluate_*.py
+scripts/collect_*.py
+scripts/prepare_*.py
+scripts/merge_*.py
+scripts/generate_*.py
+scripts/create_*.py
+scripts/inspect_*.py
+scripts/restore_*.py
+scripts/validate_*.py
+scripts/manual_*.py
+scripts/reset_*.py
+
+# Lambda trainer/evaluator (separate deployment)
+lambda_trainer/
+lambda_evaluator/
+
+# Local database
+*.db
+
+# Archives
+*.zip
+*.tar.gz
+archive/
+
+# Batch scripts
+*.bat
+
+# JSON temp files
+*_response.json
+*_payload.json
+*_result.json
+temp_*.json
+
+# Model backups (only keep production model)
+models/backup/
+
+# Data quality and evaluation reports
+data_quality/
+evaluation/
+*.json
+!data_source/hairstyle_gender.json
+!data_source/style_characteristics.json
+!data_source/valid_hairstyles.json
+!data_source/trending_hairstyles.json
+
+# Security reports
+bandit-report.json
+pip-audit-report.json
+pylint-report.json
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

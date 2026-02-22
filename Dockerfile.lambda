@@ -16,25 +16,15 @@ RUN yum install -y \
     && yum clean all \
     && rm -rf /var/cache/yum
 
-# Install CPU-only PyTorch first (separate layer to cache it)
+# Install CPU-only PyTorch (for ML recommendation model)
 RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
 
-# Install sentencepiece from pre-built wheel first (avoids build issues)
-RUN pip install --no-cache-dir sentencepiece --prefer-binary
-
-# Copy requirements and install other Python dependencies
+# Copy requirements and install Python dependencies
 COPY requirements-lambda.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-# Install sentence-transformers with compatible transformers version
-RUN pip install --no-cache-dir transformers==4.36.0 sentence-transformers==2.2.2
-
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/
-
-# Pre-download sentence transformer model to /tmp (writable in Lambda)
-ENV SENTENCE_TRANSFORMERS_HOME=/tmp/.cache/sentence-transformers
-RUN python -c "from sentence_transformers import SentenceTransformer; model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2'); print('Model pre-cached')" || true
 
 # Environment variables
 ENV PYTHONIOENCODING=utf-8
