@@ -703,6 +703,24 @@ def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
                 if source == 'trending' and style_name:
                     # 트렌드 스타일: on-the-fly 임베딩 생성 후 S3 저장
                     try:
+                        # MediaPipe 측정값 추출 (있으면)
+                        _face_features = None
+                        _skin_features = None
+                        if analysis.get('mediapipe_face_ratio') is not None:
+                            _face_features = [
+                                analysis.get('mediapipe_face_ratio', 1.2),
+                                analysis.get('mediapipe_forehead_width', 400),
+                                analysis.get('mediapipe_cheekbone_width', 500),
+                                analysis.get('mediapipe_jaw_width', 400),
+                                analysis.get('mediapipe_forehead_ratio', 0.8),
+                                analysis.get('mediapipe_jaw_ratio', 0.8)
+                            ]
+                        if analysis.get('mediapipe_ITA_value') is not None:
+                            _skin_features = [
+                                analysis.get('mediapipe_ITA_value', 70),
+                                analysis.get('mediapipe_hue_value', 15)
+                            ]
+
                         from services.mlops.s3_feedback_store import get_s3_feedback_store
                         s3_store = get_s3_feedback_store()
                         result = s3_store.save_trending_feedback(
@@ -711,8 +729,8 @@ def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
                             skin_tone=skin_tone,
                             style_name=style_name,
                             feedback=feedback,
-                            face_features=face_features,
-                            skin_features=skin_features,
+                            face_features=_face_features,
+                            skin_features=_skin_features,
                         )
                         if result.get('success'):
                             logger.info(f"트렌드 피드백 S3 저장 완료: {style_name}")
