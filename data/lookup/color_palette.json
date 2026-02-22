@@ -1,0 +1,221 @@
+{
+  "hair_colors": {
+    "natural": {
+      "black": {
+        "name": "블랙",
+        "hex": "#000000",
+        "level": "1",
+        "tone": "neutral",
+        "description": "자연스러운 검은색"
+      },
+      "dark_brown": {
+        "name": "다크브라운",
+        "hex": "#3D2B1F",
+        "level": "3",
+        "tone": "neutral",
+        "description": "진한 갈색"
+      },
+      "medium_brown": {
+        "name": "미디엄브라운",
+        "hex": "#6B4423",
+        "level": "5",
+        "tone": "neutral",
+        "description": "중간 톤 갈색"
+      },
+      "light_brown": {
+        "name": "라이트브라운",
+        "hex": "#8B7355",
+        "level": "7",
+        "tone": "neutral",
+        "description": "밝은 갈색"
+      }
+    },
+    "warm_tones": {
+      "milk_brown": {
+        "name": "밀크브라운",
+        "hex": "#C4A484",
+        "level": "7-8",
+        "tone": "warm",
+        "description": "따뜻한 밀크티 컬러",
+        "suitable_personal_color": ["봄웜", "가을웜"]
+      },
+      "gold_beige": {
+        "name": "골드베이지",
+        "hex": "#D4AF37",
+        "level": "8-9",
+        "tone": "warm",
+        "description": "황금빛 베이지",
+        "suitable_personal_color": ["봄웜"]
+      },
+      "honey_brown": {
+        "name": "허니브라운",
+        "hex": "#B8860B",
+        "level": "6-7",
+        "tone": "warm",
+        "description": "꿀처럼 따뜻한 갈색",
+        "suitable_personal_color": ["봄웜", "가을웜"]
+      },
+      "caramel_brown": {
+        "name": "카라멜브라운",
+        "hex": "#8B4513",
+        "level": "5-6",
+        "tone": "warm",
+        "description": "달콤한 캐러멜 컬러",
+        "suitable_personal_color": ["봄웜", "가을웜"]
+      },
+      "orange_brown": {
+        "name": "오렌지브라운",
+        "hex": "#CD853F",
+        "level": "7-8",
+        "tone": "warm",
+        "description": "오렌지빛 브라운",
+        "suitable_personal_color": ["봄웜"]
+      },
+      "chocolate_brown": {
+        "name": "초콜릿브라운",
+        "hex": "#7B3F00",
+        "level": "4-5",
+        "tone": "warm",
+        "description": "깊은 초콜릿 컬러",
+        "suitable_personal_color": ["가을웜"]
+      },
+      "copper_brown": {
+        "name": "카퍼브라운",
+        "hex": "#B87333",
+        "level": "5-6",
+        "tone": "warm",
+        "description": "구리빛 브라운",
+        "suitable_personal_color": ["가을웜"]
+      },
+      "cinnamon_brown": {
+        "name": "시나몬브라운",
+        "hex": "#D2691E",
+        "level": "6-7",
+        "tone": "warm",
+        "description": "시나몬처럼 따뜻한 브라운",
+        "suitable_personal_color": ["가을웜"]
+      }
+    },
+    "cool_tones": {
+      "ash_brown": {
+        "name": "애쉬브라운",
+        "hex": "#8B7355",
+        "level": "6-7",
+        "tone": "cool",
+        "description": "회색빛 부드러운 브라운",
+        "suitable_personal_color": ["여름쿨", "겨울쿨"]
+      },
+      "rose_brown": {
+        "name": "로즈브라운",
+        "hex": "#BC8F8F",
+        "level": "7-8",
+        "tone": "cool",
+        "description": "장미빛 브라운",
+        "suitable_personal_color": ["여름쿨"]
+      },
+      "lavender_ash": {
+        "name": "라벤더애쉬",
+        "hex": "#B4A7D6",
+        "level": "8-9",
+        "tone": "cool",
+        "description": "라벤더빛 애쉬",
+        "suitable_personal_color": ["여름쿨"]
+      },
+      "cool_brown": {
+        "name": "쿨브라운",
+        "hex": "#8B7765",
+        "level": "5-6",
+        "tone": "cool",
+        "description": "차가운 느낌의 브라운",
+        "suitable_personal_color": ["여름쿨"]
+      },
+      "soft_black": {
+        "name": "소프트블랙",
+        "hex": "#2F2F2F",
+        "level": "3-4",
+        "tone": "cool",
+        "description": "부드러운 블랙",
+        "suitable_personal_color": ["여름쿨", "겨울쿨"]
+      },
+      "blue_black": {
+        "name": "블루블랙",
+        "hex": "#0D0D0D",
+        "level": "1-2",
+        "tone": "cool",
+        "description": "푸른빛 블랙",
+        "suitable_personal_color": ["겨울쿨"]
+      },
+      "ash_black": {
+        "name": "애쉬블랙",
+        "hex": "#1C1C1C",
+        "level": "2-3",
+        "tone": "cool",
+        "description": "회색빛 블랙",
+        "suitable_personal_color": ["겨울쿨"]
+      },
+      "burgundy": {
+        "name": "버건디",
+        "hex": "#800020",
+        "level": "3-4",
+        "tone": "cool",
+        "description": "진한 와인색",
+        "suitable_personal_color": ["겨울쿨", "가을웜"]
+      },
+      "deep_red": {
+        "name": "딥레드",
+        "hex": "#8B0000",
+        "level": "3-4",
+        "tone": "cool",
+        "description": "깊은 레드",
+        "suitable_personal_color": ["겨울쿨"]
+      }
+    },
+    "trendy": {
+      "pink_brown": {
+        "name": "핑크브라운",
+        "hex": "#C48793",
+        "level": "7-8",
+        "tone": "cool",
+        "description": "핑크빛 브라운",
+        "suitable_personal_color": ["여름쿨"]
+      },
+      "olive_brown": {
+        "name": "올리브브라운",
+        "hex": "#6B6B47",
+        "level": "5-6",
+        "tone": "warm",
+        "description": "올리브빛 브라운",
+        "suitable_personal_color": ["가을웜"]
+      },
+      "silver_gray": {
+        "name": "실버그레이",
+        "hex": "#C0C0C0",
+        "level": "9-10",
+        "tone": "cool",
+        "description": "시원한 실버 그레이",
+        "suitable_personal_color": ["겨울쿨"]
+      },
+      "platinum": {
+        "name": "플래티넘",
+        "hex": "#E5E4E2",
+        "level": "10+",
+        "tone": "cool",
+        "description": "밝은 플래티넘",
+        "suitable_personal_color": ["겨울쿨"]
+      }
+    }
+  },
+  "level_guide": {
+    "1": "가장 어두운 블랙",
+    "2-3": "다크 브라운/블랙",
+    "4-5": "미디엄 다크 브라운",
+    "6-7": "미디엄 브라운",
+    "8-9": "라이트 브라운/블론드",
+    "10+": "매우 밝은 블론드/플래티넘"
+  },
+  "tone_description": {
+    "warm": "노란색, 주황색, 금색 계열이 섞인 따뜻한 느낌의 컬러",
+    "cool": "회색, 파란색, 보라색 계열이 섞인 차가운 느낌의 컬러",
+    "neutral": "따뜻하거나 차갑지 않은 중립적인 컬러"
+  }
+}

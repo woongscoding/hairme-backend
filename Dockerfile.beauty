@@ -1,0 +1,30 @@
+# AWS Lambda Python 3.11 base image
+# Beauty Lambda: Personal Color + Hair Color (No PyTorch)
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install system dependencies for OpenCV, MediaPipe, and build tools
+RUN yum install -y \
+    mesa-libGL \
+    glib2 \
+    libSM \
+    libXext \
+    libXrender \
+    gcc \
+    gcc-c++ \
+    && yum clean all \
+    && rm -rf /var/cache/yum
+
+# Copy requirements and install Python dependencies
+# NO PyTorch - using MediaPipe + Gemini only
+COPY requirements-beauty.txt ${LAMBDA_TASK_ROOT}/requirements.txt
+RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
+
+# Copy application code
+COPY . ${LAMBDA_TASK_ROOT}/
+
+# Environment variables
+ENV PYTHONIOENCODING=utf-8
+ENV LAMBDA_TYPE=beauty
+
+# Set the CMD to beauty handler
+CMD ["main_beauty.handler"]
