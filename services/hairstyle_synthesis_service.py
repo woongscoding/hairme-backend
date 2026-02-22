@@ -40,6 +40,18 @@ class HairstyleSynthesisService:
     # 재시도 설정
     MAX_RETRIES = 3
     RETRY_DELAY = 1.0  # seconds
+    MAX_IMAGE_SIZE = 1024  # API 전송 전 최대 해상도 (비용 절감)
+
+    @staticmethod
+    def _resize_image(image: Image.Image, max_size: int = 1024) -> Image.Image:
+        """큰 이미지를 max_size 이하로 리사이즈 (비율 유지)"""
+        w, h = image.size
+        if w <= max_size and h <= max_size:
+            return image
+        scale = max_size / max(w, h)
+        new_w, new_h = int(w * scale), int(h * scale)
+        logger.info(f"📐 이미지 리사이즈: {w}x{h} → {new_w}x{new_h} (토큰 비용 절감)")
+        return image.resize((new_w, new_h), Image.LANCZOS)
 
     def synthesize_hairstyle(
         self,
@@ -67,8 +79,9 @@ class HairstyleSynthesisService:
         try:
             from google.genai import types
 
-            # Open the original image
+            # Open the original image and resize for cost savings
             original_image = Image.open(io.BytesIO(image_data))
+            original_image = self._resize_image(original_image, self.MAX_IMAGE_SIZE)
 
             # Build the prompt
             gender_kr = "남성" if gender == "male" else "여성"
@@ -234,7 +247,9 @@ class HairstyleSynthesisService:
             from google.genai import types
 
             user_image = Image.open(io.BytesIO(user_image_data))
+            user_image = self._resize_image(user_image, self.MAX_IMAGE_SIZE)
             reference_image = Image.open(io.BytesIO(reference_image_data))
+            reference_image = self._resize_image(reference_image, self.MAX_IMAGE_SIZE)
 
             gender_kr = "남성" if gender == "male" else "여성"
 
