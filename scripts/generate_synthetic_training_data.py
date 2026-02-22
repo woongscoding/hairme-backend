@@ -33,7 +33,7 @@ class SyntheticDataGenerator:
             api_key: Gemini API 키
         """
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
 
         # 얼굴형별 연속형 변수 범위 (실제 MediaPipe 측정 기반)
         self.face_templates = {
