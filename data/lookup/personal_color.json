@@ -1,0 +1,106 @@
+{
+  "봄웜": {
+    "season": "spring",
+    "tone": "warm",
+    "korean_name": "봄 웜톤",
+    "english_name": "Spring Warm",
+    "characteristics": [
+      "밝고 화사한 피부톤",
+      "노란 언더톤",
+      "밝은 갈색 또는 황금빛 머리카락",
+      "밝은 갈색 또는 연한 눈동자"
+    ],
+    "skin_features": {
+      "undertone": "yellow",
+      "brightness": "bright",
+      "typical_ita_range": [35, 55],
+      "typical_hue_range": [8, 15]
+    },
+    "best_colors": ["코랄", "피치", "골드", "아이보리", "연어색", "살구색", "밝은 오렌지"],
+    "avoid_colors": ["검정", "순백색", "회색", "청색 계열", "버건디"],
+    "makeup_tips": [
+      "코랄 계열 립스틱 추천",
+      "골드 하이라이터 활용",
+      "브라운 계열 아이섀도우"
+    ],
+    "description": "따뜻하고 화사한 이미지를 가진 봄 웜톤은 밝고 선명한 색상이 잘 어울립니다. 노란 언더톤의 피부를 가지고 있어 따뜻한 색감의 옷과 메이크업이 피부를 더욱 화사하게 만들어줍니다."
+  },
+  "여름쿨": {
+    "season": "summer",
+    "tone": "cool",
+    "korean_name": "여름 쿨톤",
+    "english_name": "Summer Cool",
+    "characteristics": [
+      "분홍빛이 도는 밝은 피부",
+      "핑크 또는 블루 언더톤",
+      "애쉬 계열 머리카락",
+      "부드러운 눈동자 색"
+    ],
+    "skin_features": {
+      "undertone": "pink",
+      "brightness": "bright",
+      "typical_ita_range": [38, 55],
+      "typical_hue_range": [16, 22]
+    },
+    "best_colors": ["라벤더", "로즈핑크", "스카이블루", "민트", "소프트 화이트", "그레이시 블루"],
+    "avoid_colors": ["오렌지", "황금색", "카키", "강한 노란색", "브라운 계열"],
+    "makeup_tips": [
+      "로즈 계열 립스틱 추천",
+      "핑크 블러셔 활용",
+      "쿨톤 아이섀도우"
+    ],
+    "description": "부드럽고 우아한 이미지의 여름 쿨톤은 파스텔톤의 부드러운 색상이 잘 어울립니다. 핑크 언더톤의 피부를 가지고 있어 차분하고 시원한 색감이 피부를 맑고 깨끗하게 보이게 합니다."
+  },
+  "가을웜": {
+    "season": "autumn",
+    "tone": "warm",
+    "korean_name": "가을 웜톤",
+    "english_name": "Autumn Warm",
+    "characteristics": [
+      "따뜻한 베이지 또는 황금빛 피부",
+      "황금색 언더톤",
+      "따뜻한 갈색 머리카락",
+      "깊은 갈색 눈동자"
+    ],
+    "skin_features": {
+      "undertone": "golden",
+      "brightness": "muted",
+      "typical_ita_range": [22, 38],
+      "typical_hue_range": [10, 18]
+    },
+    "best_colors": ["카키", "머스타드", "테라코타", "버건디", "올리브", "캐멀", "초콜릿"],
+    "avoid_colors": ["파스텔 핑크", "라벤더", "네온 컬러", "순백색", "블랙"],
+    "makeup_tips": [
+      "브릭 계열 립스틱 추천",
+      "브론저 활용",
+      "따뜻한 브라운 아이섀도우"
+    ],
+    "description": "깊고 따뜻한 이미지의 가을 웜톤은 차분하고 깊은 색상이 잘 어울립니다. 황금빛 언더톤의 피부를 가지고 있어 자연스럽고 내추럴한 색감이 고급스러운 분위기를 연출합니다."
+  },
+  "겨울쿨": {
+    "season": "winter",
+    "tone": "cool",
+    "korean_name": "겨울 쿨톤",
+    "english_name": "Winter Cool",
+    "characteristics": [
+      "선명하고 깨끗한 피부",
+      "블루 또는 핑크 언더톤",
+      "검은색 또는 짙은 갈색 머리카락",
+      "선명한 눈동자"
+    ],
+    "skin_features": {
+      "undertone": "blue",
+      "brightness": "clear",
+      "typical_ita_range": [25, 45],
+      "typical_hue_range": [18, 25]
+    },
+    "best_colors": ["퓨어화이트", "블랙", "네이비", "레드", "핫핑크", "로얄블루", "에메랄드"],
+    "avoid_colors": ["오렌지", "골드", "카키", "베이지", "브라운"],
+    "makeup_tips": [
+      "레드 또는 핫핑크 립스틱 추천",
+      "선명한 블러셔 활용",
+      "스모키 아이 메이크업"
+    ],
+    "description": "시크하고 강렬한 이미지의 겨울 쿨톤은 선명하고 대비가 강한 색상이 잘 어울립니다. 블루 언더톤의 피부를 가지고 있어 명도와 채도가 높은 색상이 세련된 분위기를 연출합니다."
+  }
+}
