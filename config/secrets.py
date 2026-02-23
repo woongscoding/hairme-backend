@@ -32,7 +32,11 @@ def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optiona
     try:
         import boto3
         from botocore.exceptions import ClientError
+    except ImportError:
+        logger.warning("⚠️ boto3 not available - cannot retrieve secrets")
+        return None
 
+    try:
         # Create Secrets Manager client
         client = boto3.client("secretsmanager", region_name=region_name)
 
@@ -57,10 +61,6 @@ def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optiona
         else:
             logger.error(f"❌ Error retrieving secret {secret_name}: {e}")
 
-        return None
-
-    except ImportError:
-        logger.warning("⚠️ boto3 not available - cannot retrieve secrets")
         return None
 
     except Exception as e:

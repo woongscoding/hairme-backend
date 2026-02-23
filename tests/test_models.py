@@ -1,70 +1,105 @@
 """Tests for ML models and analyzers"""
 
+import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
 from PIL import Image
+import io
 
 
 class TestMediaPipeAnalyzer:
     """Test MediaPipe face analyzer"""
 
-    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
-    def test_analyzer_initialization(self, mock_face_mesh):
+    def _mock_mediapipe(self):
+        """Install a fake mediapipe module into sys.modules so patch() can resolve it."""
+        mock_mp = MagicMock()
+        sys.modules["mediapipe"] = mock_mp
+        sys.modules["mediapipe.solutions"] = mock_mp.solutions
+        sys.modules["mediapipe.solutions.face_mesh"] = mock_mp.solutions.face_mesh
+        return mock_mp
+
+    def _cleanup_mediapipe(self):
+        """Remove the fake mediapipe module."""
+        for key in ["mediapipe", "mediapipe.solutions", "mediapipe.solutions.face_mesh"]:
+            sys.modules.pop(key, None)
+
+    def test_analyzer_initialization(self):
         """Test that MediaPipe analyzer initializes correctly"""
-        from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
-
-        analyzer = MediaPipeFaceAnalyzer()
-        assert analyzer is not None
-
-    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
-    def test_analyze_face_with_valid_image(self, mock_face_mesh):
-        """Test face analysis with valid image"""
-        from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
-
-        # Mock MediaPipe results
-        mock_result = MagicMock()
-        mock_result.multi_face_landmarks = [MagicMock()]
-
-        # Create mock landmarks
-        mock_landmark = MagicMock()
-        mock_landmark.x = 0.5
-        mock_landmark.y = 0.5
-        mock_landmark.z = 0.0
-
-        mock_result.multi_face_landmarks[0].landmark = [mock_landmark] * 478
-
-        mock_face_mesh.return_value.process.return_value = mock_result
-
-        analyzer = MediaPipeFaceAnalyzer()
-        img = Image.new("RGB", (640, 480), color="white")
-
-        # Should not raise exception
+        mock_mp = self._mock_mediapipe()
         try:
-            result = analyzer.analyze_face(np.array(img))
-            # Result should have face shape data (if implementation allows)
-        except Exception:
-            # If analyze_face expects different input, that's ok for now
-            pass
+            from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
 
-    @patch("models.mediapipe_analyzer.mp.solutions.face_mesh.FaceMesh")
-    def test_no_face_detected(self, mock_face_mesh):
+            analyzer = MediaPipeFaceAnalyzer()
+            assert analyzer is not None
+            # Verify FaceMesh was called
+            mock_mp.solutions.face_mesh.FaceMesh.assert_called_once()
+        finally:
+            self._cleanup_mediapipe()
+
+    def test_analyze_returns_none_when_no_face(self):
         """Test behavior when no face is detected"""
-        from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
-        from core.exceptions import NoFaceDetectedException
+        mock_mp = self._mock_mediapipe()
+        try:
+            from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
 
-        # Mock empty results
-        mock_result = MagicMock()
-        mock_result.multi_face_landmarks = None
+            # Mock empty results (no face detected)
+            mock_result = MagicMock()
+            mock_result.multi_face_landmarks = None
+            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = mock_result
 
-        mock_face_mesh.return_value.process.return_value = mock_result
+            analyzer = MediaPipeFaceAnalyzer()
 
-        analyzer = MediaPipeFaceAnalyzer()
-        img = Image.new("RGB", (640, 480), color="white")
+            # Create a valid JPEG image as bytes
+            img = Image.new("RGB", (640, 480), color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="JPEG")
+            image_data = img_bytes.getvalue()
 
-        # Should raise NoFaceDetectedException
-        with pytest.raises((NoFaceDetectedException, Exception)):
-            analyzer.analyze_face(np.array(img))
+            # analyze() returns None when no face is detected (does not raise exception)
+            result = analyzer.analyze(image_data)
+            assert result is None
+        finally:
+            self._cleanup_mediapipe()
+
+    def test_analyze_with_valid_image(self):
+        """Test face analysis with valid image data"""
+        mock_mp = self._mock_mediapipe()
+        try:
+            from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
+
+            # Mock MediaPipe results with landmarks
+            mock_result = MagicMock()
+            mock_result.multi_face_landmarks = [MagicMock()]
+
+            # Create mock landmarks with varying positions
+            mock_landmarks = []
+            for i in range(478):
+                lm = MagicMock()
+                lm.x = 0.3 + (i % 10) * 0.04
+                lm.y = 0.2 + (i % 15) * 0.04
+                lm.z = 0.0
+                mock_landmarks.append(lm)
+
+            mock_result.multi_face_landmarks[0].landmark = mock_landmarks
+            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = mock_result
+
+            analyzer = MediaPipeFaceAnalyzer()
+
+            # Create a valid JPEG image as bytes
+            img = Image.new("RGB", (640, 480), color="white")
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format="JPEG")
+            image_data = img_bytes.getvalue()
+
+            # Should not raise exception; may return None if cv2 operations fail in test env
+            try:
+                result = analyzer.analyze(image_data)
+            except Exception:
+                # cv2 operations may not work perfectly in mock environment
+                pass
+        finally:
+            self._cleanup_mediapipe()
 
 
 class TestMLModel:
@@ -170,62 +205,80 @@ class TestRecommendationModelV6:
 
 
 class TestHybridRecommender:
-    """Test hybrid recommendation service"""
+    """Test hybrid (ML) recommendation service"""
 
-    @patch("services.hybrid_recommender.genai.GenerativeModel")
-    def test_get_recommendations(self, mock_genai):
-        """Test getting recommendations from hybrid service"""
+    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
+    def test_service_initialization(self, mock_init):
+        """Test that MLRecommendationService (aliased as HybridRecommendationService) initializes"""
         from services.hybrid_recommender import HybridRecommendationService
 
-        # Mock Gemini response
-        mock_response = Mock()
-        mock_response.text = """```json
-{
-  "face_shape": "계란형",
-  "personal_color": "봄웜",
-  "recommended_hairstyles": [
-    {"name": "레이어드 컷", "reason": "얼굴형과 잘 어울림"}
-  ]
-}
-```"""
+        service = HybridRecommendationService()
+        assert service is not None
+        mock_init.assert_called_once()
 
-        mock_model = Mock()
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.return_value = mock_model
+    @patch("services.trending_style_service.get_trending_style_service")
+    @patch("services.hybrid_recommender.normalize_style_name", side_effect=lambda x: x)
+    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
+    def test_recommend_returns_expected_structure(self, mock_init, mock_normalize, mock_trending):
+        """Test that recommend() returns expected result structure"""
+        from services.hybrid_recommender import MLRecommendationService
 
-        service = HybridRecommendationService(api_key="test_key")
-        face_features = {"face_shape": "계란형"}
+        service = MLRecommendationService()
+        # Manually set attributes that __init__ would normally set
+        service.ml_available = True
+        service.ml_recommender = MagicMock()
+        service.ml_recommender.recommend_top_k.return_value = [
+            {"hairstyle_id": 1, "hairstyle": "레이어드 컷", "score": 90.0},
+            {"hairstyle_id": 2, "hairstyle": "웨이브 펌", "score": 85.0},
+        ]
+        service.reason_generator = None
 
-        recommendations = service.get_recommendations(face_features, None)
+        mock_trending.return_value.pick_trending.return_value = []
 
-        assert "face_shape" in recommendations
-        assert "recommended_hairstyles" in recommendations
+        result = service.recommend(
+            image_data=b"fake_image",
+            face_shape="계란형",
+            skin_tone="봄웜",
+        )
 
-    @patch("services.hybrid_recommender.genai.GenerativeModel")
-    def test_recommendations_with_ml_enrichment(self, mock_genai):
-        """Test that recommendations are enriched with ML scores"""
-        from services.hybrid_recommender import HybridRecommendationService
+        assert "analysis" in result
+        assert "recommendations" in result
+        assert result["analysis"]["face_shape"] == "계란형"
+        assert len(result["recommendations"]) == 2
 
-        mock_response = Mock()
-        mock_response.text = """```json
-{
-  "face_shape": "계란형",
-  "personal_color": "봄웜",
-  "recommended_hairstyles": [
-    {"name": "레이어드 컷", "reason": "얼굴형과 잘 어울림"}
-  ]
-}
-```"""
+    @patch("services.trending_style_service.get_trending_style_service")
+    @patch("services.hybrid_recommender.normalize_style_name", side_effect=lambda x: x)
+    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
+    def test_recommend_with_ml_features(self, mock_init, mock_normalize, mock_trending):
+        """Test that recommendations work with ML feature vectors"""
+        from services.hybrid_recommender import MLRecommendationService
 
-        mock_model = Mock()
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.return_value = mock_model
+        service = MLRecommendationService()
+        service.ml_available = True
+        service.ml_recommender = MagicMock()
+        service.ml_recommender.recommend_top_k.return_value = [
+            {"hairstyle_id": 1, "hairstyle": "레이어드 컷", "score": 92.0},
+        ]
+        service.reason_generator = None
 
-        with patch("models.ml_recommender.predict_ml_score", return_value=85.0):
-            service = HybridRecommendationService(api_key="test_key")
-            face_features = {"face_shape": "계란형"}
+        mock_trending.return_value.pick_trending.return_value = []
 
-            recommendations = service.get_recommendations(face_features, None)
+        result = service.recommend(
+            image_data=b"fake_image",
+            face_shape="계란형",
+            skin_tone="봄웜",
+            face_features=[1.4, 120.0, 130.0, 110.0, 0.92, 0.85],
+            skin_features=[45.0, 15.0],
+            gender="female",
+        )
 
-            # Should have ML scores added
-            assert "recommended_hairstyles" in recommendations
+        assert "recommendations" in result
+        # ML recommender should have been called with features
+        service.ml_recommender.recommend_top_k.assert_called_once_with(
+            face_shape="계란형",
+            skin_tone="봄웜",
+            k=3,
+            face_features=[1.4, 120.0, 130.0, 110.0, 0.92, 0.85],
+            skin_features=[45.0, 15.0],
+            gender="female",
+        )

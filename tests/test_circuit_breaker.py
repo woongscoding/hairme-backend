@@ -11,15 +11,16 @@ from services.circuit_breaker import (
     reset_circuit_breakers,
     with_circuit_breaker,
 )
+from core.exceptions import CircuitBreakerOpenException
 from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
 
 @pytest.fixture(autouse=True)
 def reset_breaker():
     """Reset circuit breaker before each test"""
-    gemini_breaker.reset()
+    gemini_breaker.close()
     yield
-    gemini_breaker.reset()
+    gemini_breaker.close()
 
 
 @pytest.fixture
@@ -33,6 +34,9 @@ def mock_mp_features():
         cheekbone_width=130.0,
         jaw_width=110.0,
         ITA_value=45.0,
+        hue_value=20.0,
+        face_features=[1.4, 120.0, 130.0, 110.0, 0.92, 0.85],
+        skin_features=[45.0, 20.0],
         confidence=0.95,
     )
 
@@ -129,7 +133,7 @@ class TestCircuitBreaker:
         assert status["gemini_api"]["state"] == "closed"
         assert status["gemini_api"]["fail_counter"] == 0
         assert status["gemini_api"]["fail_max"] == 5
-        assert status["gemini_api"]["timeout_duration"] == 60
+        assert status["gemini_api"]["reset_timeout"] == 60
         assert status["gemini_api"]["is_closed"] is True
         assert status["gemini_api"]["is_open"] is False
 
@@ -228,26 +232,32 @@ class TestCircuitBreaker:
         def api_call():
             return {"data": "success"}
 
-        # Should raise CircuitBreakerError
-        with pytest.raises(CircuitBreakerError):
+        # Should raise CircuitBreakerOpenException (decorator converts CircuitBreakerError)
+        with pytest.raises(CircuitBreakerOpenException):
             api_call()
 
     def test_circuit_breaker_configuration(self):
         """Test circuit breaker configuration"""
         assert gemini_breaker.fail_max == 5
-        assert gemini_breaker.timeout_duration == 60
+        assert gemini_breaker.reset_timeout == 60
         assert gemini_breaker.name == "GeminiAPI"
 
 
 class TestCircuitBreakerIntegration:
     """Integration tests for Circuit Breaker with GeminiAnalysisService"""
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
-    def test_gemini_service_uses_circuit_breaker(self, mock_genai_model):
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.types.GenerationConfig")
+    @patch("config.settings.settings")
+    def test_gemini_service_uses_circuit_breaker(
+        self, mock_settings, mock_gen_config, mock_genai_model
+    ):
         """Test that GeminiAnalysisService uses circuit breaker"""
         from services.gemini_analysis_service import GeminiAnalysisService
         from PIL import Image
         import io
+
+        mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
 
         # Create sample image
         img = Image.new("RGB", (100, 100), color="blue")

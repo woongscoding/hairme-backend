@@ -36,7 +36,10 @@ def mock_mp_features():
         cheekbone_width=130.0,
         jaw_width=110.0,
         ITA_value=45.0,
+        hue_value=15.0,
         confidence=0.95,
+        face_features=[1.4, 120.0, 130.0, 110.0, 0.92, 0.85],
+        skin_features=[45.0, 15.0],
     )
 
 
@@ -127,7 +130,7 @@ class TestFaceDetectionService:
             assert result["method"] == "gemini"
             mock_gemini.assert_called_once_with(sample_image_data)
 
-    @patch("services.face_detection_service.genai.GenerativeModel")
+    @patch("google.generativeai.GenerativeModel")
     def test_verify_face_with_gemini_success(self, mock_genai_model, sample_image_data):
         """Test successful Gemini face verification"""
         # Mock Gemini response
@@ -145,7 +148,7 @@ class TestFaceDetectionService:
         assert result["method"] == "gemini"
         assert "error" not in result
 
-    @patch("services.face_detection_service.genai.GenerativeModel")
+    @patch("google.generativeai.GenerativeModel")
     def test_verify_face_with_gemini_no_face(self, mock_genai_model, sample_image_data):
         """Test Gemini verification with no face detected"""
         mock_model = MagicMock()
@@ -161,7 +164,7 @@ class TestFaceDetectionService:
         assert result["face_count"] == 0
         assert result["method"] == "gemini"
 
-    @patch("services.face_detection_service.genai.GenerativeModel")
+    @patch("google.generativeai.GenerativeModel")
     def test_verify_face_with_gemini_error(self, mock_genai_model, sample_image_data):
         """Test Gemini verification error handling"""
         mock_genai_model.side_effect = Exception("API Error")
@@ -175,7 +178,7 @@ class TestFaceDetectionService:
         assert "error" in result
         assert "API Error" in result["error"]
 
-    @patch("services.face_detection_service.genai.GenerativeModel")
+    @patch("google.generativeai.GenerativeModel")
     def test_verify_face_with_gemini_invalid_json(
         self, mock_genai_model, sample_image_data
     ):

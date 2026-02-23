@@ -47,9 +47,8 @@ class TestAnalysisHistoryModel:
             image_hash="abc123",
             face_shape="계란형",
             personal_color="봄웜",
-            recommended_hairstyles='[{"name": "레이어드 컷"}]',
-            analysis_time=0.5,
-            model_version="20.2.0",
+            recommendations=[{"name": "레이어드 컷"}],
+            processing_time=0.5,
         )
 
         test_db.add(record)
@@ -70,7 +69,7 @@ class TestAnalysisHistoryModel:
             image_hash="hash1",
             face_shape="계란형",
             personal_color="봄웜",
-            analysis_time=0.5,
+            processing_time=0.5,
         )
 
         record2 = AnalysisHistory(
@@ -78,7 +77,7 @@ class TestAnalysisHistoryModel:
             image_hash="hash2",
             face_shape="둥근형",
             personal_color="가을웜",
-            analysis_time=0.6,
+            processing_time=0.6,
         )
 
         test_db.add(record1)
@@ -96,8 +95,7 @@ class TestDatabaseMigration:
     """Test database migration"""
 
     @patch("database.migration.SessionLocal")
-    @patch("database.connection.engine")
-    def test_migrate_database_schema(self, mock_engine, mock_session):
+    def test_migrate_database_schema(self, mock_session):
         """Test database schema migration"""
         from database.migration import migrate_database_schema
 
