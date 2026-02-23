@@ -57,24 +57,42 @@ def client():
 
 @pytest.fixture(scope="function")
 def client_with_mocks():
-    """Create a test client with all external dependencies mocked"""
-    with patch("api.endpoints.analyze.mediapipe_analyzer") as mock_mp, patch(
-        "api.endpoints.analyze.hybrid_service"
-    ) as mock_hybrid, patch(
-        "api.endpoints.analyze.feedback_collector"
-    ) as mock_feedback, patch(
-        "api.endpoints.analyze.retrain_queue"
-    ) as mock_queue, patch(
-        "core.cache.redis_client"
-    ) as mock_redis:
+    """Create a test client with all external dependencies mocked via FastAPI DI overrides"""
+    from core.dependencies import get_face_detection_service, get_hybrid_service
 
-        # Configure mocks
-        mock_mp.analyze_face.return_value = create_mock_face_features()
-        mock_hybrid.get_recommendations.return_value = create_mock_recommendations()
+    # Create mock face detection service
+    mock_face_detector = Mock()
+    mock_mp_features = Mock()
+    mock_mp_features.face_shape = "계란형"
+    mock_mp_features.skin_tone = "봄웜"
+    mock_mp_features.confidence = 0.92
+    mock_mp_features.gender = "neutral"
+    mock_mp_features.face_features = None
+    mock_mp_features.skin_features = None
+    mock_face_detector.detect_face.return_value = {
+        "has_face": True,
+        "face_count": 1,
+        "method": "mediapipe",
+        "features": mock_mp_features,
+    }
+
+    # Create mock ML recommendation service
+    mock_ml_recommender = Mock()
+    mock_ml_recommender.recommend.return_value = create_mock_recommendations()
+
+    # Override FastAPI dependencies
+    app.dependency_overrides[get_face_detection_service] = lambda: mock_face_detector
+    app.dependency_overrides[get_hybrid_service] = lambda: mock_ml_recommender
+
+    with patch("core.cache.redis_client") as mock_redis:
         mock_redis.get.return_value = None  # No cache hit
 
         with TestClient(app) as test_client:
             yield test_client
+
+    # Clean up overrides
+    app.dependency_overrides.pop(get_face_detection_service, None)
+    app.dependency_overrides.pop(get_hybrid_service, None)
 
 
 # ========== Mock Data Generators ==========
@@ -90,25 +108,23 @@ def create_mock_face_features():
 
 
 def create_mock_recommendations():
-    """Create mock Gemini API recommendations"""
+    """Create mock ML recommendation results"""
     return {
-        "face_shape": "계란형",
-        "personal_color": "봄웜",
-        "recommended_hairstyles": [
+        "recommendations": [
             {
-                "name": "레이어드 컷",
+                "style_name": "레이어드 컷",
                 "reason": "얼굴형과 잘 어울림",
                 "confidence": 0.95,
                 "ml_score": 8.5,
             },
             {
-                "name": "시스루 뱅",
+                "style_name": "시스루 뱅",
                 "reason": "이마 비율 보완",
                 "confidence": 0.88,
                 "ml_score": 8.2,
             },
             {
-                "name": "웨이브 펌",
+                "style_name": "웨이브 펌",
                 "reason": "부드러운 인상",
                 "confidence": 0.82,
                 "ml_score": 7.8,

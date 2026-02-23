@@ -32,7 +32,31 @@ from typing import Dict, Any
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Set environment variables for testing
+
+def _dynamodb_accessible() -> bool:
+    """Check if AWS credentials are configured and DynamoDB table is accessible."""
+    try:
+        import boto3
+        from botocore.exceptions import NoCredentialsError, ClientError
+
+        region = os.getenv("AWS_REGION", "ap-northeast-2")
+        table_name = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
+
+        dynamodb = boto3.resource("dynamodb", region_name=region)
+        table = dynamodb.Table(table_name)
+        table.load()  # Verifies the table exists and is accessible
+        return True
+    except (ImportError, Exception):
+        return False
+
+
+# Skip the entire module if DynamoDB table is not accessible
+pytestmark = pytest.mark.skipif(
+    not _dynamodb_accessible(),
+    reason="DynamoDB table not accessible (skipping DynamoDB integration tests)",
+)
+
+# Set environment variables for testing (only used when tests actually run)
 os.environ["USE_DYNAMODB"] = "true"
 os.environ["AWS_REGION"] = os.getenv("AWS_REGION", "ap-northeast-2")
 os.environ["DYNAMODB_TABLE_NAME"] = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
@@ -346,14 +370,14 @@ def test_batch_save_performance(dynamodb_connection, sample_analysis_data):
     assert len(analysis_ids) == 5
     assert elapsed < 10.0, f"Saving 5 records should take < 10s (took {elapsed:.2f}s)"
 
-    print(f"\n✅ Saved 5 records in {elapsed:.2f}s ({elapsed/5:.2f}s per record)")
+    print(f"\nSaved 5 records in {elapsed:.2f}s ({elapsed/5:.2f}s per record)")
 
 
 # ==================== Integration Tests ====================
 
 
 def test_full_analysis_workflow(dynamodb_connection, sample_analysis_data):
-    """Test complete analysis workflow: create → retrieve → feedback → stats"""
+    """Test complete analysis workflow: create -> retrieve -> feedback -> stats"""
     # 1. Create analysis
     analysis_id = save_analysis(sample_analysis_data)
     assert analysis_id is not None
@@ -380,7 +404,7 @@ def test_full_analysis_workflow(dynamodb_connection, sample_analysis_data):
     assert stats["success"] is True
     assert stats["total_feedback"] > 0
 
-    print(f"\n✅ Full workflow test passed: {analysis_id}")
+    print(f"\nFull workflow test passed: {analysis_id}")
 
 
 # ==================== Cleanup ====================
@@ -398,7 +422,7 @@ def test_cleanup_test_data(dynamodb_connection):
         result = get_analysis(analysis_id)
         assert result is not None, "Test data should still exist"
 
-        print(f"\n✅ Test data preserved: {analysis_id}")
+        print(f"\nTest data preserved: {analysis_id}")
         print("To clean up test data, use AWS Console or delete-item CLI command")
 
 

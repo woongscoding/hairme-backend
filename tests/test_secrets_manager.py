@@ -10,6 +10,10 @@ from config.secrets import get_secret, is_aws_environment, get_secret_or_env
 class TestSecretsManager:
     """Test AWS Secrets Manager functions"""
 
+    def setup_method(self):
+        """Clear lru_cache before each test"""
+        get_secret.cache_clear()
+
     def test_is_aws_environment_lambda(self, monkeypatch):
         """Test AWS environment detection in Lambda"""
         monkeypatch.setenv("AWS_EXECUTION_ENV", "AWS_Lambda_python3.11")
@@ -27,30 +31,30 @@ class TestSecretsManager:
         monkeypatch.delenv("ECS_CONTAINER_METADATA_URI", raising=False)
         assert is_aws_environment() is False
 
-    @patch("config.secrets.boto3")
-    def test_get_secret_success(self, mock_boto3):
+    @patch("boto3.client")
+    def test_get_secret_success(self, mock_boto3_client):
         """Test successful secret retrieval"""
         # Mock Secrets Manager client
         mock_client = Mock()
         mock_client.get_secret_value.return_value = {
             "SecretString": "test-secret-value"
         }
-        mock_boto3.client.return_value = mock_client
+        mock_boto3_client.return_value = mock_client
 
         # Call function
         result = get_secret("hairme-gemini-api-key", "ap-northeast-2")
 
         # Verify
         assert result == "test-secret-value"
-        mock_boto3.client.assert_called_once_with(
+        mock_boto3_client.assert_called_once_with(
             "secretsmanager", region_name="ap-northeast-2"
         )
         mock_client.get_secret_value.assert_called_once_with(
             SecretId="hairme-gemini-api-key"
         )
 
-    @patch("config.secrets.boto3")
-    def test_get_secret_not_found(self, mock_boto3):
+    @patch("boto3.client")
+    def test_get_secret_not_found(self, mock_boto3_client):
         """Test secret not found error"""
         from botocore.exceptions import ClientError
 
@@ -65,7 +69,7 @@ class TestSecretsManager:
             },
             "GetSecretValue",
         )
-        mock_boto3.client.return_value = mock_client
+        mock_boto3_client.return_value = mock_client
 
         # Call function
         result = get_secret("non-existent-secret")
@@ -73,8 +77,8 @@ class TestSecretsManager:
         # Verify
         assert result is None
 
-    @patch("config.secrets.boto3")
-    def test_get_secret_access_denied(self, mock_boto3):
+    @patch("boto3.client")
+    def test_get_secret_access_denied(self, mock_boto3_client):
         """Test access denied error"""
         from botocore.exceptions import ClientError
 
@@ -84,7 +88,7 @@ class TestSecretsManager:
             {"Error": {"Code": "AccessDeniedException", "Message": "Access denied"}},
             "GetSecretValue",
         )
-        mock_boto3.client.return_value = mock_client
+        mock_boto3_client.return_value = mock_client
 
         # Call function
         result = get_secret("hairme-gemini-api-key")
@@ -94,8 +98,8 @@ class TestSecretsManager:
 
     def test_get_secret_boto3_not_available(self):
         """Test when boto3 is not installed"""
-        with patch.dict("sys.modules", {"boto3": None}):
-            # Clear LRU cache to force re-import
+        with patch.dict("sys.modules", {"boto3": None, "botocore": None, "botocore.exceptions": None}):
+            # Clear LRU cache to force re-execution
             get_secret.cache_clear()
             result = get_secret("hairme-gemini-api-key")
             assert result is None
@@ -232,15 +236,17 @@ class TestSettingsIntegration:
     @patch("config.settings.is_aws_environment")
     @patch("config.settings.get_secret_or_env")
     def test_settings_raises_error_when_gemini_key_missing(
-        self, mock_get_secret_or_env, mock_is_aws
+        self, mock_get_secret_or_env, mock_is_aws, monkeypatch
     ):
         """Test Settings raises error when GEMINI_API_KEY is missing"""
         from config.settings import Settings
 
-        # Setup
+        # Setup - must clear the env var so Settings doesn't pick it up
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         mock_is_aws.return_value = True
         mock_get_secret_or_env.return_value = None
 
-        # Verify error is raised
+        # Pass GEMINI_API_KEY="" explicitly to override any .env file value
+        # Verify error is raised when key is empty
         with pytest.raises(ValueError, match="GEMINI_API_KEY is required"):
-            Settings()
+            Settings(GEMINI_API_KEY="")

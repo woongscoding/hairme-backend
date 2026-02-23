@@ -174,7 +174,7 @@ def get_circuit_breaker_status() -> dict:
             "state": str(gemini_breaker.current_state),
             "fail_counter": gemini_breaker.fail_counter,
             "fail_max": gemini_breaker.fail_max,
-            "reset_timeout": gemini_breaker._reset_timeout,
+            "reset_timeout": gemini_breaker.reset_timeout,
             "is_open": gemini_breaker.current_state == "open",
             "is_closed": gemini_breaker.current_state == "closed",
             "is_half_open": gemini_breaker.current_state == "half-open",
@@ -184,5 +184,5 @@ def get_circuit_breaker_status() -> dict:
 
 def reset_circuit_breakers():
     """Reset all circuit breakers (admin function)"""
-    gemini_breaker.reset()
+    gemini_breaker.close()
     logger.info("[ADMIN] All circuit breakers have been reset")

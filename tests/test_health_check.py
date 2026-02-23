@@ -148,13 +148,13 @@ class TestHealthCheckService:
         with patch("services.circuit_breaker.gemini_breaker") as mock_breaker:
             mock_breaker.current_state = "closed"
             mock_breaker.fail_counter = 0
-            mock_breaker.success_counter = 10
+            mock_breaker.fail_max = 5
 
             result = health_service.get_circuit_breaker_status()
 
             assert result["state"] == "closed"
             assert result["fail_counter"] == 0
-            assert result["success_counter"] == 10
+            assert result["fail_max"] == 5
 
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_basic(self, health_service):

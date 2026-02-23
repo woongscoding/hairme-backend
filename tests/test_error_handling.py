@@ -46,114 +46,75 @@ class TestExceptionHierarchy:
         assert "인증" in GeminiAuthenticationException().message
 
 
-class TestHybridRecommenderErrorHandling:
-    """Test error handling in HybridRecommender"""
+class TestMLRecommenderErrorHandling:
+    """Test error handling in MLRecommendationService (formerly HybridRecommender)"""
 
     @pytest.fixture
-    def hybrid_service(self):
-        """Create hybrid service with mocked components"""
-        with patch("services.hybrid_recommender.get_ml_recommender") as mock_ml:
+    def ml_service(self):
+        """Create ML recommendation service with mocked components"""
+        mock_recommender = Mock()
+        mock_recommender.recommend_top_k.return_value = []
+
+        mock_reason_gen = Mock()
+
+        with patch(
+            "models.ml_recommender.get_ml_recommender",
+            return_value=mock_recommender,
+        ):
             with patch(
-                "services.hybrid_recommender.get_reason_generator"
-            ) as mock_reason:
-                mock_ml.return_value = None
-                mock_reason.return_value = None
+                "services.reason_generator.get_reason_generator",
+                return_value=mock_reason_gen,
+            ):
+                from services.hybrid_recommender import MLRecommendationService
 
-                from services.hybrid_recommender import HybridRecommendationService
-
-                service = HybridRecommendationService(gemini_api_key="test-key")
+                service = MLRecommendationService()
                 return service
 
-    @pytest.mark.asyncio
-    async def test_gemini_json_parse_error_raises_specific_exception(
-        self, hybrid_service
-    ):
-        """Test that JSON parse errors raise GeminiInvalidResponseException"""
-        with patch.object(
-            hybrid_service.gemini_model, "generate_content"
-        ) as mock_generate:
-            # Mock response with invalid JSON
-            mock_response = Mock()
-            mock_response.text = "This is not JSON"
-            mock_generate.return_value = mock_response
-
-            with pytest.raises(GeminiInvalidResponseException):
-                await hybrid_service._call_gemini(b"test_image", "계란형", "가을웜")
-
-    @pytest.mark.asyncio
-    async def test_gemini_rate_limit_detection(self, hybrid_service):
-        """Test that rate limit errors are detected and raise specific exception"""
-        with patch.object(
-            hybrid_service.gemini_model, "generate_content"
-        ) as mock_generate:
-            # Mock rate limit error
-            mock_generate.side_effect = Exception("quota exceeded for this resource")
-
-            with pytest.raises(GeminiRateLimitException):
-                await hybrid_service._call_gemini(b"test_image", "계란형", "가을웜")
-
-    @pytest.mark.asyncio
-    async def test_gemini_auth_error_detection(self, hybrid_service):
-        """Test that authentication errors are detected"""
-        with patch.object(
-            hybrid_service.gemini_model, "generate_content"
-        ) as mock_generate:
-            # Mock auth error
-            mock_generate.side_effect = Exception("API key invalid")
-
-            with pytest.raises(GeminiAuthenticationException):
-                await hybrid_service._call_gemini(b"test_image", "계란형", "가을웜")
-
-    @pytest.mark.asyncio
-    async def test_gemini_connection_error_detection(self, hybrid_service):
-        """Test that connection errors are detected"""
-        with patch.object(
-            hybrid_service.gemini_model, "generate_content"
-        ) as mock_generate:
-            # Mock connection error
-            mock_generate.side_effect = Exception("connection timeout")
-
-            with pytest.raises(GeminiAPIException) as exc_info:
-                await hybrid_service._call_gemini(b"test_image", "계란형", "가을웜")
-
-            assert "연결 실패" in str(exc_info.value)
-
-    def test_ml_score_prediction_handles_key_error(self, hybrid_service):
-        """Test that KeyError in ML prediction is properly handled"""
-        # Enable ML
-        mock_recommender = Mock()
-        mock_recommender.predict_score.side_effect = KeyError("style not found")
-        hybrid_service.ml_recommender = mock_recommender
-        hybrid_service.ml_available = True
-
-        # This should not raise, but log warning and return 0.0
-        gemini_recs = [{"style_name": "테스트 스타일", "reason": "테스트"}]
-        ml_recs = []
-
-        result = hybrid_service._merge_recommendations(
-            gemini_recs, ml_recs, "계란형", "가을웜"
+    def test_ml_recommend_handles_ml_failure_gracefully(self, ml_service):
+        """Test that ML recommendation failure is handled gracefully"""
+        ml_service.ml_recommender.recommend_top_k.side_effect = Exception(
+            "ML model error"
         )
 
-        # Should still return recommendations
-        assert len(result) > 0
-        assert result[0]["score"] == 0.0  # Default score on error
+        # Should not raise - logs error and returns empty recommendations
+        with patch(
+            "services.trending_style_service.get_trending_style_service",
+            side_effect=Exception("no trending"),
+        ):
+            result = ml_service.recommend(b"test_image", "계란형", "가을웜")
 
-    def test_ml_score_prediction_handles_value_error(self, hybrid_service):
-        """Test that ValueError in ML prediction is properly handled"""
-        mock_recommender = Mock()
-        mock_recommender.predict_score.side_effect = ValueError("invalid input")
-        hybrid_service.ml_recommender = mock_recommender
-        hybrid_service.ml_available = True
+        assert "analysis" in result
+        assert "recommendations" in result
+        assert result["analysis"]["face_shape"] == "계란형"
 
-        gemini_recs = [{"style_name": "테스트 스타일", "reason": "테스트"}]
-        ml_recs = []
-
-        result = hybrid_service._merge_recommendations(
-            gemini_recs, ml_recs, "계란형", "가을웜"
+    def test_ml_recommend_returns_results_on_success(self, ml_service):
+        """Test that ML recommendation returns results on success"""
+        ml_service.ml_recommender.recommend_top_k.return_value = [
+            {"hairstyle_id": 1, "hairstyle": "레이어드 컷", "score": 85.0},
+        ]
+        ml_service.reason_generator.generate_with_score.return_value = (
+            "얼굴형에 잘 어울립니다"
         )
 
-        assert len(result) > 0
-        assert result[0]["score"] == 0.0
+        with patch(
+            "services.trending_style_service.get_trending_style_service",
+            side_effect=Exception("no trending"),
+        ):
+            result = ml_service.recommend(b"test_image", "계란형", "가을웜")
+
+        assert len(result["recommendations"]) == 1
+        assert result["recommendations"][0]["style_name"] == "레이어드 컷"
+
+    def test_ml_service_init_fails_when_recommender_unavailable(self):
+        """Test that MLRecommendationService raises when ML recommender is unavailable"""
+        with patch(
+            "models.ml_recommender.get_ml_recommender",
+            side_effect=Exception("Model not found"),
+        ):
+            from services.hybrid_recommender import MLRecommendationService
+
+            with pytest.raises(Exception, match="Model not found"):
+                MLRecommendationService()
 
 
 class TestCircuitBreakerErrorHandling:
@@ -166,7 +127,7 @@ class TestCircuitBreakerErrorHandling:
 
         # Create test breaker
         test_breaker = CircuitBreaker(
-            fail_max=1, timeout_duration=60, name="TestService"
+            fail_max=1, reset_timeout=60, name="TestService"
         )
 
         # Function that always fails
@@ -190,7 +151,7 @@ class TestCircuitBreakerErrorHandling:
         from services.circuit_breaker import with_circuit_breaker
 
         test_breaker = CircuitBreaker(
-            fail_max=1, timeout_duration=60, name="TestService"
+            fail_max=2, reset_timeout=60, name="TestService"
         )
 
         def fallback_function(*args, **kwargs):
@@ -200,11 +161,12 @@ class TestCircuitBreakerErrorHandling:
         def failing_function():
             raise Exception("Test error")
 
-        # Fail once to open circuit
+        # First failure - circuit still closed, original exception propagates
         with pytest.raises(Exception):
             failing_function()
 
-        # Next call should use fallback
+        # Second failure opens circuit (fail_max=2), breaker raises CircuitBreakerError,
+        # decorator catches it and uses fallback
         result = failing_function()
         assert result["fallback"] is True
 

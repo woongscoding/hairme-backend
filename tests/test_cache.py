@@ -71,7 +71,7 @@ class TestRedisCache:
         data = {"face_shape": "계란형", "personal_color": "봄웜"}
         mock_redis.setex.return_value = True
 
-        result = save_to_cache("test_hash", data, ttl=3600)
+        result = save_to_cache("test_hash", data)
 
         # Should call setex with correct parameters
         assert mock_redis.setex.called or result is None

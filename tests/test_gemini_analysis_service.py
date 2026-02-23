@@ -30,7 +30,10 @@ def mock_mp_features():
         cheekbone_width=130.0,
         jaw_width=110.0,
         ITA_value=45.0,
+        hue_value=15.0,
         confidence=0.95,
+        face_features=[1.4, 120.0, 130.0, 110.0, 0.92, 0.85],
+        skin_features=[45.0, 15.0],
     )
 
 
@@ -77,14 +80,14 @@ class TestGeminiAnalysisService:
         assert "MediaPipe" in prompt
         assert "95%" in prompt
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_with_gemini_success(
-        self, mock_genai_model, sample_image_data, sample_gemini_response
+        self, mock_genai_model, mock_genai_types, sample_image_data, sample_gemini_response
     ):
         """Test successful Gemini analysis"""
         mock_model = MagicMock()
         mock_response = MagicMock()
-        mock_response.text = f"{sample_gemini_response}"
 
         import json
 
@@ -101,10 +104,12 @@ class TestGeminiAnalysisService:
         assert result["analysis"]["face_shape"] == "계란형"
         assert len(result["recommendations"]) == 3
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_with_mediapipe_features(
         self,
         mock_genai_model,
+        mock_genai_types,
         sample_image_data,
         mock_mp_features,
         sample_gemini_response,
@@ -128,9 +133,10 @@ class TestGeminiAnalysisService:
         assert "analysis" in result
         mock_model.generate_content.assert_called_once()
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_strips_markdown_code_blocks(
-        self, mock_genai_model, sample_image_data, sample_gemini_response
+        self, mock_genai_model, mock_genai_types, sample_image_data, sample_gemini_response
     ):
         """Test that markdown code blocks are properly stripped"""
         mock_model = MagicMock()
@@ -150,9 +156,10 @@ class TestGeminiAnalysisService:
         assert "analysis" in result
         assert result["analysis"]["face_shape"] == "계란형"
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_json_decode_error_with_retry(
-        self, mock_genai_model, sample_image_data, sample_gemini_response
+        self, mock_genai_model, mock_genai_types, sample_image_data, sample_gemini_response
     ):
         """Test JSON decode error triggers retry"""
         mock_model = MagicMock()
@@ -176,9 +183,10 @@ class TestGeminiAnalysisService:
         assert "analysis" in result
         assert mock_model.generate_content.call_count == 2
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_json_decode_error_exceeds_retries(
-        self, mock_genai_model, sample_image_data
+        self, mock_genai_model, mock_genai_types, sample_image_data
     ):
         """Test JSON decode error raises exception after max retries"""
         mock_model = MagicMock()
@@ -196,9 +204,10 @@ class TestGeminiAnalysisService:
         assert "파싱 실패" in exc_info.value.detail
         assert "재시도 2회 초과" in exc_info.value.detail
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_api_error_with_retry(
-        self, mock_genai_model, sample_image_data, sample_gemini_response
+        self, mock_genai_model, mock_genai_types, sample_image_data, sample_gemini_response
     ):
         """Test API error triggers retry"""
         mock_model = MagicMock()
@@ -220,9 +229,10 @@ class TestGeminiAnalysisService:
         assert "analysis" in result
         assert mock_model.generate_content.call_count == 2
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_api_error_exceeds_retries(
-        self, mock_genai_model, sample_image_data
+        self, mock_genai_model, mock_genai_types, sample_image_data
     ):
         """Test API error raises exception after max retries"""
         mock_model = MagicMock()
@@ -238,9 +248,10 @@ class TestGeminiAnalysisService:
         assert "AI 분석 중 오류" in exc_info.value.detail
         assert "재시도 2회 초과" in exc_info.value.detail
 
-    @patch("services.gemini_analysis_service.genai.GenerativeModel")
+    @patch("google.generativeai.types")
+    @patch("google.generativeai.GenerativeModel")
     def test_analyze_without_mediapipe_features(
-        self, mock_genai_model, sample_image_data, sample_gemini_response
+        self, mock_genai_model, mock_genai_types, sample_image_data, sample_gemini_response
     ):
         """Test analysis without MediaPipe features uses basic prompt"""
         mock_model = MagicMock()

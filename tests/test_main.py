@@ -1,6 +1,7 @@
 """Tests for main application endpoints"""
 
 import pytest
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 
 
@@ -31,10 +32,11 @@ class TestRootEndpoint:
         features = data["features"]
 
         # Check for key features
-        assert "mediapipe_analysis" in features
-        assert "gemini_analysis" in features
-        assert "redis_cache" in features
-        assert "database" in features
+        assert "face_analysis" in features
+        assert "personal_color" in features
+        assert "hair_color_recommendation" in features
+        assert "hairstyle_recommendation" in features
+        assert "hair_color_synthesis" in features
 
 
 class TestHealthCheck:
@@ -47,27 +49,46 @@ class TestHealthCheck:
 
     def test_health_check_shows_healthy_status(self, client):
         """Test that health check shows healthy status"""
-        response = client.get("/api/health")
-        data = response.json()
+        with patch("core.health_check.get_health_check_service") as mock_svc:
+            mock_health = mock_svc.return_value
+            mock_health.comprehensive_health_check = AsyncMock(return_value={
+                "status": "healthy",
+                "timestamp": "2025-01-17T00:00:00",
+                "checks": {
+                    "system": {"cpu": {"percent": 50}},
+                    "dynamodb": {"status": "healthy"},
+                    "circuit_breaker": {"state": "closed"},
+                    "gemini_api": {"status": "skipped"},
+                },
+                "check_duration_ms": 50,
+            })
 
-        assert "status" in data
-        assert data["status"] == "healthy"
+            response = client.get("/api/health")
+            data = response.json()
+
+            assert "status" in data
+            assert data["status"] == "healthy"
 
     def test_health_check_includes_service_status(self, client):
         """Test that health check includes all service statuses"""
         response = client.get("/api/health")
         data = response.json()
 
-        # All required services should be listed
+        # Verify top-level structure
         assert "version" in data
-        assert "model" in data
-        assert "mediapipe_analysis" in data
-        assert "gemini_api" in data
-        assert "redis" in data
-        assert "database" in data
-        assert "feedback_system" in data
-        assert "ml_model" in data
-        assert "style_embedding" in data
+        assert "environment" in data
+        assert "startup" in data
+        assert "checks" in data
+
+        # Verify startup sub-structure
+        assert "required_services" in data["startup"]
+        assert "optional_services" in data["startup"]
+
+        # Verify checks sub-structure
+        assert "system" in data["checks"]
+        assert "dynamodb" in data["checks"]
+        assert "circuit_breaker" in data["checks"]
+        assert "gemini_api" in data["checks"]
 
 
 class TestCORS:
