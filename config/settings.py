@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     USE_DYNAMODB: bool = False
     AWS_REGION: str = "ap-northeast-2"
     DYNAMODB_TABLE_NAME: str = "hairme-analysis"
+    DYNAMODB_USAGE_TABLE_NAME: str = "hairstyle_usage"
+
+    # Daily Synthesis Limit
+    DAILY_SYNTHESIS_LIMIT: int = 3
 
     # MLOps Configuration
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
