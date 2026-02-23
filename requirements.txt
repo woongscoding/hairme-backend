@@ -33,11 +33,6 @@ sentence-transformers>=2.2.2  # For hairstyle embedding generation (flexible for
 # MLOps
 pyyaml==6.0.1
 
-# Testing
-pytest==7.4.3
-pytest-cov==4.1.0
-pytest-asyncio==0.21.1
-
 # Circuit Breaker
 pybreaker==1.0.1
 
