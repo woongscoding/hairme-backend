@@ -153,7 +153,9 @@ class UsageLimitService:
                     "used": self.daily_limit,
                     "remaining": 0,
                 }
-            logger.error(f"DynamoDB usage update failed: {e.response['Error']['Message']}")
+            logger.error(
+                f"DynamoDB usage update failed: {e.response['Error']['Message']}"
+            )
             raise
 
     def check_and_increment_usage(self, device_id: str) -> Dict[str, Any]:
@@ -199,16 +201,16 @@ class UsageLimitService:
 
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                logger.info(
-                    f"Daily limit reached: device={device_id}, date={today}"
-                )
+                logger.info(f"Daily limit reached: device={device_id}, date={today}")
                 return {
                     "allowed": False,
                     "daily_limit": self.daily_limit,
                     "used": self.daily_limit,
                     "remaining": 0,
                 }
-            logger.error(f"DynamoDB usage update failed: {e.response['Error']['Message']}")
+            logger.error(
+                f"DynamoDB usage update failed: {e.response['Error']['Message']}"
+            )
             raise
 
     def get_usage(self, device_id: str) -> Dict[str, Any]:
@@ -224,9 +226,7 @@ class UsageLimitService:
         today = self._today_kst()
 
         try:
-            response = self.table.get_item(
-                Key={"device_id": device_id, "date": today}
-            )
+            response = self.table.get_item(Key={"device_id": device_id, "date": today})
 
             if "Item" not in response:
                 return {
@@ -245,7 +245,9 @@ class UsageLimitService:
             }
 
         except ClientError as e:
-            logger.error(f"DynamoDB usage query failed: {e.response['Error']['Message']}")
+            logger.error(
+                f"DynamoDB usage query failed: {e.response['Error']['Message']}"
+            )
             raise
 
 

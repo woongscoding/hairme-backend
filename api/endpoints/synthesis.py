@@ -29,7 +29,9 @@ async def synthesize_hairstyle(
         ..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"
     ),
     gender: str = Form("male", description="성별 (male/female)"),
-    device_id: Optional[str] = Form(None, description="디바이스 고유 ID (일일 사용량 제한용)"),
+    device_id: Optional[str] = Form(
+        None, description="디바이스 고유 ID (일일 사용량 제한용)"
+    ),
     additional_instructions: Optional[str] = Form(
         None, description="추가 스타일링 요청 (선택)"
     ),
@@ -167,7 +169,9 @@ async def synthesize_with_reference(
     user_photo: UploadFile = File(..., description="사용자 얼굴 사진"),
     reference_photo: UploadFile = File(..., description="참고할 헤어스타일 사진"),
     gender: str = Form("male", description="성별 (male/female)"),
-    device_id: Optional[str] = Form(None, description="디바이스 고유 ID (일일 사용량 제한용)"),
+    device_id: Optional[str] = Form(
+        None, description="디바이스 고유 ID (일일 사용량 제한용)"
+    ),
 ):
     """
     레퍼런스 이미지 기반 헤어스타일 합성 API
