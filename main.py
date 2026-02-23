@@ -32,6 +32,7 @@ from api.endpoints.synthesis import router as synthesis_router
 from api.endpoints.personal_color import router as personal_color_router
 from api.endpoints.hair_color import router as hair_color_router
 from api.endpoints.beauty import router as beauty_router
+from api.endpoints.usage import router as usage_router
 
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
@@ -244,6 +245,7 @@ app.include_router(synthesis_router, prefix="/api/v2", tags=["synthesis"])
 app.include_router(personal_color_router, prefix="/api", tags=["personal_color"])
 app.include_router(hair_color_router, prefix="/api", tags=["hair_color"])
 app.include_router(beauty_router, prefix="/api", tags=["beauty"])
+app.include_router(usage_router, prefix="/api", tags=["usage"])
 
 
 # ========== Startup Event ==========

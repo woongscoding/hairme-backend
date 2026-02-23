@@ -11,6 +11,8 @@ from slowapi.util import get_remote_address
 from core.logging import logger
 from core.exceptions import InvalidFileFormatException
 from services.hairstyle_synthesis_service import get_synthesis_service
+from services.usage_limit_service import get_usage_limit_service
+from config.settings import settings
 
 router = APIRouter()
 
@@ -27,6 +29,7 @@ async def synthesize_hairstyle(
         ..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"
     ),
     gender: str = Form("male", description="성별 (male/female)"),
+    device_id: Optional[str] = Form(None, description="디바이스 고유 ID (일일 사용량 제한용)"),
     additional_instructions: Optional[str] = Form(
         None, description="추가 스타일링 요청 (선택)"
     ),
@@ -40,6 +43,7 @@ async def synthesize_hairstyle(
         file: 사용자 얼굴 사진 (JPG, PNG, WEBP)
         hairstyle_name: 적용할 헤어스타일 이름
         gender: 성별 (male/female)
+        device_id: 디바이스 고유 ID (일일 사용량 제한용)
         additional_instructions: 추가 스타일링 요청 (선택)
 
     Returns:
@@ -54,6 +58,28 @@ async def synthesize_hairstyle(
     start_time = time.time()
 
     try:
+        # Daily usage limit check (read-only, no increment yet)
+        trimmed_device_id = device_id.strip() if device_id else None
+        if trimmed_device_id:
+            try:
+                usage_service = get_usage_limit_service()
+                usage_result = usage_service.check_usage(trimmed_device_id)
+
+                if not usage_result["allowed"]:
+                    daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": "daily_limit_exceeded",
+                            "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                            "daily_limit": daily_limit,
+                            "used": daily_limit,
+                            "remaining": 0,
+                        },
+                    )
+            except Exception as e:
+                logger.warning(f"Usage limit check failed (proceeding): {str(e)}")
+
         # File validation
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
@@ -91,6 +117,9 @@ async def synthesize_hairstyle(
         processing_time = round(time.time() - start_time, 2)
 
         if result["success"]:
+            # Usage increment는 클라이언트가 POST /api/usage/consume 호출로 처리
+            # (헤어스타일 + 염색색 합산 관리를 위해 클라이언트에서 통합 호출)
+
             logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
             return {
                 "success": True,
@@ -138,6 +167,7 @@ async def synthesize_with_reference(
     user_photo: UploadFile = File(..., description="사용자 얼굴 사진"),
     reference_photo: UploadFile = File(..., description="참고할 헤어스타일 사진"),
     gender: str = Form("male", description="성별 (male/female)"),
+    device_id: Optional[str] = Form(None, description="디바이스 고유 ID (일일 사용량 제한용)"),
 ):
     """
     레퍼런스 이미지 기반 헤어스타일 합성 API
@@ -161,6 +191,28 @@ async def synthesize_with_reference(
     start_time = time.time()
 
     try:
+        # Daily usage limit check (read-only, no increment yet)
+        trimmed_device_id = device_id.strip() if device_id else None
+        if trimmed_device_id:
+            try:
+                usage_service = get_usage_limit_service()
+                usage_result = usage_service.check_usage(trimmed_device_id)
+
+                if not usage_result["allowed"]:
+                    daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                    return JSONResponse(
+                        status_code=429,
+                        content={
+                            "error": "daily_limit_exceeded",
+                            "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                            "daily_limit": daily_limit,
+                            "used": daily_limit,
+                            "remaining": 0,
+                        },
+                    )
+            except Exception as e:
+                logger.warning(f"Usage limit check failed (proceeding): {str(e)}")
+
         # Validate user photo
         if not user_photo.filename:
             raise HTTPException(status_code=400, detail="사용자 사진 파일명이 없습니다")
@@ -217,6 +269,8 @@ async def synthesize_with_reference(
         processing_time = round(time.time() - start_time, 2)
 
         if result["success"]:
+            # Usage increment는 클라이언트가 POST /api/usage/consume 호출로 처리
+
             logger.info(f"✅ 레퍼런스 합성 완료 ({processing_time}초)")
             return {
                 "success": True,
