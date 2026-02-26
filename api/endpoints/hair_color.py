@@ -17,6 +17,8 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
+from services.usage_limit_service import get_usage_limit_service
+from config.settings import settings
 
 # Lazy import - service will be imported when needed (Lambda cold start optimization)
 _hair_color_service = None
@@ -194,6 +196,9 @@ async def synthesize_hair_color(
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
     color_name: str = Form(..., description="염색 컬러명 (예: 밀크브라운)"),
     color_hex: str = Form(None, description="HEX 코드 (선택, 미입력시 자동 조회)"),
+    device_id: str = Form(
+        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
+    ),
     additional_instructions: Optional[str] = Form(None, description="추가 요청사항"),
 ):
     """
@@ -216,6 +221,36 @@ async def synthesize_hair_color(
     start_time = time.time()
 
     try:
+        # Daily usage limit: atomic check + increment (server-side enforcement)
+        trimmed_device_id = device_id.strip()
+        if not trimmed_device_id:
+            raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
+
+        try:
+            usage_service = get_usage_limit_service()
+            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
+
+            if not usage_result["allowed"]:
+                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "daily_limit_exceeded",
+                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                        "daily_limit": daily_limit,
+                        "used": usage_result["used"],
+                        "remaining": 0,
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Usage limit check failed (blocking): {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
+
         # File validation
         if not file.filename:
             raise HTTPException(status_code=400, detail="파일명이 없습니다")
@@ -325,6 +360,9 @@ async def synthesize_recommended_color(
         ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
     ),
     color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)"),
+    device_id: str = Form(
+        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
+    ),
 ):
     """
     퍼스널컬러 기반 추천 염색 시뮬레이션
@@ -345,6 +383,36 @@ async def synthesize_recommended_color(
     start_time = time.time()
 
     try:
+        # Daily usage limit: atomic check + increment (server-side enforcement)
+        trimmed_device_id = device_id.strip()
+        if not trimmed_device_id:
+            raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
+
+        try:
+            usage_service = get_usage_limit_service()
+            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
+
+            if not usage_result["allowed"]:
+                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "daily_limit_exceeded",
+                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                        "daily_limit": daily_limit,
+                        "used": usage_result["used"],
+                        "remaining": 0,
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Usage limit check failed (blocking): {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
+
         valid_types = ["봄웜", "여름쿨", "가을웜", "겨울쿨"]
         if personal_color not in valid_types:
             raise HTTPException(

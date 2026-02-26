@@ -29,8 +29,8 @@ async def synthesize_hairstyle(
         ..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"
     ),
     gender: str = Form("male", description="성별 (male/female)"),
-    device_id: Optional[str] = Form(
-        None, description="디바이스 고유 ID (일일 사용량 제한용)"
+    device_id: str = Form(
+        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
     ),
     additional_instructions: Optional[str] = Form(
         None, description="추가 스타일링 요청 (선택)"
@@ -60,27 +60,35 @@ async def synthesize_hairstyle(
     start_time = time.time()
 
     try:
-        # Daily usage limit check (read-only, no increment yet)
-        trimmed_device_id = device_id.strip() if device_id else None
-        if trimmed_device_id:
-            try:
-                usage_service = get_usage_limit_service()
-                usage_result = usage_service.check_usage(trimmed_device_id)
+        # Daily usage limit: atomic check + increment (server-side enforcement)
+        trimmed_device_id = device_id.strip()
+        if not trimmed_device_id:
+            raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
-                if not usage_result["allowed"]:
-                    daily_limit = settings.DAILY_SYNTHESIS_LIMIT
-                    return JSONResponse(
-                        status_code=429,
-                        content={
-                            "error": "daily_limit_exceeded",
-                            "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
-                            "daily_limit": daily_limit,
-                            "used": daily_limit,
-                            "remaining": 0,
-                        },
-                    )
-            except Exception as e:
-                logger.warning(f"Usage limit check failed (proceeding): {str(e)}")
+        try:
+            usage_service = get_usage_limit_service()
+            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
+
+            if not usage_result["allowed"]:
+                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "daily_limit_exceeded",
+                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                        "daily_limit": daily_limit,
+                        "used": usage_result["used"],
+                        "remaining": 0,
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Usage limit check failed (blocking): {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
 
         # File validation
         if not file.filename:
@@ -119,9 +127,6 @@ async def synthesize_hairstyle(
         processing_time = round(time.time() - start_time, 2)
 
         if result["success"]:
-            # Usage increment는 클라이언트가 POST /api/usage/consume 호출로 처리
-            # (헤어스타일 + 염색색 합산 관리를 위해 클라이언트에서 통합 호출)
-
             logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
             return {
                 "success": True,
@@ -169,8 +174,8 @@ async def synthesize_with_reference(
     user_photo: UploadFile = File(..., description="사용자 얼굴 사진"),
     reference_photo: UploadFile = File(..., description="참고할 헤어스타일 사진"),
     gender: str = Form("male", description="성별 (male/female)"),
-    device_id: Optional[str] = Form(
-        None, description="디바이스 고유 ID (일일 사용량 제한용)"
+    device_id: str = Form(
+        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
     ),
 ):
     """
@@ -195,27 +200,35 @@ async def synthesize_with_reference(
     start_time = time.time()
 
     try:
-        # Daily usage limit check (read-only, no increment yet)
-        trimmed_device_id = device_id.strip() if device_id else None
-        if trimmed_device_id:
-            try:
-                usage_service = get_usage_limit_service()
-                usage_result = usage_service.check_usage(trimmed_device_id)
+        # Daily usage limit: atomic check + increment (server-side enforcement)
+        trimmed_device_id = device_id.strip()
+        if not trimmed_device_id:
+            raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
-                if not usage_result["allowed"]:
-                    daily_limit = settings.DAILY_SYNTHESIS_LIMIT
-                    return JSONResponse(
-                        status_code=429,
-                        content={
-                            "error": "daily_limit_exceeded",
-                            "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
-                            "daily_limit": daily_limit,
-                            "used": daily_limit,
-                            "remaining": 0,
-                        },
-                    )
-            except Exception as e:
-                logger.warning(f"Usage limit check failed (proceeding): {str(e)}")
+        try:
+            usage_service = get_usage_limit_service()
+            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
+
+            if not usage_result["allowed"]:
+                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "error": "daily_limit_exceeded",
+                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+                        "daily_limit": daily_limit,
+                        "used": usage_result["used"],
+                        "remaining": 0,
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Usage limit check failed (blocking): {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
 
         # Validate user photo
         if not user_photo.filename:
@@ -273,8 +286,6 @@ async def synthesize_with_reference(
         processing_time = round(time.time() - start_time, 2)
 
         if result["success"]:
-            # Usage increment는 클라이언트가 POST /api/usage/consume 호출로 처리
-
             logger.info(f"✅ 레퍼런스 합성 완료 ({processing_time}초)")
             return {
                 "success": True,
