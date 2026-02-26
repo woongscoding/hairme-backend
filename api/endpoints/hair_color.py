@@ -196,9 +196,7 @@ async def synthesize_hair_color(
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
     color_name: str = Form(..., description="염색 컬러명 (예: 밀크브라운)"),
     color_hex: str = Form(None, description="HEX 코드 (선택, 미입력시 자동 조회)"),
-    device_id: str = Form(
-        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
-    ),
+    device_id: str = Form(..., description="디바이스 고유 ID (일일 사용량 제한용)"),
     additional_instructions: Optional[str] = Form(None, description="추가 요청사항"),
 ):
     """
@@ -360,9 +358,7 @@ async def synthesize_recommended_color(
         ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
     ),
     color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)"),
-    device_id: str = Form(
-        ..., description="디바이스 고유 ID (일일 사용량 제한용)"
-    ),
+    device_id: str = Form(..., description="디바이스 고유 ID (일일 사용량 제한용)"),
 ):
     """
     퍼스널컬러 기반 추천 염색 시뮬레이션
