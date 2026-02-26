@@ -211,3 +211,88 @@ jobs:
           echo "HairMe Backend deployed successfully!"
           echo "Version: ${{ github.sha }}"
           echo "Deployed at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  build-and-deploy-beauty:
+    name: Build and Deploy Beauty Lambda
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build, tag, and push Beauty image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -f Dockerfile.beauty \
+            -t $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG \
+            -t $ECR_REGISTRY/hairme-beauty:latest \
+            --platform linux/amd64 \
+            .
+
+          docker push $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG
+          docker push $ECR_REGISTRY/hairme-beauty:latest
+
+          echo "image=$ECR_REGISTRY/hairme-beauty:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Beauty Lambda function
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.image }}
+        run: |
+          echo "Updating Beauty Lambda: hairme-beauty"
+
+          aws lambda update-function-code \
+            --function-name hairme-beauty \
+            --image-uri $IMAGE_URI \
+            --region ap-northeast-2 \
+            --output json
+
+          echo "Waiting for function update to complete..."
+          aws lambda wait function-updated \
+            --function-name hairme-beauty \
+            --region ap-northeast-2
+
+          aws lambda update-function-configuration \
+            --function-name hairme-beauty \
+            --environment "Variables={LAMBDA_TYPE=beauty,USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,ENVIRONMENT=production}" \
+            --memory-size 2048 \
+            --timeout 120 \
+            --region ap-northeast-2 \
+            --output json
+
+          echo "Beauty Lambda updated successfully!"
+
+      - name: Test Beauty Lambda
+        run: |
+          RESPONSE=$(aws lambda invoke \
+            --function-name hairme-beauty \
+            --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health"}},"rawPath":"/api/health","headers":{}}' \
+            --cli-binary-format raw-in-base64-out \
+            --region ap-northeast-2 \
+            response.json)
+
+          echo "Beauty Lambda response:"
+          cat response.json
