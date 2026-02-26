@@ -11,13 +11,17 @@ RUN yum install -y \
     libXrender \
     gcc \
     gcc-c++ \
+    make \
+    cmake \
+    pkgconfig \
     && yum clean all \
     && rm -rf /var/cache/yum
 
 # Copy requirements and install Python dependencies
 # NO PyTorch - using MediaPipe + Gemini only
 COPY requirements-beauty.txt ${LAMBDA_TASK_ROOT}/requirements.txt
-RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/
