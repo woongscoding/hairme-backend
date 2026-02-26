@@ -13,7 +13,7 @@ on:
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: hairme-lambda-proxy
-  LAMBDA_FUNCTION_NAME: hairme-analyze
+  LAMBDA_FUNCTION_NAME: hairme-analyze  # Android 앱이 호출하는 실제 Lambda
 
 jobs:
   test:
@@ -150,9 +150,9 @@ jobs:
           echo "Note: API keys are now managed via AWS Secrets Manager"
           aws lambda update-function-configuration \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production}" \
+            --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,DYNAMODB_USAGE_TABLE_NAME=hairstyle_usage,ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production}" \
             --memory-size 2048 \
-            --timeout 30 \
+            --timeout 120 \
             --region $AWS_REGION \
             --output json
 
@@ -277,7 +277,7 @@ jobs:
 
           aws lambda update-function-configuration \
             --function-name hairme-beauty \
-            --environment "Variables={LAMBDA_TYPE=beauty,USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,LOG_LEVEL=INFO,ENVIRONMENT=production}" \
+            --environment "Variables={LAMBDA_TYPE=beauty,USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,DYNAMODB_USAGE_TABLE_NAME=hairstyle_usage,LOG_LEVEL=INFO,ENVIRONMENT=production}" \
             --memory-size 2048 \
             --timeout 120 \
             --region ap-northeast-2 \

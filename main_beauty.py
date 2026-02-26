@@ -30,6 +30,7 @@ IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 from api.endpoints.personal_color import router as personal_color_router
 from api.endpoints.hair_color import router as hair_color_router
 from api.endpoints.beauty import router as beauty_router
+from api.endpoints.usage import router as usage_router
 
 # Lambda initialization flag
 _lambda_initialized = False
@@ -182,6 +183,7 @@ async def limit_upload_size(request: Request, call_next):
 app.include_router(personal_color_router, prefix="/api", tags=["personal_color"])
 app.include_router(hair_color_router, prefix="/api", tags=["hair_color"])
 app.include_router(beauty_router, prefix="/api", tags=["beauty"])
+app.include_router(usage_router, prefix="/api", tags=["usage"])
 
 
 # ========== Startup Event ==========
