@@ -41,9 +41,10 @@ async def consume_usage(
     device_id: str = Query(..., description="디바이스 고유 ID"),
 ):
     """
-    합성 횟수 1회 소비 API
+    합성 횟수 소비 API (Deprecated)
 
-    클라이언트에서 합성(헤어스타일/염색색) 성공 후 호출합니다.
+    사용량 증가는 합성 API 호출 시 서버에서 자동 처리됩니다.
+    이 엔드포인트는 하위 호환성을 위해 유지되며, 현재 사용량만 반환합니다.
 
     Args:
         device_id: 디바이스 고유 식별자
@@ -56,11 +57,11 @@ async def consume_usage(
 
     try:
         service = get_usage_limit_service()
-        result = service.increment_usage(device_id.strip())
+        result = service.get_usage(device_id.strip())
         return result
 
     except Exception as e:
-        logger.error(f"Usage consume failed: {str(e)}")
+        logger.error(f"Usage query failed: {str(e)}")
         raise HTTPException(
-            status_code=500, detail="사용량 소비 중 오류가 발생했습니다."
+            status_code=500, detail="사용량 조회 중 오류가 발생했습니다."
         )
