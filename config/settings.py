@@ -114,11 +114,11 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # Application Info
-    APP_TITLE: str = "HairMe API"
+    APP_TITLE: str = "BeautyMe API"
     APP_DESCRIPTION: str = (
-        "AI 기반 헤어스타일 추천 서비스 (v20.2.0: MediaPipe 전환 완료)"
+        "AI 기반 종합 뷰티 컨설팅 플랫폼 (v23.0.0: 얼굴분석 + 퍼스널컬러 + 헤어추천 + AI합성)"
     )
-    APP_VERSION: str = "20.2.0"
+    APP_VERSION: str = "23.0.0"
 
     # Constants
     CONFIDENCE_THRESHOLD_VERY_HIGH: float = 0.90
