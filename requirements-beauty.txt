@@ -25,10 +25,11 @@ opencv-python-headless==4.9.0.80
 numpy==1.26.3
 mediapipe==0.10.14
 
-# mediapipe의 jax 의존성 고정 (Lambda AMI의 GCC 7.3과 호환되는 버전)
+# mediapipe의 jax/scipy 의존성 고정 (Lambda AMI의 GCC 7.3과 호환되는 버전)
 jax==0.4.30
 jaxlib==0.4.30
 ml_dtypes==0.4.1
+scipy==1.11.4
 
 # Lambda Handler
 mangum==0.17.0
