@@ -46,6 +46,7 @@ Thumbs.db
 *.pth
 *.h5
 *.pkl
+!models/hairstyle_recommender_v6_multitoken.pt
 models/backup/
 models/hairstyle_recommender_v2.pt/
 
@@ -53,6 +54,7 @@ models/hairstyle_recommender_v2.pt/
 data_source/*.json
 !data_source/valid_hairstyles.json
 data_source/*.npz
+!data_source/style_embeddings.npz
 data_quality/
 evaluation/
 
