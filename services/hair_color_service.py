@@ -345,16 +345,13 @@ class HairColorService:
             }
 
         except Exception as e:
-            logger.error(f"❌ 염색 시뮬레이션 실패: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"❌ 염색 시뮬레이션 실패: {str(e)}", exc_info=True)
 
             return {
                 "success": False,
                 "image_base64": None,
                 "image_format": None,
-                "message": f"염색 시뮬레이션 중 오류: {str(e)}",
+                "message": "염색 시뮬레이션 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             }
 
     def get_color_by_name(self, color_name: str) -> Optional[Dict[str, Any]]:

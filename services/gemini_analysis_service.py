@@ -181,7 +181,7 @@ class GeminiAnalysisService:
 
             raise HTTPException(
                 status_code=500,
-                detail=f"AI 응답 파싱 실패 (재시도 {self.max_retries}회 초과): {str(e)}",
+                detail="AI 응답 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.",
             )
 
         except Exception as e:
@@ -199,7 +199,7 @@ class GeminiAnalysisService:
 
             raise HTTPException(
                 status_code=500,
-                detail=f"AI 분석 중 오류가 발생했습니다 (재시도 {self.max_retries}회 초과): {str(e)}",
+                detail="AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             )
 
     def analyze_with_gemini(

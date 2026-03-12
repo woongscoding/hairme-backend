@@ -12,7 +12,9 @@ Version: 3.0.0
 import os
 from datetime import datetime, timezone
 from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from services.circuit_breaker import get_circuit_breaker_status, reset_circuit_breakers
 from core.auth import verify_admin_api_key
 from api.dependencies import ABTestStartRequest, ABTestPromoteRequest
@@ -21,10 +23,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/admin/mlops-status")
-async def get_mlops_status(api_key: str = Depends(verify_admin_api_key)):
+@limiter.limit("10/minute")
+async def get_mlops_status(request: Request, api_key: str = Depends(verify_admin_api_key)):
     """
     MLOps 파이프라인 상태 조회
 
@@ -60,7 +64,8 @@ async def get_mlops_status(api_key: str = Depends(verify_admin_api_key)):
 
 
 @router.get("/admin/feedback-stats")
-async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
+@limiter.limit("10/minute")
+async def get_feedback_stats(request: Request, api_key: str = Depends(verify_admin_api_key)):
     """
     DynamoDB 기반 피드백 통계 조회
 
@@ -99,7 +104,8 @@ async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
 
 
 @router.get("/admin/circuit-breaker-status")
-async def get_circuit_status(api_key: str = Depends(verify_admin_api_key)):
+@limiter.limit("10/minute")
+async def get_circuit_status(request: Request, api_key: str = Depends(verify_admin_api_key)):
     """
     Circuit Breaker 상태 조회
 
@@ -129,7 +135,8 @@ async def get_circuit_status(api_key: str = Depends(verify_admin_api_key)):
 
 
 @router.post("/admin/circuit-breaker-reset")
-async def reset_circuit(api_key: str = Depends(verify_admin_api_key)):
+@limiter.limit("5/minute")
+async def reset_circuit(request: Request, api_key: str = Depends(verify_admin_api_key)):
     """
     Circuit Breaker 수동 리셋 (관리자 전용)
 
@@ -154,8 +161,9 @@ async def reset_circuit(api_key: str = Depends(verify_admin_api_key)):
 
 
 @router.get("/admin/abtest/status")
+@limiter.limit("10/minute")
 async def get_abtest_status(
-    api_key: str = Depends(verify_admin_api_key),
+    request: Request, api_key: str = Depends(verify_admin_api_key),
 ) -> Dict[str, Any]:
     """
     현재 A/B 테스트 상태 조회
@@ -200,8 +208,9 @@ async def get_abtest_status(
 
 
 @router.get("/admin/abtest/metrics/{experiment_id}")
+@limiter.limit("10/minute")
 async def get_abtest_metrics(
-    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
+    request: Request, experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     특정 실험의 A/B 테스트 지표 조회
@@ -248,8 +257,9 @@ async def get_abtest_metrics(
 
 
 @router.get("/admin/abtest/summary/{experiment_id}")
+@limiter.limit("10/minute")
 async def get_abtest_summary(
-    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
+    request: Request, experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     실험 요약 정보 조회
@@ -280,8 +290,9 @@ async def get_abtest_summary(
 
 
 @router.post("/admin/abtest/start")
+@limiter.limit("5/minute")
 async def start_abtest(
-    request: ABTestStartRequest, api_key: str = Depends(verify_admin_api_key)
+    request: Request, abtest_request: ABTestStartRequest, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     새 A/B 테스트 시작
@@ -309,25 +320,25 @@ async def start_abtest(
 
         # 새 설정으로 라우터 업데이트
         new_config = ABTestConfig(
-            experiment_id=request.experiment_id,
+            experiment_id=abtest_request.experiment_id,
             champion_model_version=os.getenv("ABTEST_CHAMPION_VERSION", "v6"),
-            challenger_model_version=request.challenger_model_version,
-            challenger_traffic_percent=request.challenger_traffic_percent,
+            challenger_model_version=abtest_request.challenger_model_version,
+            challenger_traffic_percent=abtest_request.challenger_traffic_percent,
             enabled=True,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        router = get_ab_router()
-        router.update_config(new_config)
+        ab_router = get_ab_router()
+        ab_router.update_config(new_config)
 
         logger.warning(
-            f"⚠️ [ADMIN] A/B 테스트 시작: experiment={request.experiment_id}, "
-            f"challenger={request.challenger_model_version}, traffic={request.challenger_traffic_percent}%"
+            f"⚠️ [ADMIN] A/B 테스트 시작: experiment={abtest_request.experiment_id}, "
+            f"challenger={abtest_request.challenger_model_version}, traffic={abtest_request.challenger_traffic_percent}%"
         )
 
         return {
             "success": True,
-            "message": f"A/B 테스트가 시작되었습니다 (experiment: {request.experiment_id})",
+            "message": f"A/B 테스트가 시작되었습니다 (experiment: {abtest_request.experiment_id})",
             "config": new_config.to_dict(),
             "warning": "이 설정은 런타임에만 적용됩니다. 서버 재시작 시 환경변수 설정이 필요합니다.",
         }
@@ -340,7 +351,8 @@ async def start_abtest(
 
 
 @router.post("/admin/abtest/stop")
-async def stop_abtest(api_key: str = Depends(verify_admin_api_key)) -> Dict[str, Any]:
+@limiter.limit("5/minute")
+async def stop_abtest(request: Request, api_key: str = Depends(verify_admin_api_key)) -> Dict[str, Any]:
     """
     현재 A/B 테스트 중지
 
@@ -384,8 +396,9 @@ async def stop_abtest(api_key: str = Depends(verify_admin_api_key)) -> Dict[str,
 
 
 @router.post("/admin/abtest/promote/{experiment_id}")
+@limiter.limit("5/minute")
 async def promote_challenger(
-    experiment_id: str, api_key: str = Depends(verify_admin_api_key)
+    request: Request, experiment_id: str, api_key: str = Depends(verify_admin_api_key)
 ) -> Dict[str, Any]:
     """
     Challenger를 Champion으로 승격

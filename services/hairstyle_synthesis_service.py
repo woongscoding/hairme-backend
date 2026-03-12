@@ -216,10 +216,7 @@ class HairstyleSynthesisService:
             }
 
         except Exception as e:
-            logger.error(f"❌ 헤어스타일 합성 실패: {str(e)}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"❌ 헤어스타일 합성 실패: {str(e)}", exc_info=True)
 
             return {
                 "success": False,

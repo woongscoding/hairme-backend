@@ -60,10 +60,7 @@ class HealthCheckService:
 
             return {
                 "status": "healthy",
-                "table_name": settings.DYNAMODB_TABLE_NAME,
-                "table_status": table_description,
                 "latency_ms": latency_ms,
-                "region": settings.AWS_REGION,
             }
 
         except ClientError as e:
@@ -72,8 +69,6 @@ class HealthCheckService:
 
             return {
                 "status": "unhealthy",
-                "error": error_code,
-                "message": str(e),
                 "latency_ms": 0,
             }
 
@@ -82,8 +77,6 @@ class HealthCheckService:
 
             return {
                 "status": "unhealthy",
-                "error": type(e).__name__,
-                "message": str(e),
                 "latency_ms": 0,
             }
 
@@ -116,9 +109,7 @@ class HealthCheckService:
 
             return {
                 "status": "healthy",
-                "model": settings.MODEL_NAME,
                 "latency_ms": latency_ms,
-                "response_length": len(response.text) if response.text else 0,
             }
 
         except Exception as e:
@@ -126,8 +117,6 @@ class HealthCheckService:
 
             return {
                 "status": "unhealthy",
-                "error": type(e).__name__,
-                "message": str(e)[:100],  # Truncate long error messages
                 "latency_ms": 0,
             }
 
@@ -157,11 +146,11 @@ class HealthCheckService:
             except (OSError, PermissionError) as e:
                 # Disk not accessible or permission denied
                 logger.warning(f"⚠️ Disk usage unavailable: {str(e)}")
-                disk_info = {"status": "unavailable", "reason": str(e)}
+                disk_info = {"status": "unavailable"}
             except Exception as e:
                 # Unexpected error
                 logger.error(f"❌ Disk usage error: {type(e).__name__}: {str(e)}")
-                disk_info = {"status": "error", "error": str(e)}
+                disk_info = {"status": "error"}
 
             return {
                 "cpu": {"percent": cpu_percent, "count": psutil.cpu_count()},
@@ -177,7 +166,7 @@ class HealthCheckService:
         except Exception as e:
             logger.error(f"❌ System metrics error: {str(e)}")
 
-            return {"error": str(e), "status": "unavailable"}
+            return {"status": "unavailable"}
 
     def get_circuit_breaker_status(self) -> Dict[str, Any]:
         """
@@ -204,7 +193,7 @@ class HealthCheckService:
         except Exception as e:
             logger.error(f"❌ Circuit breaker status error: {str(e)}")
 
-            return {"status": "unavailable", "error": str(e)}
+            return {"status": "unavailable"}
 
     async def comprehensive_health_check(
         self, include_expensive_checks: bool = False

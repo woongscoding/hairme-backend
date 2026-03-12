@@ -251,10 +251,7 @@ class BeautyConsultantService:
             return profile
 
         except Exception as e:
-            logger.error(f"❌ 종합 뷰티 분석 실패: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"❌ 종합 뷰티 분석 실패: {e}", exc_info=True)
             return None
 
     def get_consultation(
