@@ -28,7 +28,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/admin/mlops-status")
 @limiter.limit("10/minute")
-async def get_mlops_status(request: Request, api_key: str = Depends(verify_admin_api_key)):
+async def get_mlops_status(
+    request: Request, api_key: str = Depends(verify_admin_api_key)
+):
     """
     MLOps 파이프라인 상태 조회
 
@@ -59,13 +61,16 @@ async def get_mlops_status(request: Request, api_key: str = Depends(verify_admin
     except Exception as e:
         logger.error(f"❌ MLOps 상태 조회 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
 @router.get("/admin/feedback-stats")
 @limiter.limit("10/minute")
-async def get_feedback_stats(request: Request, api_key: str = Depends(verify_admin_api_key)):
+async def get_feedback_stats(
+    request: Request, api_key: str = Depends(verify_admin_api_key)
+):
     """
     DynamoDB 기반 피드백 통계 조회
 
@@ -99,13 +104,16 @@ async def get_feedback_stats(request: Request, api_key: str = Depends(verify_adm
     except Exception as e:
         logger.error(f"❌ 피드백 통계 조회 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
 @router.get("/admin/circuit-breaker-status")
 @limiter.limit("10/minute")
-async def get_circuit_status(request: Request, api_key: str = Depends(verify_admin_api_key)):
+async def get_circuit_status(
+    request: Request, api_key: str = Depends(verify_admin_api_key)
+):
     """
     Circuit Breaker 상태 조회
 
@@ -163,7 +171,8 @@ async def reset_circuit(request: Request, api_key: str = Depends(verify_admin_ap
 @router.get("/admin/abtest/status")
 @limiter.limit("10/minute")
 async def get_abtest_status(
-    request: Request, api_key: str = Depends(verify_admin_api_key),
+    request: Request,
+    api_key: str = Depends(verify_admin_api_key),
 ) -> Dict[str, Any]:
     """
     현재 A/B 테스트 상태 조회
@@ -292,7 +301,9 @@ async def get_abtest_summary(
 @router.post("/admin/abtest/start")
 @limiter.limit("5/minute")
 async def start_abtest(
-    request: Request, abtest_request: ABTestStartRequest, api_key: str = Depends(verify_admin_api_key)
+    request: Request,
+    abtest_request: ABTestStartRequest,
+    api_key: str = Depends(verify_admin_api_key),
 ) -> Dict[str, Any]:
     """
     새 A/B 테스트 시작
@@ -346,13 +357,16 @@ async def start_abtest(
     except Exception as e:
         logger.error(f"❌ A/B 테스트 시작 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
 @router.post("/admin/abtest/stop")
 @limiter.limit("5/minute")
-async def stop_abtest(request: Request, api_key: str = Depends(verify_admin_api_key)) -> Dict[str, Any]:
+async def stop_abtest(
+    request: Request, api_key: str = Depends(verify_admin_api_key)
+) -> Dict[str, Any]:
     """
     현재 A/B 테스트 중지
 
@@ -391,7 +405,8 @@ async def stop_abtest(request: Request, api_key: str = Depends(verify_admin_api_
     except Exception as e:
         logger.error(f"❌ A/B 테스트 중지 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -475,5 +490,6 @@ async def promote_challenger(
     except Exception as e:
         logger.error(f"❌ Challenger 승격 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )

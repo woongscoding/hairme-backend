@@ -54,7 +54,9 @@ async def submit_feedback(
     # style_index 화이트리스트 검증
     VALID_STYLE_INDICES = {0, 1, 2, 3, 4}
     if feedback_data.style_index not in VALID_STYLE_INDICES:
-        raise HTTPException(status_code=400, detail="유효하지 않은 스타일 인덱스입니다.")
+        raise HTTPException(
+            status_code=400, detail="유효하지 않은 스타일 인덱스입니다."
+        )
 
     use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
 
@@ -119,7 +121,8 @@ async def submit_feedback(
         except Exception as e:
             logger.error(f"❌ DynamoDB 피드백 저장 실패: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                status_code=500,
+                detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             )
 
     # ========== MySQL Backend (Original) ==========
@@ -191,7 +194,8 @@ async def submit_feedback(
             if db:
                 db.close()
             raise HTTPException(
-                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                status_code=500,
+                detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             )
 
 
@@ -240,7 +244,8 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"❌ DynamoDB 통계 조회 실패: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                status_code=500,
+                detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             )
 
     # ========== MySQL Backend (Original) ==========
@@ -344,5 +349,6 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
             if db:
                 db.close()
             raise HTTPException(
-                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+                status_code=500,
+                detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             )

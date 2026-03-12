@@ -158,7 +158,8 @@ async def synthesize_hairstyle(
     except Exception as e:
         logger.error(f"❌ 합성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -303,5 +304,6 @@ async def synthesize_with_reference(
     except Exception as e:
         logger.error(f"❌ 레퍼런스 합성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
