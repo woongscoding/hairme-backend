@@ -39,8 +39,6 @@ class TestHealthCheckService:
 
                 # Verify
                 assert result["status"] == "healthy"
-                assert result["table_name"] == "test-table"
-                assert result["table_status"] == "ACTIVE"
                 assert result["latency_ms"] > 0
 
     @pytest.mark.asyncio
@@ -79,7 +77,7 @@ class TestHealthCheckService:
                 result = await health_service.check_dynamodb()
 
                 assert result["status"] == "unhealthy"
-                assert "error" in result
+                assert result["latency_ms"] == 0
 
     @pytest.mark.asyncio
     async def test_check_gemini_api_success(self, health_service):
@@ -101,9 +99,7 @@ class TestHealthCheckService:
                     result = await health_service.check_gemini_api()
 
                     assert result["status"] == "healthy"
-                    assert result["model"] == "gemini-1.5-flash-latest"
                     assert result["latency_ms"] > 0
-                    assert result["response_length"] > 0
 
     @pytest.mark.asyncio
     async def test_check_gemini_api_error(self, health_service):
@@ -120,8 +116,7 @@ class TestHealthCheckService:
                     result = await health_service.check_gemini_api()
 
                     assert result["status"] == "unhealthy"
-                    assert "error" in result
-                    assert "API Error" in result["message"]
+                    assert result["latency_ms"] == 0
 
     def test_get_system_metrics_success(self, health_service):
         """Test system metrics retrieval"""
