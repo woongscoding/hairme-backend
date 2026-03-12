@@ -269,12 +269,9 @@ async def analyze_beauty(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ BeautyMe 분석 오류: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"❌ BeautyMe 분석 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -329,9 +326,9 @@ async def consult_beauty(request: Request, consultation: ConsultationRequest):
         )
 
     except Exception as e:
-        logger.error(f"❌ BeautyMe 상담 오류: {str(e)}")
+        logger.error(f"❌ BeautyMe 상담 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"상담 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -382,8 +379,10 @@ async def generate_report(
             status_code=400, content={"success": False, "error": str(e)}
         )
     except Exception as e:
-        logger.error(f"❌ 리포트 생성 오류: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ 리포트 생성 오류: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+        )
 
 
 @router.get("/beauty/features", tags=["beauty"])
