@@ -156,12 +156,9 @@ async def synthesize_hairstyle(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ 합성 오류: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"❌ 합성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"합성 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -304,10 +301,7 @@ async def synthesize_with_reference(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ 레퍼런스 합성 오류: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"❌ 레퍼런스 합성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"합성 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )

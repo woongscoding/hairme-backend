@@ -498,12 +498,9 @@ async def analyze_face_hybrid(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ ML 분석 오류: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"❌ ML 분석 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
