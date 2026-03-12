@@ -53,9 +53,9 @@ async def get_mlops_status(api_key: str = Depends(verify_admin_api_key)):
         return {"success": True, **stats}
 
     except Exception as e:
-        logger.error(f"❌ MLOps 상태 조회 실패: {e}")
+        logger.error(f"❌ MLOps 상태 조회 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"MLOps 상태 조회 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -92,9 +92,9 @@ async def get_feedback_stats(api_key: str = Depends(verify_admin_api_key)):
             }
 
     except Exception as e:
-        logger.error(f"❌ 피드백 통계 조회 실패: {e}")
+        logger.error(f"❌ 피드백 통계 조회 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"피드백 통계 조회 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -121,10 +121,10 @@ async def get_circuit_status(api_key: str = Depends(verify_admin_api_key)):
         return {"success": True, **status}
 
     except Exception as e:
-        logger.error(f"❌ Circuit Breaker 상태 조회 실패: {e}")
+        logger.error(f"❌ Circuit Breaker 상태 조회 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Circuit Breaker 상태 조회 중 오류가 발생했습니다: {str(e)}",
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -143,10 +143,10 @@ async def reset_circuit(api_key: str = Depends(verify_admin_api_key)):
         return {"success": True, "message": "All circuit breakers have been reset"}
 
     except Exception as e:
-        logger.error(f"❌ Circuit Breaker 리셋 실패: {e}")
+        logger.error(f"❌ Circuit Breaker 리셋 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Circuit Breaker 리셋 중 오류가 발생했습니다: {str(e)}",
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -192,10 +192,10 @@ async def get_abtest_status(
             "message": "A/B 테스트 모듈이 로드되지 않았습니다",
         }
     except Exception as e:
-        logger.error(f"❌ A/B 테스트 상태 조회 실패: {e}")
+        logger.error(f"❌ A/B 테스트 상태 조회 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 상태 조회 중 오류가 발생했습니다: {str(e)}",
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -240,10 +240,10 @@ async def get_abtest_metrics(
             status_code=500, detail="A/B 테스트 평가기 모듈이 로드되지 않았습니다"
         )
     except Exception as e:
-        logger.error(f"❌ A/B 테스트 지표 조회 실패: {e}")
+        logger.error(f"❌ A/B 테스트 지표 조회 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 지표 조회 중 오류가 발생했습니다: {str(e)}",
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -272,10 +272,10 @@ async def get_abtest_summary(
         return {"success": True, **summary}
 
     except Exception as e:
-        logger.error(f"❌ A/B 테스트 요약 조회 실패: {e}")
+        logger.error(f"❌ A/B 테스트 요약 조회 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"A/B 테스트 요약 조회 중 오류가 발생했습니다: {str(e)}",
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -333,9 +333,9 @@ async def start_abtest(
         }
 
     except Exception as e:
-        logger.error(f"❌ A/B 테스트 시작 실패: {e}")
+        logger.error(f"❌ A/B 테스트 시작 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"A/B 테스트 시작 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -377,9 +377,9 @@ async def stop_abtest(api_key: str = Depends(verify_admin_api_key)) -> Dict[str,
         }
 
     except Exception as e:
-        logger.error(f"❌ A/B 테스트 중지 실패: {e}")
+        logger.error(f"❌ A/B 테스트 중지 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"A/B 테스트 중지 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
 
 
@@ -460,7 +460,7 @@ async def promote_challenger(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Challenger 승격 실패: {e}")
+        logger.error(f"❌ Challenger 승격 실패: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Challenger 승격 중 오류가 발생했습니다: {str(e)}"
+            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         )
