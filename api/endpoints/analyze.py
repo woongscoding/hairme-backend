@@ -293,10 +293,7 @@ async def analyze_face(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-
-        tb_str = traceback.format_exc()
-        logger.error(f"분석 중 오류 발생: {str(e)}\n{tb_str}")
+        logger.error(f"분석 중 오류 발생: {str(e)}", exc_info=True)
 
         log_structured(
             "analysis_error",
@@ -312,8 +309,7 @@ async def analyze_face(
             content={
                 "success": False,
                 "error": "internal_error",
-                "message": f"분석 중 오류가 발생했습니다: {str(e)}",
-                "traceback": tb_str,
+                "message": "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
             },
         )
 
