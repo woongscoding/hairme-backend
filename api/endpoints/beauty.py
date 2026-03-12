@@ -271,7 +271,8 @@ async def analyze_beauty(
     except Exception as e:
         logger.error(f"❌ BeautyMe 분석 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -328,7 +329,8 @@ async def consult_beauty(request: Request, consultation: ConsultationRequest):
     except Exception as e:
         logger.error(f"❌ BeautyMe 상담 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
@@ -381,7 +383,8 @@ async def generate_report(
     except Exception as e:
         logger.error(f"❌ 리포트 생성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
 
 
