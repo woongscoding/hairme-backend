@@ -51,6 +51,11 @@ async def submit_feedback(
             detail="분석 ID가 제공되지 않았습니다. 앱을 재시작하고 다시 분석을 실행해주세요.",
         )
 
+    # style_index 화이트리스트 검증
+    VALID_STYLE_INDICES = {0, 1, 2, 3, 4}
+    if feedback_data.style_index not in VALID_STYLE_INDICES:
+        raise HTTPException(status_code=400, detail="유효하지 않은 스타일 인덱스입니다.")
+
     use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
 
     # ========== DynamoDB Backend ==========
@@ -112,9 +117,9 @@ async def submit_feedback(
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"❌ DynamoDB 피드백 저장 실패: {str(e)}")
+            logger.error(f"❌ DynamoDB 피드백 저장 실패: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail=f"피드백 저장 중 오류 발생: {str(e)}"
+                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
 
     # ========== MySQL Backend (Original) ==========
@@ -182,11 +187,11 @@ async def submit_feedback(
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"❌ MySQL 피드백 저장 실패: {str(e)}")
+            logger.error(f"❌ MySQL 피드백 저장 실패: {str(e)}", exc_info=True)
             if db:
                 db.close()
             raise HTTPException(
-                status_code=500, detail=f"피드백 저장 중 오류 발생: {str(e)}"
+                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
 
 
@@ -233,9 +238,9 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"❌ DynamoDB 통계 조회 실패: {str(e)}")
+            logger.error(f"❌ DynamoDB 통계 조회 실패: {str(e)}", exc_info=True)
             raise HTTPException(
-                status_code=500, detail=f"통계 조회 중 오류 발생: {str(e)}"
+                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
 
     # ========== MySQL Backend (Original) ==========
@@ -335,9 +340,9 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
             }
 
         except Exception as e:
-            logger.error(f"❌ MySQL 통계 조회 실패: {str(e)}")
+            logger.error(f"❌ MySQL 통계 조회 실패: {str(e)}", exc_info=True)
             if db:
                 db.close()
             raise HTTPException(
-                status_code=500, detail=f"통계 조회 중 오류 발생: {str(e)}"
+                status_code=500, detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
             )
