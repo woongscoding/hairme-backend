@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # API Keys (will be overridden by __init__ if in AWS)
     GEMINI_API_KEY: str = ""
     ADMIN_API_KEY: Optional[str] = None  # For admin endpoints authentication
+    OPENAI_API_KEY: Optional[str] = None  # LangGraph 챗봇 (임베딩 + LLM)
+    TAVILY_API_KEY: Optional[str] = None  # 챗봇 web_search 노드
 
     # Database Configuration
     DATABASE_URL: Optional[str] = None
@@ -128,6 +130,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # .env에 모르는 변수가 있어도 ValidationError 내지 않음
 
     def __init__(self, **kwargs: Any) -> None:
         """
