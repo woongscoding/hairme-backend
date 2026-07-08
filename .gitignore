@@ -166,10 +166,10 @@ scriptscreate_diverse_embeddings.py
 # Utils backup
 start_server.py
 
-# Test files (temporary)
-test_*.py
-test_*.json
-test_*.bat
+# Test files (temporary, 프로젝트 루트만 - tests/ 하위 정식 테스트는 추적)
+/test_*.py
+/test_*.json
+/test_*.bat
 fix_embeddings.py
 
 # Batch scripts
