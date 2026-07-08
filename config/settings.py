@@ -31,6 +31,26 @@ class Settings(BaseSettings):
     # Daily Synthesis Limit
     DAILY_SYNTHESIS_LIMIT: int = 3
 
+    # ===== 회원 인증 (Kakao 로그인 + 자체 JWT) =====
+    JWT_SECRET_KEY: str = (
+        ""  # 프로덕션에서는 Secrets Manager(hairme-jwt-secret)에서 로드
+    )
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # DynamoDB 사용자/크레딧 테이블
+    DYNAMODB_USERS_TABLE_NAME: str = "hairme-users"
+    DYNAMODB_CREDIT_LEDGER_TABLE_NAME: str = "hairme-credit-ledger"
+
+    # ===== 크레딧 정책 =====
+    SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
+    SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
+
+    # ===== 사진 저장 (S3) =====
+    PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화
+    PHOTO_URL_EXPIRE_SECONDS: int = 86400  # presigned URL 유효기간 (24시간)
+
     # MLOps Configuration
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
     MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷
@@ -176,6 +196,20 @@ class Settings(BaseSettings):
                     logger.info("✅ ADMIN_API_KEY loaded from Secrets Manager")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to load ADMIN_API_KEY: {str(e)}")
+
+            # Fetch JWT_SECRET_KEY from Secrets Manager
+            try:
+                jwt_secret = get_secret_or_env(
+                    secret_name="hairme-jwt-secret",
+                    env_var_name="JWT_SECRET_KEY",
+                    region_name=self.AWS_REGION,
+                    required=False,
+                )
+                if jwt_secret:
+                    self.JWT_SECRET_KEY = jwt_secret
+                    logger.info("✅ JWT_SECRET_KEY loaded from Secrets Manager")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to load JWT_SECRET_KEY: {str(e)}")
 
             # Fetch DB_PASSWORD from Secrets Manager (if using MySQL)
             if not self.USE_DYNAMODB:

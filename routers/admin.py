@@ -13,6 +13,7 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from services.circuit_breaker import get_circuit_breaker_status, reset_circuit_breakers
@@ -493,3 +494,49 @@ async def promote_challenger(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+
+
+# ========== 크레딧 관리 (관리자) ==========
+
+
+class CreditGrantRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="지급 대상 user_id")
+    amount: int = Field(..., ge=1, le=1000, description="지급 크레딧 수")
+    memo: str = Field("", max_length=200, description="지급 사유 메모")
+
+
+@router.post("/admin/credits/grant")
+@limiter.limit("30/minute")
+async def grant_credits(
+    request: Request,
+    body: CreditGrantRequest,
+    api_key: str = Depends(verify_admin_api_key),
+):
+    """관리자 수동 크레딧 지급 (CS 보상, 이벤트 등)"""
+    from services.credit_service import get_credit_service
+
+    try:
+        balance = get_credit_service().grant(
+            body.user_id,
+            body.amount,
+            reason="admin_grant",
+            ref_id=body.memo or None,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"❌ 관리자 크레딧 지급 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+    logger.info(
+        f"👑 관리자 크레딧 지급: user_id={body.user_id}, +{body.amount} ({body.memo})"
+    )
+    return {
+        "success": True,
+        "user_id": body.user_id,
+        "granted": body.amount,
+        "balance": balance,
+    }
