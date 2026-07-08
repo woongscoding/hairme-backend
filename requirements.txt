@@ -1,5 +1,6 @@
 # FastAPI 및 웹 프레임워크
-fastapi==0.109.0
+# fastapi 0.115+: google-genai가 요구하는 httpx>=0.28과 호환되는 starlette 버전 필요
+fastapi==0.115.14
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
@@ -35,9 +36,6 @@ pyyaml==6.0.1
 
 # Circuit Breaker
 pybreaker==1.0.1
-
-# RAG Vector Search
-chromadb>=0.4.0
 
 # 회원 인증 (Kakao 로그인 + JWT)
 PyJWT==2.8.0
