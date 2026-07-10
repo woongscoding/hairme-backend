@@ -100,6 +100,43 @@ class TestGrant:
         assert balance == 5
 
 
+class TestClaimRef:
+    def test_first_claim_succeeds(self, service):
+        result = service.try_claim_ref("purchase#token-1", "user-1")
+
+        assert result is True
+        call_kwargs = service._ledger_table.put_item.call_args.kwargs
+        # 조건부 put으로 중복 방지하는지 확인
+        assert "attribute_not_exists" in call_kwargs["ConditionExpression"]
+        assert call_kwargs["Item"]["user_id"] == "purchase#token-1"
+        assert call_kwargs["Item"]["claimed_by"] == "user-1"
+
+    def test_duplicate_claim_returns_false(self, service):
+        service._ledger_table.put_item.side_effect = ClientError(
+            error_response={
+                "Error": {
+                    "Code": "ConditionalCheckFailedException",
+                    "Message": "The conditional request failed",
+                }
+            },
+            operation_name="PutItem",
+        )
+
+        assert service.try_claim_ref("purchase#token-1", "user-2") is False
+
+    def test_release_ref_deletes_marker(self, service):
+        service.release_ref("purchase#token-1")
+
+        service._ledger_table.delete_item.assert_called_once_with(
+            Key={"user_id": "purchase#token-1", "sk": "claim"}
+        )
+
+    def test_release_ref_swallows_errors(self, service):
+        """마커 삭제 실패는 best effort - 예외를 전파하지 않음"""
+        service._ledger_table.delete_item.side_effect = Exception("DynamoDB down")
+        service.release_ref("purchase#token-1")  # 예외 없이 통과
+
+
 class TestBalanceAndHistory:
     def test_get_balance(self, service):
         service._users_table.get_item.return_value = {"Item": {"credits": Decimal("7")}}
