@@ -9,12 +9,18 @@ from slowapi.util import get_remote_address
 from config.settings import settings
 from core.logging import logger
 from core.jwt_auth import get_current_user_id
+from services.admob_ssv_service import (
+    InvalidSSVError,
+    SSVUnavailableError,
+    get_admob_ssv_service,
+)
 from services.credit_service import get_credit_service
 from services.play_billing_service import (
     InvalidPurchaseError,
     PlayBillingUnavailableError,
     get_play_billing_service,
 )
+from services.usage_limit_service import get_usage_limit_service
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -113,3 +119,91 @@ async def purchase_credits(
         "balance": balance,
         "order_id": receipt.get("order_id"),
     }
+
+
+# 리워드 광고 1회 시청당 지급 크레딧
+REWARD_AD_CREDIT = 1
+
+
+@router.get("/credits/reward-callback")
+@limiter.limit("120/minute")
+async def reward_ad_callback(request: Request):
+    """
+    AdMob 리워드 광고 SSV(서버측 검증) 콜백 - AdMob 서버가 호출
+
+    앱이 아닌 AdMob이 호출하므로 JWT 대신 ECDSA 서명으로 인증한다.
+    user_id는 앱이 광고 요청 시 ServerSideVerificationOptions로 설정한 값.
+
+    비정상(서명 불일치 등)은 4xx, 정상 처리됐지만 지급하지 않는 경우
+    (중복 재시도/일일 상한)는 200 - AdMob이 non-200에 재시도하기 때문.
+    """
+    # 서명은 원본 쿼리 스트링 바이트에 대해 검증해야 함 (파싱/디코딩 전)
+    raw_query = request.scope.get("query_string", b"")
+
+    ssv_service = get_admob_ssv_service()
+    try:
+        params = await run_in_threadpool(ssv_service.verify_callback, raw_query)
+    except InvalidSSVError:
+        raise HTTPException(status_code=400, detail="검증에 실패했습니다.")
+    except SSVUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="검증 서비스를 일시적으로 사용할 수 없습니다.",
+        )
+
+    user_id = params.get("user_id")
+    transaction_id = params.get("transaction_id")
+    if not user_id or not transaction_id:
+        # user_id는 앱에서 SSV 옵션으로 설정해야만 포함됨
+        logger.warning("⚠️ SSV 콜백에 user_id/transaction_id 누락")
+        raise HTTPException(status_code=400, detail="검증에 실패했습니다.")
+
+    credit_service = get_credit_service()
+
+    # 같은 transaction_id 재전송(AdMob 재시도 포함) 시 중복 지급 방지
+    ref_key = f"reward#{transaction_id}"
+    if not credit_service.try_claim_ref(
+        ref_key, user_id, detail={"ad_unit": params.get("ad_unit")}
+    ):
+        return {"success": True, "rewarded": False, "reason": "duplicate"}
+
+    # 유저당 일일 보상 상한 (조건부 원자 증가)
+    try:
+        under_limit = get_usage_limit_service().increment_daily_counter(
+            f"reward_ad#{user_id}", settings.REWARD_AD_DAILY_LIMIT
+        )
+    except Exception:
+        credit_service.release_ref(ref_key)
+        logger.error("❌ 리워드 일일 카운터 갱신 실패", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="보상 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+    if not under_limit:
+        logger.info(f"⚠️ 리워드 일일 상한 도달: user_id={user_id}")
+        return {"success": True, "rewarded": False, "reason": "daily_limit_reached"}
+
+    try:
+        balance = credit_service.grant(
+            user_id, REWARD_AD_CREDIT, reason="reward_ad", ref_id=transaction_id
+        )
+    except ValueError:
+        # 존재하지 않는 사용자 (탈퇴 등) - 재시도해도 소용없으므로 200
+        credit_service.release_ref(ref_key)
+        logger.warning(f"⚠️ 리워드 지급 대상 사용자 없음: user_id={user_id}")
+        return {"success": True, "rewarded": False, "reason": "unknown_user"}
+    except Exception:
+        # 지급 실패 시 클레임 회수 - AdMob 재시도에서 다시 처리되게 500
+        credit_service.release_ref(ref_key)
+        logger.error(f"❌ 리워드 크레딧 지급 실패: user_id={user_id}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="보상 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+    logger.info(
+        f"🎁 리워드 광고 크레딧 지급: user_id={user_id}, "
+        f"+{REWARD_AD_CREDIT}, 잔액={balance}"
+    )
+    return {"success": True, "rewarded": True}

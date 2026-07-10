@@ -16,7 +16,6 @@ except ImportError:
 from config.settings import settings
 from core.logging import logger
 
-
 # KST timezone (UTC+9)
 KST = timezone(timedelta(hours=9))
 
@@ -210,6 +209,44 @@ class UsageLimitService:
                 }
             logger.error(
                 f"DynamoDB usage update failed: {e.response['Error']['Message']}"
+            )
+            raise
+
+    def increment_daily_counter(self, key: str, limit: int) -> bool:
+        """
+        범용 일일 카운터 (KST 기준, 조건부 원자 증가, TTL 자동 만료)
+
+        synthesis 외 용도의 일일 상한에도 같은 테이블을 재사용한다.
+        키는 "reward_ad#{user_id}" 같은 네임스페이스로 구분할 것.
+
+        Returns:
+            True: 증가 성공 (상한 미달), False: 일일 상한 도달
+        """
+        today = self._today_kst()
+
+        try:
+            self.table.update_item(
+                Key={"device_id": key, "date": today},
+                UpdateExpression="SET #cnt = if_not_exists(#cnt, :zero) + :inc, #ttl = :ttl",
+                ConditionExpression="attribute_not_exists(#cnt) OR #cnt < :limit",
+                ExpressionAttributeNames={
+                    "#cnt": "count",
+                    "#ttl": "expire_at",
+                },
+                ExpressionAttributeValues={
+                    ":zero": 0,
+                    ":inc": 1,
+                    ":limit": limit,
+                    ":ttl": self._tomorrow_kst_epoch(),
+                },
+            )
+            return True
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.info(f"일일 카운터 상한 도달: key={key}, date={today}")
+                return False
+            logger.error(
+                f"DynamoDB 일일 카운터 업데이트 실패: {e.response['Error']['Message']}"
             )
             raise
 
