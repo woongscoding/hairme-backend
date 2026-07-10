@@ -51,8 +51,8 @@ async def submit_feedback(
             detail="분석 ID가 제공되지 않았습니다. 앱을 재시작하고 다시 분석을 실행해주세요.",
         )
 
-    # style_index 화이트리스트 검증
-    VALID_STYLE_INDICES = {0, 1, 2, 3, 4}
+    # style_index 화이트리스트 검증 (Pydantic ge=1 le=5, DB 컬럼 style_1~5와 일치)
+    VALID_STYLE_INDICES = {1, 2, 3, 4, 5}
     if feedback_data.style_index not in VALID_STYLE_INDICES:
         raise HTTPException(
             status_code=400, detail="유효하지 않은 스타일 인덱스입니다."

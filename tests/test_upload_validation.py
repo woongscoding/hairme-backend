@@ -1,7 +1,10 @@
 """Tests for core.upload_validation"""
 
+import io
+
 import pytest
 from fastapi import HTTPException
+from PIL import Image
 
 from core.exceptions import InvalidFileFormatException
 from core.upload_validation import (
@@ -12,20 +15,27 @@ from core.upload_validation import (
     validate_image_upload,
 )
 
-JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16
-PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
-WEBP_BYTES = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 16
+JPEG_MAGIC = b"\xff\xd8\xff\xe0" + b"\x00" * 16
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+WEBP_MAGIC = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 16
+
+
+def make_image_bytes(fmt: str = "JPEG", size: tuple = (32, 32)) -> bytes:
+    """실제 디코딩 가능한 이미지 바이트 생성"""
+    buf = io.BytesIO()
+    Image.new("RGB", size, "white").save(buf, format=fmt)
+    return buf.getvalue()
 
 
 class TestDetectImageFormat:
     def test_jpeg(self):
-        assert detect_image_format(JPEG_BYTES) == "jpeg"
+        assert detect_image_format(JPEG_MAGIC) == "jpeg"
 
     def test_png(self):
-        assert detect_image_format(PNG_BYTES) == "png"
+        assert detect_image_format(PNG_MAGIC) == "png"
 
     def test_webp(self):
-        assert detect_image_format(WEBP_BYTES) == "webp"
+        assert detect_image_format(WEBP_MAGIC) == "webp"
 
     def test_rejects_non_image(self):
         with pytest.raises(InvalidFileFormatException):
@@ -44,10 +54,16 @@ class TestDetectImageFormat:
 
 class TestValidateImageUpload:
     def test_accepts_valid_jpeg(self):
-        assert validate_image_upload(JPEG_BYTES) == "jpeg"
+        assert validate_image_upload(make_image_bytes("JPEG")) == "jpeg"
+
+    def test_accepts_valid_png(self):
+        assert validate_image_upload(make_image_bytes("PNG")) == "png"
+
+    def test_accepts_valid_webp(self):
+        assert validate_image_upload(make_image_bytes("WEBP")) == "webp"
 
     def test_rejects_oversized(self):
-        big = JPEG_BYTES + b"\x00" * MAX_UPLOAD_SIZE
+        big = make_image_bytes("JPEG") + b"\x00" * MAX_UPLOAD_SIZE
         with pytest.raises(HTTPException) as exc_info:
             validate_image_upload(big)
         assert exc_info.value.status_code == 413
@@ -56,6 +72,25 @@ class TestValidateImageUpload:
         # 확장자만 .jpg로 바꾼 비이미지 파일
         with pytest.raises(InvalidFileFormatException):
             validate_image_upload(b"MZ\x90\x00" + b"\x00" * 64)
+
+    def test_rejects_magic_bytes_only(self):
+        # 매직 바이트만 있고 실제 디코딩이 불가능한 파일
+        with pytest.raises(InvalidFileFormatException):
+            validate_image_upload(JPEG_MAGIC)
+
+    def test_rejects_truncated_image(self):
+        # 정상 이미지의 앞부분만 잘라낸 손상 파일
+        valid = make_image_bytes("PNG", size=(64, 64))
+        truncated = valid[: len(valid) // 2]
+        with pytest.raises(InvalidFileFormatException):
+            validate_image_upload(truncated)
+
+    def test_rejects_too_many_pixels(self):
+        # 픽셀 수 제한 초과 (decompression bomb 완화)
+        image = make_image_bytes("PNG", size=(100, 100))
+        with pytest.raises(HTTPException) as exc_info:
+            validate_image_upload(image, max_pixels=100 * 100 - 1)
+        assert exc_info.value.status_code == 400
 
     def test_rejects_empty(self):
         with pytest.raises(InvalidFileFormatException):
