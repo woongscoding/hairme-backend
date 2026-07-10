@@ -25,6 +25,7 @@ from core.exceptions import (
     InvalidFileFormatException,
 )
 from core.cache import calculate_image_hash, get_cached_result, save_to_cache
+from core.upload_validation import validate_file_extension, validate_image_upload
 from models.ml_recommender import (
     predict_ml_score,
     get_confidence_level,
@@ -122,16 +123,13 @@ async def analyze_face(
     image_hash = None
 
     try:
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         logger.info(f"🎨 ML 분석 시작: {file.filename}, gender={gender}")
 
         image_data = await file.read()
+        # 실제 바이트 크기 + 매직 바이트 검증 (확장자 위조/Content-Length 우회 방지)
+        validate_image_upload(image_data)
         image_hash = calculate_image_hash(image_data)
 
         log_structured(
@@ -334,17 +332,14 @@ async def analyze_face_hybrid(
 
     try:
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         logger.info(f"🎨 하이브리드 분석 시작: {file.filename}, gender={gender}")
 
         # Read image
         image_data = await file.read()
+        # 실제 바이트 크기 + 매직 바이트 검증 (확장자 위조/Content-Length 우회 방지)
+        validate_image_upload(image_data)
         image_hash = calculate_image_hash(image_data)
 
         # 디버깅: 이미지 해시 로깅 (다른 사진인데 같은 해시가 나오는지 확인)

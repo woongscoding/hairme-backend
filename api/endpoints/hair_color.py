@@ -6,6 +6,7 @@ Phase 3: 염색 추천 + 합성 API
 - 가상 염색 시뮬레이션
 """
 
+import re
 import time
 from typing import List, Optional
 
@@ -17,6 +18,13 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
+from core.upload_validation import (
+    MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+    MAX_HAIRSTYLE_NAME_LENGTH,
+    sanitize_prompt_text,
+    validate_file_extension,
+    validate_image_upload,
+)
 from services.usage_limit_service import get_usage_limit_service
 from config.settings import settings
 
@@ -250,21 +258,34 @@ async def synthesize_hair_color(
             )
 
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
+        validate_file_extension(file.filename)
 
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 방지)
+        color_name = sanitize_prompt_text(
+            color_name, MAX_HAIRSTYLE_NAME_LENGTH, "염색 컬러명"
+        )
+        if not color_name:
+            raise HTTPException(
+                status_code=400, detail="염색 컬러명이 올바르지 않습니다."
+            )
+        if color_hex:
+            color_hex = color_hex.strip()
+            if not re.fullmatch(r"#?[0-9A-Fa-f]{6}", color_hex):
+                raise HTTPException(
+                    status_code=400, detail="color_hex 형식이 올바르지 않습니다."
+                )
+        if additional_instructions:
+            additional_instructions = sanitize_prompt_text(
+                additional_instructions,
+                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+                "추가 요청",
+            )
 
         logger.info(f"🎨 염색 시뮬레이션 요청: {color_name}")
 
-        # Read image
+        # Read image + 실제 크기/매직 바이트 검증
         image_data = await file.read()
-
-        # File size validation
-        if len(image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="파일 크기가 10MB를 초과합니다")
+        validate_image_upload(image_data)
 
         # If HEX not provided, look up by color name
         service = _get_service()
@@ -427,17 +448,10 @@ async def synthesize_recommended_color(
         selected_color = result.recommended[color_index]
 
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         image_data = await file.read()
-
-        if len(image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="파일 크기가 10MB를 초과합니다")
+        validate_image_upload(image_data)
 
         logger.info(
             f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}"

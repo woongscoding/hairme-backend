@@ -17,6 +17,7 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import NoFaceDetectedException, InvalidFileFormatException
+from core.upload_validation import validate_file_extension, validate_image_upload
 
 # Lazy import - service will be imported when needed (Lambda cold start optimization)
 _beauty_consultant_service = None
@@ -162,23 +163,16 @@ async def analyze_beauty(
 
     try:
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         if gender not in ["male", "female", "neutral"]:
             gender = "neutral"
 
         logger.info(f"🌸 BeautyMe 분석 시작: {file.filename}, gender={gender}")
 
-        # Read image
+        # Read image + 실제 크기/매직 바이트 검증
         image_data = await file.read()
-
-        if len(image_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="파일 크기가 10MB를 초과합니다")
+        validate_image_upload(image_data)
 
         log_structured(
             "beauty_analysis_start",
@@ -355,14 +349,10 @@ async def generate_report(
     """
     try:
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         image_data = await file.read()
+        validate_image_upload(image_data)
 
         service = _get_service()
         profile = service.analyze_full(image_data, gender)
@@ -380,6 +370,8 @@ async def generate_report(
         return JSONResponse(
             status_code=400, content={"success": False, "error": str(e)}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ 리포트 생성 오류: {str(e)}", exc_info=True)
         raise HTTPException(
