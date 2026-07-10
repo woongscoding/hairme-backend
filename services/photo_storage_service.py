@@ -13,8 +13,8 @@ import hashlib
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-from urllib.parse import quote
+from typing import Dict, Any, List, Optional, Tuple
+from urllib.parse import quote, unquote
 
 try:
     import boto3
@@ -146,6 +146,74 @@ class PhotoStorageService:
         except Exception as e:
             logger.warning(f"결과 저장 실패 (무시): {str(e)}")
             return None
+
+    def list_user_results(
+        self,
+        user_id: str,
+        limit: int = 20,
+        continuation_token: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        회원의 합성 결과 목록 (최신순, presigned URL 포함)
+
+        키 형식이 results/{user_id}/{UTC타임스탬프}_{난수}.{fmt} 이므로
+        키 내림차순 정렬 = 최신순. S3 list는 오름차순만 지원하므로
+        prefix 전체 키를 모은 뒤 정렬한다 (수명주기 180일이라 개수 제한적).
+
+        Args:
+            continuation_token: 이전 페이지 마지막 항목의 key (이후 과거분 조회)
+
+        Returns:
+            {"items": [{"key", "url", "hairstyle", "created_at"}], "next_token": str|None}
+
+        Raises:
+            S3 조회 실패 시 예외 전파 (호출자가 500 처리)
+        """
+        if not self.enabled:
+            return {"items": [], "next_token": None}
+
+        prefix = f"results/{user_id}/"
+        keys: List[Tuple[str, Any]] = []  # (key, last_modified)
+        list_kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+        while True:
+            response = self.client.list_objects_v2(**list_kwargs)
+            for obj in response.get("Contents", []):
+                keys.append((obj["Key"], obj.get("LastModified")))
+            if not response.get("IsTruncated"):
+                break
+            list_kwargs["ContinuationToken"] = response["NextContinuationToken"]
+
+        keys.sort(key=lambda entry: entry[0], reverse=True)  # 최신순
+        if continuation_token:
+            keys = [entry for entry in keys if entry[0] < continuation_token]
+
+        page = keys[:limit]
+        next_token = page[-1][0] if len(keys) > limit else None
+
+        items = []
+        for key, last_modified in page:
+            hairstyle = None
+            try:
+                head = self.client.head_object(Bucket=self.bucket, Key=key)
+                raw = head.get("Metadata", {}).get("hairstyle")
+                if raw:
+                    # 저장 시 URL 인코딩된 한글 스타일명 복원
+                    hairstyle = unquote(raw)
+            except Exception as e:
+                logger.warning(f"결과 메타데이터 조회 실패 (무시): {str(e)}")
+
+            items.append(
+                {
+                    "key": key,
+                    "url": self.presigned_url(key),
+                    "hairstyle": hairstyle,
+                    "created_at": (
+                        last_modified.isoformat() if last_modified else None
+                    ),
+                }
+            )
+
+        return {"items": items, "next_token": next_token}
 
     # ========== 원본 사진 저장 (동의한 회원만) ==========
 
