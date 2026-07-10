@@ -227,11 +227,41 @@ async def synthesize_hair_color(
     start_time = time.time()
 
     try:
-        # Daily usage limit: atomic check + increment (server-side enforcement)
+        # ========== 1. 입력 검증 (사용량 차감 전에 수행) ==========
         trimmed_device_id = device_id.strip()
         if not trimmed_device_id:
             raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
+        # File validation
+        validate_file_extension(file.filename)
+
+        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 완화)
+        color_name = sanitize_prompt_text(
+            color_name, MAX_HAIRSTYLE_NAME_LENGTH, "염색 컬러명"
+        )
+        if not color_name:
+            raise HTTPException(
+                status_code=400, detail="염색 컬러명이 올바르지 않습니다."
+            )
+        if color_hex:
+            color_hex = color_hex.strip()
+            if not re.fullmatch(r"#?[0-9A-Fa-f]{6}", color_hex):
+                raise HTTPException(
+                    status_code=400, detail="color_hex 형식이 올바르지 않습니다."
+                )
+        if additional_instructions:
+            additional_instructions = sanitize_prompt_text(
+                additional_instructions,
+                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+                "추가 요청",
+            )
+
+        # Read image + 실제 크기/내용 검증
+        image_data = await file.read()
+        validate_image_upload(image_data)
+
+        # ========== 2. Daily usage limit: atomic check + increment ==========
+        # 유효하지 않은 요청으로 타인의 사용량이 소진되지 않도록 검증 후 차감
         try:
             usage_service = get_usage_limit_service()
             usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
@@ -257,35 +287,7 @@ async def synthesize_hair_color(
                 detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        # File validation
-        validate_file_extension(file.filename)
-
-        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 방지)
-        color_name = sanitize_prompt_text(
-            color_name, MAX_HAIRSTYLE_NAME_LENGTH, "염색 컬러명"
-        )
-        if not color_name:
-            raise HTTPException(
-                status_code=400, detail="염색 컬러명이 올바르지 않습니다."
-            )
-        if color_hex:
-            color_hex = color_hex.strip()
-            if not re.fullmatch(r"#?[0-9A-Fa-f]{6}", color_hex):
-                raise HTTPException(
-                    status_code=400, detail="color_hex 형식이 올바르지 않습니다."
-                )
-        if additional_instructions:
-            additional_instructions = sanitize_prompt_text(
-                additional_instructions,
-                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
-                "추가 요청",
-            )
-
         logger.info(f"🎨 염색 시뮬레이션 요청: {color_name}")
-
-        # Read image + 실제 크기/매직 바이트 검증
-        image_data = await file.read()
-        validate_image_upload(image_data)
 
         # If HEX not provided, look up by color name
         service = _get_service()

@@ -65,11 +65,41 @@ async def synthesize_hairstyle(
     start_time = time.time()
 
     try:
-        # Daily usage limit: atomic check + increment (server-side enforcement)
+        # ========== 1. 입력 검증 (사용량 차감 전에 수행) ==========
         trimmed_device_id = device_id.strip()
         if not trimmed_device_id:
             raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
+        # File validation
+        validate_file_extension(file.filename)
+
+        # Gender validation
+        if gender not in ["male", "female"]:
+            raise HTTPException(
+                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
+            )
+
+        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 완화)
+        hairstyle_name = sanitize_prompt_text(
+            hairstyle_name, MAX_HAIRSTYLE_NAME_LENGTH, "헤어스타일 이름"
+        )
+        if not hairstyle_name:
+            raise HTTPException(
+                status_code=400, detail="헤어스타일 이름이 올바르지 않습니다."
+            )
+        if additional_instructions:
+            additional_instructions = sanitize_prompt_text(
+                additional_instructions,
+                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+                "추가 요청",
+            )
+
+        # Read image data + 실제 크기/내용 검증
+        image_data = await file.read()
+        validate_image_upload(image_data)
+
+        # ========== 2. Daily usage limit: atomic check + increment ==========
+        # 유효하지 않은 요청으로 타인의 사용량이 소진되지 않도록 검증 후 차감
         try:
             usage_service = get_usage_limit_service()
             usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
@@ -95,35 +125,7 @@ async def synthesize_hairstyle(
                 detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        # File validation
-        validate_file_extension(file.filename)
-
-        # Gender validation
-        if gender not in ["male", "female"]:
-            raise HTTPException(
-                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
-            )
-
-        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 방지)
-        hairstyle_name = sanitize_prompt_text(
-            hairstyle_name, MAX_HAIRSTYLE_NAME_LENGTH, "헤어스타일 이름"
-        )
-        if not hairstyle_name:
-            raise HTTPException(
-                status_code=400, detail="헤어스타일 이름이 올바르지 않습니다."
-            )
-        if additional_instructions:
-            additional_instructions = sanitize_prompt_text(
-                additional_instructions,
-                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
-                "추가 요청",
-            )
-
         logger.info(f"🎨 합성 요청: {hairstyle_name} ({gender}), file={file.filename}")
-
-        # Read image data + 실제 크기/매직 바이트 검증
-        image_data = await file.read()
-        validate_image_upload(image_data)
 
         # Get synthesis service and process
         service = get_synthesis_service()
@@ -206,11 +208,32 @@ async def synthesize_with_reference(
     start_time = time.time()
 
     try:
-        # Daily usage limit: atomic check + increment (server-side enforcement)
+        # ========== 1. 입력 검증 (사용량 차감 전에 수행) ==========
         trimmed_device_id = device_id.strip()
         if not trimmed_device_id:
             raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
+        # Validate user photo
+        validate_file_extension(user_photo.filename)
+
+        # Validate reference photo
+        validate_file_extension(reference_photo.filename)
+
+        # Gender validation
+        if gender not in ["male", "female"]:
+            raise HTTPException(
+                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
+            )
+
+        # Read image data + 실제 크기/내용 검증
+        user_image_data = await user_photo.read()
+        validate_image_upload(user_image_data)
+
+        reference_image_data = await reference_photo.read()
+        validate_image_upload(reference_image_data)
+
+        # ========== 2. Daily usage limit: atomic check + increment ==========
+        # 유효하지 않은 요청으로 타인의 사용량이 소진되지 않도록 검증 후 차감
         try:
             usage_service = get_usage_limit_service()
             usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
@@ -236,26 +259,7 @@ async def synthesize_with_reference(
                 detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             )
 
-        # Validate user photo
-        validate_file_extension(user_photo.filename)
-
-        # Validate reference photo
-        validate_file_extension(reference_photo.filename)
-
-        # Gender validation
-        if gender not in ["male", "female"]:
-            raise HTTPException(
-                status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
-            )
-
         logger.info(f"🎨 레퍼런스 합성 요청: {gender}")
-
-        # Read image data + 실제 크기/매직 바이트 검증
-        user_image_data = await user_photo.read()
-        validate_image_upload(user_image_data)
-
-        reference_image_data = await reference_photo.read()
-        validate_image_upload(reference_image_data)
 
         # Get synthesis service and process
         service = get_synthesis_service()
