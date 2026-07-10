@@ -10,6 +10,13 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger
 from core.exceptions import InvalidFileFormatException
+from core.upload_validation import (
+    MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+    MAX_HAIRSTYLE_NAME_LENGTH,
+    sanitize_prompt_text,
+    validate_file_extension,
+    validate_image_upload,
+)
 from services.hairstyle_synthesis_service import get_synthesis_service
 from services.usage_limit_service import get_usage_limit_service
 from config.settings import settings
@@ -89,12 +96,7 @@ async def synthesize_hairstyle(
             )
 
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         # Gender validation
         if gender not in ["male", "female"]:
@@ -102,16 +104,26 @@ async def synthesize_hairstyle(
                 status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
             )
 
+        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 방지)
+        hairstyle_name = sanitize_prompt_text(
+            hairstyle_name, MAX_HAIRSTYLE_NAME_LENGTH, "헤어스타일 이름"
+        )
+        if not hairstyle_name:
+            raise HTTPException(
+                status_code=400, detail="헤어스타일 이름이 올바르지 않습니다."
+            )
+        if additional_instructions:
+            additional_instructions = sanitize_prompt_text(
+                additional_instructions,
+                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+                "추가 요청",
+            )
+
         logger.info(f"🎨 합성 요청: {hairstyle_name} ({gender}), file={file.filename}")
 
-        # Read image data
+        # Read image data + 실제 크기/매직 바이트 검증
         image_data = await file.read()
-
-        # File size validation (max 10MB)
-        if len(image_data) > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=400, detail="파일 크기가 10MB를 초과합니다."
-            )
+        validate_image_upload(image_data)
 
         # Get synthesis service and process
         service = get_synthesis_service()
@@ -225,26 +237,10 @@ async def synthesize_with_reference(
             )
 
         # Validate user photo
-        if not user_photo.filename:
-            raise HTTPException(status_code=400, detail="사용자 사진 파일명이 없습니다")
-
-        user_ext = user_photo.filename.lower().split(".")[-1]
-        if user_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise HTTPException(
-                status_code=400, detail="사용자 사진 형식이 올바르지 않습니다"
-            )
+        validate_file_extension(user_photo.filename)
 
         # Validate reference photo
-        if not reference_photo.filename:
-            raise HTTPException(
-                status_code=400, detail="레퍼런스 사진 파일명이 없습니다"
-            )
-
-        ref_ext = reference_photo.filename.lower().split(".")[-1]
-        if ref_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise HTTPException(
-                status_code=400, detail="레퍼런스 사진 형식이 올바르지 않습니다"
-            )
+        validate_file_extension(reference_photo.filename)
 
         # Gender validation
         if gender not in ["male", "female"]:
@@ -254,20 +250,12 @@ async def synthesize_with_reference(
 
         logger.info(f"🎨 레퍼런스 합성 요청: {gender}")
 
-        # Read image data
+        # Read image data + 실제 크기/매직 바이트 검증
         user_image_data = await user_photo.read()
+        validate_image_upload(user_image_data)
+
         reference_image_data = await reference_photo.read()
-
-        # File size validation
-        if len(user_image_data) > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=400, detail="사용자 사진이 10MB를 초과합니다"
-            )
-
-        if len(reference_image_data) > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=400, detail="레퍼런스 사진이 10MB를 초과합니다"
-            )
+        validate_image_upload(reference_image_data)
 
         # Get synthesis service and process
         service = get_synthesis_service()
@@ -299,6 +287,15 @@ async def synthesize_with_reference(
                 },
             )
 
+    except InvalidFileFormatException as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "invalid_file_format",
+                "message": str(e),
+            },
+        )
     except HTTPException:
         raise
     except Exception as e:

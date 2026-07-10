@@ -33,7 +33,9 @@ def init_redis() -> bool:
             socket_timeout=5,
         )
         redis_client.ping()
-        logger.info(f"✅ Redis 연결 성공: {settings.REDIS_URL}")
+        # REDIS_URL에 인증 정보가 포함될 수 있으므로 호스트 부분만 로깅
+        redis_host = settings.REDIS_URL.rsplit("@", 1)[-1].split("/")[0]
+        logger.info(f"✅ Redis 연결 성공: {redis_host}")
         return True
 
     except Exception as e:
