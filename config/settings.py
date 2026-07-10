@@ -65,6 +65,9 @@ class Settings(BaseSettings):
         "credits_100": 100,
     }
 
+    # ===== AdMob 리워드 광고 (SSV) =====
+    REWARD_AD_DAILY_LIMIT: int = 5  # 유저당 하루 보상 횟수 상한
+
     # MLOps Configuration
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
     MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷
