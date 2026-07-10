@@ -2,7 +2,7 @@
 
 import os
 import logging
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic_settings import BaseSettings
 from config.secrets import get_secret_or_env, is_aws_environment
 
@@ -50,6 +50,20 @@ class Settings(BaseSettings):
     # ===== 사진 저장 (S3) =====
     PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화
     PHOTO_URL_EXPIRE_SECONDS: int = 86400  # presigned URL 유효기간 (24시간)
+
+    # ===== Google Play 인앱결제 =====
+    PLAY_PACKAGE_NAME: str = (
+        ""  # 앱 패키지명 (예: com.hairme.app), 미설정 시 구매 검증 비활성화
+    )
+    PLAY_SERVICE_ACCOUNT_JSON: str = (
+        ""  # 서비스 계정 키 JSON (프로덕션: Secrets Manager hairme-play-service-account)
+    )
+    # 스토어 상품 ID → 지급 크레딧 매핑 (환경변수로 덮어쓸 땐 JSON 문자열)
+    CREDIT_PRODUCTS: Dict[str, int] = {
+        "credits_10": 10,
+        "credits_30": 30,
+        "credits_100": 100,
+    }
 
     # MLOps Configuration
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화

@@ -187,6 +187,52 @@ class CreditService:
             )
         return history
 
+    def try_claim_ref(
+        self,
+        ref_key: str,
+        user_id: str,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        외부 트랜잭션(구매 토큰/광고 transaction_id) 중복 지급 방지 마커 (조건부 put)
+
+        ledger 테이블에 user_id=ref_key(예: "purchase#<token>"), sk="claim" 아이템을
+        attribute_not_exists 조건으로 기록한다. 사용자 원장(user_id=UUID)과
+        키 공간이 겹치지 않아 같은 테이블을 재사용한다.
+
+        Returns:
+            True: 최초 처리 (지급 진행 가능)
+            False: 이미 처리된 트랜잭션 (중복)
+        """
+        item: Dict[str, Any] = {
+            "user_id": ref_key,
+            "sk": "claim",
+            "claimed_by": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if detail:
+            item["detail"] = detail
+
+        try:
+            self.ledger_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(user_id)",
+            )
+            return True
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.warning(f"⚠️ 중복 트랜잭션 처리 시도: ref_key={ref_key[:64]}")
+                return False
+            logger.error(f"트랜잭션 클레임 기록 실패: {e.response['Error']['Message']}")
+            raise
+
+    def release_ref(self, ref_key: str) -> None:
+        """지급 실패 시 클레임 마커 회수 - 클라이언트 재시도 허용 (best effort)"""
+        try:
+            self.ledger_table.delete_item(Key={"user_id": ref_key, "sk": "claim"})
+        except Exception as e:
+            logger.error(f"⚠️ 클레임 마커 삭제 실패: {str(e)}")
+
     def _safe_balance(self, user_id: str) -> int:
         try:
             return self.get_balance(user_id)

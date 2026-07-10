@@ -49,6 +49,9 @@ pybreaker==1.0.1
 PyJWT==2.8.0
 httpx>=0.27.0  # 카카오 API 호출
 
+# Google Play 인앱결제 영수증 검증
+google-auth==2.45.0  # 서비스 계정 인증 (무거운 google-api-python-client 대신 REST 직접 호출)
+
 # Lambda Handler
 mangum==0.17.0
 
