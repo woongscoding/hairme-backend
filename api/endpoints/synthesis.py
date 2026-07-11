@@ -4,6 +4,11 @@
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
 - 비로그인 (레거시): device_id 기반 일일 무료 제한 (구버전 앱 호환용, 단계적 폐기 예정)
 - 캐시 히트 (같은 사진 + 같은 스타일): 과금 없이 즉시 반환 (Gemini 재호출 방지)
+
+보안:
+- 업로드는 확장자 + 매직 바이트 + Pillow 디코딩까지 검증 (core/upload_validation)
+- 프롬프트에 삽입되는 사용자 입력은 정제 (프롬프트 인젝션 완화)
+- 모든 검증은 과금(크레딧/사용량 차감)보다 먼저 수행
 """
 
 import time
@@ -17,6 +22,13 @@ from slowapi.util import get_remote_address
 from core.logging import logger
 from core.exceptions import InvalidFileFormatException
 from core.jwt_auth import get_optional_user_id
+from core.upload_validation import (
+    MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+    MAX_HAIRSTYLE_NAME_LENGTH,
+    sanitize_prompt_text,
+    validate_file_extension,
+    validate_image_upload,
+)
 from database.user_repository import get_user_repository
 from services.credit_service import InsufficientCreditsError, get_credit_service
 from services.hairstyle_synthesis_service import get_synthesis_service
@@ -29,9 +41,6 @@ router = APIRouter()
 # Rate limiter - synthesis is expensive, so limit more strictly
 limiter = Limiter(key_func=get_remote_address)
 
-ALLOWED_EXTENSIONS = ["jpg", "jpeg", "png", "webp"]
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-
 _NOOP_REFUND: Callable[[], None] = lambda: None
 
 
@@ -40,6 +49,9 @@ def _charge_quota(
 ) -> Tuple[Optional[JSONResponse], Optional[Dict[str, Any]], Callable[[], None]]:
     """
     합성 1회분 과금 처리.
+
+    입력 검증이 모두 끝난 뒤 호출해야 한다
+    (유효하지 않은 요청으로 크레딧/사용량이 소진되지 않도록).
 
     Returns:
         (error_response, quota, refund)
@@ -129,14 +141,6 @@ def _charge_quota(
     return None, quota, _NOOP_REFUND
 
 
-def _validate_upload(file: UploadFile, label: str = "파일") -> None:
-    if not file.filename:
-        raise HTTPException(status_code=400, detail=f"{label}명이 없습니다")
-    file_ext = file.filename.lower().split(".")[-1]
-    if file_ext not in ALLOWED_EXTENSIONS:
-        raise InvalidFileFormatException()
-
-
 def _store_result(
     user_id: Optional[str],
     image_data: bytes,
@@ -209,23 +213,37 @@ async def synthesize_hairstyle(
     start_time = time.time()
 
     try:
-        # ===== 입력 검증 =====
-        _validate_upload(file)
+        # ===== 1. 입력 검증 (과금 전에 수행) =====
+        validate_file_extension(file.filename)
 
         if gender not in ["male", "female"]:
             raise HTTPException(
                 status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
             )
 
-        image_data = await file.read()
-        if len(image_data) > MAX_UPLOAD_BYTES:
+        # Gemini 프롬프트에 삽입되는 사용자 입력 정제 (프롬프트 인젝션 완화)
+        # 캐시 키 계산 전에 정제해야 같은 요청이 같은 키를 갖는다
+        hairstyle_name = sanitize_prompt_text(
+            hairstyle_name, MAX_HAIRSTYLE_NAME_LENGTH, "헤어스타일 이름"
+        )
+        if not hairstyle_name:
             raise HTTPException(
-                status_code=400, detail="파일 크기가 10MB를 초과합니다."
+                status_code=400, detail="헤어스타일 이름이 올바르지 않습니다."
             )
+        if additional_instructions:
+            additional_instructions = sanitize_prompt_text(
+                additional_instructions,
+                MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
+                "추가 요청",
+            )
+
+        # 실제 크기 + 매직 바이트 + Pillow 디코딩 검증
+        image_data = await file.read()
+        validate_image_upload(image_data)
 
         logger.info(f"🎨 합성 요청: {hairstyle_name} ({gender}), file={file.filename}")
 
-        # ===== 캐시 확인 (과금 전에 - 히트 시 무료) =====
+        # ===== 2. 캐시 확인 (과금 전에 - 히트 시 무료) =====
         storage = get_photo_storage_service()
         cache_key = storage.build_cache_key(
             image_data,
@@ -246,12 +264,12 @@ async def synthesize_hairstyle(
                 "quota": None,
             }
 
-        # ===== 과금 (크레딧 또는 레거시 일일 제한) =====
+        # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(user_id, device_id)
         if quota_error is not None:
             return quota_error
 
-        # ===== 합성 =====
+        # ===== 4. 합성 =====
         service = get_synthesis_service()
         result = service.synthesize_hairstyle(
             image_data=image_data,
@@ -274,7 +292,7 @@ async def synthesize_hairstyle(
                 },
             )
 
-        # ===== 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+        # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
         result_url = _store_result(
             user_id,
             image_data,
@@ -336,30 +354,25 @@ async def synthesize_with_reference(
     start_time = time.time()
 
     try:
-        # ===== 입력 검증 =====
-        _validate_upload(user_photo, "사용자 사진 파일")
-        _validate_upload(reference_photo, "레퍼런스 사진 파일")
+        # ===== 1. 입력 검증 (과금 전에 수행) =====
+        validate_file_extension(user_photo.filename)
+        validate_file_extension(reference_photo.filename)
 
         if gender not in ["male", "female"]:
             raise HTTPException(
                 status_code=400, detail="gender는 'male' 또는 'female'만 가능합니다."
             )
 
+        # 실제 크기 + 매직 바이트 + Pillow 디코딩 검증
         user_image_data = await user_photo.read()
-        reference_image_data = await reference_photo.read()
+        validate_image_upload(user_image_data)
 
-        if len(user_image_data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=400, detail="사용자 사진이 10MB를 초과합니다"
-            )
-        if len(reference_image_data) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=400, detail="레퍼런스 사진이 10MB를 초과합니다"
-            )
+        reference_image_data = await reference_photo.read()
+        validate_image_upload(reference_image_data)
 
         logger.info(f"🎨 레퍼런스 합성 요청: {gender}")
 
-        # ===== 캐시 확인 =====
+        # ===== 2. 캐시 확인 (과금 전에 - 히트 시 무료) =====
         storage = get_photo_storage_service()
         cache_key = storage.build_cache_key(
             user_image_data,
@@ -380,12 +393,12 @@ async def synthesize_with_reference(
                 "quota": None,
             }
 
-        # ===== 과금 =====
+        # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(user_id, device_id)
         if quota_error is not None:
             return quota_error
 
-        # ===== 합성 =====
+        # ===== 4. 합성 =====
         service = get_synthesis_service()
         result = service.synthesize_with_reference(
             user_image_data=user_image_data,
@@ -407,6 +420,7 @@ async def synthesize_with_reference(
                 },
             )
 
+        # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
         result_url = _store_result(
             user_id,
             user_image_data,

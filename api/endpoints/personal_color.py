@@ -17,6 +17,7 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import NoFaceDetectedException, InvalidFileFormatException
+from core.upload_validation import validate_file_extension, validate_image_upload
 
 # Lazy import - service will be imported when needed (Lambda cold start optimization)
 _personal_color_service = None
@@ -147,17 +148,13 @@ async def analyze_personal_color(
 
     try:
         # File validation
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="파일명이 없습니다")
-
-        file_ext = file.filename.lower().split(".")[-1]
-        if file_ext not in ["jpg", "jpeg", "png", "webp"]:
-            raise InvalidFileFormatException()
+        validate_file_extension(file.filename)
 
         logger.info(f"🎨 퍼스널컬러 분석 시작: {file.filename}")
 
-        # Read image
+        # Read image + 실제 크기/매직 바이트 검증
         image_data = await file.read()
+        validate_image_upload(image_data)
 
         log_structured(
             "personal_color_start",
