@@ -51,17 +51,19 @@ class TestHealthCheck:
         """Test that health check shows healthy status"""
         with patch("core.health_check.get_health_check_service") as mock_svc:
             mock_health = mock_svc.return_value
-            mock_health.comprehensive_health_check = AsyncMock(return_value={
-                "status": "healthy",
-                "timestamp": "2025-01-17T00:00:00",
-                "checks": {
-                    "system": {"cpu": {"percent": 50}},
-                    "dynamodb": {"status": "healthy"},
-                    "circuit_breaker": {"state": "closed"},
-                    "gemini_api": {"status": "skipped"},
-                },
-                "check_duration_ms": 50,
-            })
+            mock_health.comprehensive_health_check = AsyncMock(
+                return_value={
+                    "status": "healthy",
+                    "timestamp": "2025-01-17T00:00:00",
+                    "checks": {
+                        "system": {"cpu": {"percent": 50}},
+                        "dynamodb": {"status": "healthy"},
+                        "circuit_breaker": {"state": "closed"},
+                        "gemini_api": {"status": "skipped"},
+                    },
+                    "check_duration_ms": 50,
+                }
+            )
 
             response = client.get("/api/health")
             data = response.json()

@@ -117,7 +117,9 @@ class TestFeedbackStats:
         mock_db = MagicMock()
         mock_db.query.return_value.count.return_value = 10
         mock_db.query.return_value.filter.return_value.count.return_value = 5
-        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = (
+            []
+        )
         mock_db.query.return_value.filter.return_value.all.return_value = []
         mock_get_db.return_value = mock_db
 

@@ -21,7 +21,11 @@ class TestMediaPipeAnalyzer:
 
     def _cleanup_mediapipe(self):
         """Remove the fake mediapipe module."""
-        for key in ["mediapipe", "mediapipe.solutions", "mediapipe.solutions.face_mesh"]:
+        for key in [
+            "mediapipe",
+            "mediapipe.solutions",
+            "mediapipe.solutions.face_mesh",
+        ]:
             sys.modules.pop(key, None)
 
     def test_analyzer_initialization(self):
@@ -46,7 +50,9 @@ class TestMediaPipeAnalyzer:
             # Mock empty results (no face detected)
             mock_result = MagicMock()
             mock_result.multi_face_landmarks = None
-            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = mock_result
+            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = (
+                mock_result
+            )
 
             analyzer = MediaPipeFaceAnalyzer()
 
@@ -82,7 +88,9 @@ class TestMediaPipeAnalyzer:
                 mock_landmarks.append(lm)
 
             mock_result.multi_face_landmarks[0].landmark = mock_landmarks
-            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = mock_result
+            mock_mp.solutions.face_mesh.FaceMesh.return_value.process.return_value = (
+                mock_result
+            )
 
             analyzer = MediaPipeFaceAnalyzer()
 
@@ -207,7 +215,10 @@ class TestRecommendationModelV6:
 class TestHybridRecommender:
     """Test hybrid (ML) recommendation service"""
 
-    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
+    @patch(
+        "services.hybrid_recommender.MLRecommendationService.__init__",
+        return_value=None,
+    )
     def test_service_initialization(self, mock_init):
         """Test that MLRecommendationService (aliased as HybridRecommendationService) initializes"""
         from services.hybrid_recommender import HybridRecommendationService
@@ -218,8 +229,13 @@ class TestHybridRecommender:
 
     @patch("services.trending_style_service.get_trending_style_service")
     @patch("services.hybrid_recommender.normalize_style_name", side_effect=lambda x: x)
-    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
-    def test_recommend_returns_expected_structure(self, mock_init, mock_normalize, mock_trending):
+    @patch(
+        "services.hybrid_recommender.MLRecommendationService.__init__",
+        return_value=None,
+    )
+    def test_recommend_returns_expected_structure(
+        self, mock_init, mock_normalize, mock_trending
+    ):
         """Test that recommend() returns expected result structure"""
         from services.hybrid_recommender import MLRecommendationService
 
@@ -248,7 +264,10 @@ class TestHybridRecommender:
 
     @patch("services.trending_style_service.get_trending_style_service")
     @patch("services.hybrid_recommender.normalize_style_name", side_effect=lambda x: x)
-    @patch("services.hybrid_recommender.MLRecommendationService.__init__", return_value=None)
+    @patch(
+        "services.hybrid_recommender.MLRecommendationService.__init__",
+        return_value=None,
+    )
     def test_recommend_with_ml_features(self, mock_init, mock_normalize, mock_trending):
         """Test that recommendations work with ML feature vectors"""
         from services.hybrid_recommender import MLRecommendationService

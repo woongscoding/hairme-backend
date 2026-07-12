@@ -98,7 +98,10 @@ class TestSecretsManager:
 
     def test_get_secret_boto3_not_available(self):
         """Test when boto3 is not installed"""
-        with patch.dict("sys.modules", {"boto3": None, "botocore": None, "botocore.exceptions": None}):
+        with patch.dict(
+            "sys.modules",
+            {"boto3": None, "botocore": None, "botocore.exceptions": None},
+        ):
             # Clear LRU cache to force re-execution
             get_secret.cache_clear()
             result = get_secret("hairme-gemini-api-key")
