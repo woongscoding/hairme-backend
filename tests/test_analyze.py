@@ -63,7 +63,9 @@ class TestAnalyzeEndpoint:
         """Set up DI overrides before each test"""
         self.mock_face_detector = _make_mock_face_detector()
         self.mock_ml_recommender = _make_mock_ml_recommender()
-        app.dependency_overrides[get_face_detection_service] = lambda: self.mock_face_detector
+        app.dependency_overrides[get_face_detection_service] = (
+            lambda: self.mock_face_detector
+        )
         app.dependency_overrides[get_hybrid_service] = lambda: self.mock_ml_recommender
 
     def teardown_method(self):
@@ -146,11 +148,15 @@ class TestAnalyzeEndpoint:
         assert response.status_code == 400
 
     @patch("api.endpoints.analyze.get_cached_result", return_value=None)
-    def test_analyze_handles_multiple_faces(self, mock_cache, client, sample_image_bytes):
+    def test_analyze_handles_multiple_faces(
+        self, mock_cache, client, sample_image_bytes
+    ):
         """Test handling when multiple faces are detected"""
         # Override the face detector to return multiple faces
         multi_face_detector = _make_mock_face_detector(has_face=True, face_count=2)
-        app.dependency_overrides[get_face_detection_service] = lambda: multi_face_detector
+        app.dependency_overrides[get_face_detection_service] = (
+            lambda: multi_face_detector
+        )
 
         files = {"file": ("test.jpg", sample_image_bytes, "image/jpeg")}
         response = client.post("/api/analyze", files=files)
@@ -166,7 +172,9 @@ class TestImageProcessing:
         """Set up DI overrides before each test"""
         self.mock_face_detector = _make_mock_face_detector()
         self.mock_ml_recommender = _make_mock_ml_recommender()
-        app.dependency_overrides[get_face_detection_service] = lambda: self.mock_face_detector
+        app.dependency_overrides[get_face_detection_service] = (
+            lambda: self.mock_face_detector
+        )
         app.dependency_overrides[get_hybrid_service] = lambda: self.mock_ml_recommender
 
     def teardown_method(self):

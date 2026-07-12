@@ -1,0 +1,4 @@
+[tool.black]
+# services/chatbot/ 은 개인 학습용 독립 프로젝트 (서비스 미통합, 수정 금지 경로)
+# - CI 포맷 검사 대상에서 제외한다. force-exclude는 경로를 직접 지정해도 제외됨.
+force-exclude = '/services/chatbot/'
