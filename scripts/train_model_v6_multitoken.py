@@ -980,7 +980,16 @@ def train_model(
             logger.info(f"\n⏸️  Early stopping at epoch {epoch + 1}")
             break
 
-    # 최종 테스트
+    # 최종 테스트: early stopping 시점의 마지막 모델이 아니라 저장된 best 모델로 평가
+    best_model_path = output_dir / "hairstyle_recommender_v6_multitoken.pt"
+    if best_model_path.exists():
+        checkpoint = torch.load(best_model_path, map_location=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        logger.info(
+            f"\n♻️  Best 모델 로드 (epoch {checkpoint['epoch']}, "
+            f"val_loss {checkpoint['best_val_loss']:.4f})"
+        )
+
     logger.info(f"\n🧪 최종 테스트 평가:")
     test_metrics = validate(
         model,
@@ -1000,10 +1009,14 @@ def train_model(
         f"  - Test Pairwise Accuracy: {_fmt_metric(test_metrics['pairwise_accuracy'], '.3f')}"
     )
 
-    # 학습 기록 저장
+    # 학습 기록 저장 (NaN은 JSON 표준에 없어 strict 파서를 깨뜨리므로 null로 변환)
     history_path = output_dir / "training_history_v6_multitoken.json"
+    history_safe = {
+        key: [None if value != value else value for value in values]
+        for key, values in history.items()
+    }
     with open(history_path, "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2)
+        json.dump(history_safe, f, indent=2)
 
     logger.info(f"\n📊 학습 기록 저장: {history_path}")
 
