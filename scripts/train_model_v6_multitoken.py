@@ -27,7 +27,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, DataLoader, Subset, Sampler
 from pathlib import Path
 import logging
 from typing import Dict, Tuple, List
@@ -299,6 +299,177 @@ class HairstyleDatasetV6(Dataset):
         )
 
 
+# ========== Face Group Batch Sampler ==========
+class FaceGroupBatchSampler(Sampler):
+    """
+    같은 얼굴의 샘플들을 항상 같은 배치에 포함시키는 커스텀 배치 샘플러.
+
+    Pairwise Ranking Loss 계산을 위해, 같은 얼굴의 6개 헤어스타일이
+    동일 배치에 들어가야 쌍별 비교가 가능합니다.
+    """
+
+    def __init__(
+        self,
+        sample_indices: List[int],
+        samples_per_face: int = 6,
+        batch_size: int = 64,
+        shuffle: bool = True,
+    ):
+        self.samples_per_face = samples_per_face
+        self.shuffle = shuffle
+
+        # sample_indices를 얼굴 그룹으로 묶기
+        self.face_groups = []
+        for i in range(0, len(sample_indices), samples_per_face):
+            group = sample_indices[i : i + samples_per_face]
+            if len(group) == samples_per_face:
+                # 그룹 무결성 검증: 한 그룹의 인덱스는 전부 같은 얼굴이어야 함
+                face_ids = {idx // samples_per_face for idx in group}
+                assert len(face_ids) == 1, (
+                    f"FaceGroupBatchSampler 그룹 무결성 위반: 인덱스 {group}가 "
+                    f"서로 다른 얼굴 {sorted(face_ids)}에 걸쳐 있습니다. "
+                    f"sample_indices는 얼굴별로 연속된 {samples_per_face}개 "
+                    f"단위로 정렬되어 있어야 합니다."
+                )
+                self.face_groups.append(group)
+
+        # 배치당 얼굴 수 (batch_size를 samples_per_face의 배수로 조정)
+        self.faces_per_batch = max(1, batch_size // samples_per_face)
+        self.num_faces = len(self.face_groups)
+
+    def __iter__(self):
+        face_order = list(range(self.num_faces))
+        if self.shuffle:
+            np.random.shuffle(face_order)
+
+        for i in range(0, self.num_faces, self.faces_per_batch):
+            batch_faces = face_order[i : i + self.faces_per_batch]
+            batch_indices = []
+            for face_idx in batch_faces:
+                batch_indices.extend(self.face_groups[face_idx])
+            yield batch_indices
+
+    def __len__(self):
+        return (self.num_faces + self.faces_per_batch - 1) // self.faces_per_batch
+
+
+# ========== Pairwise Ranking Loss ==========
+def pairwise_ranking_loss(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    samples_per_face: int = 6,
+    margin: float = 0.05,
+) -> torch.Tensor:
+    """
+    같은 얼굴의 헤어스타일 간 순위를 보존하는 Pairwise Ranking Loss.
+
+    각 얼굴의 samples_per_face개 헤어스타일에서 C(n,2) 쌍을 생성하고,
+    target_i > target_j인 쌍에 대해:
+        loss = max(0, margin - (pred_i - pred_j))
+
+    Args:
+        predictions: (batch_size,) 모델 예측값
+        targets: (batch_size,) or (batch_size, 1) 타겟값
+        samples_per_face: 얼굴당 헤어스타일 수
+        margin: 순위 마진 (정규화 스케일)
+
+    Returns:
+        scalar loss
+    """
+    targets = targets.view(-1)
+    predictions = predictions.view(-1)
+
+    batch_size = predictions.size(0)
+    num_faces = batch_size // samples_per_face
+
+    if num_faces == 0:
+        return torch.tensor(0.0, device=predictions.device, requires_grad=True)
+
+    # 유효한 샘플만 사용 (samples_per_face의 배수)
+    valid_size = num_faces * samples_per_face
+    pred = predictions[:valid_size].view(num_faces, samples_per_face)
+    tgt = targets[:valid_size].view(num_faces, samples_per_face)
+
+    # C(samples_per_face, 2) 쌍의 인덱스 생성 (벡터화)
+    idx_i, idx_j = torch.triu_indices(samples_per_face, samples_per_face, offset=1)
+
+    # 모든 얼굴에 대해 한번에 쌍 추출: (num_faces, num_pairs)
+    pred_i = pred[:, idx_i]
+    pred_j = pred[:, idx_j]
+    tgt_i = tgt[:, idx_i]
+    tgt_j = tgt[:, idx_j]
+
+    # target_i > target_j인 쌍: pred_i가 더 높아야 함
+    # target_i < target_j인 쌍: pred_j가 더 높아야 함 (방향 반전)
+    diff_target = tgt_i - tgt_j
+    diff_pred = pred_i - pred_j
+
+    # 타겟 차이의 부호에 따라 예측 차이의 방향 조정
+    # sign(diff_target) * diff_pred가 양수여야 순위가 일치
+    signed_diff = torch.sign(diff_target) * diff_pred
+
+    # 동점(diff_target == 0)인 쌍은 제외
+    non_tie_mask = diff_target.abs() > 1e-6
+
+    if non_tie_mask.sum() == 0:
+        return torch.tensor(0.0, device=predictions.device, requires_grad=True)
+
+    # Margin ranking loss: max(0, margin - signed_diff)
+    losses = torch.clamp(margin - signed_diff, min=0.0)
+    loss = losses[non_tie_mask].mean()
+
+    return loss
+
+
+def compute_pairwise_accuracy(
+    predictions: torch.Tensor,
+    targets: torch.Tensor,
+    samples_per_face: int = 6,
+) -> float:
+    """
+    쌍별 순위 정확도 계산.
+
+    target_i > target_j일 때 pred_i > pred_j인 비율을 계산합니다.
+
+    Returns:
+        정확도 (0.0 ~ 1.0)
+    """
+    targets = targets.view(-1)
+    predictions = predictions.view(-1)
+
+    batch_size = predictions.size(0)
+    num_faces = batch_size // samples_per_face
+
+    if num_faces == 0:
+        return 0.0
+
+    valid_size = num_faces * samples_per_face
+    pred = predictions[:valid_size].view(num_faces, samples_per_face)
+    tgt = targets[:valid_size].view(num_faces, samples_per_face)
+
+    idx_i, idx_j = torch.triu_indices(samples_per_face, samples_per_face, offset=1)
+
+    pred_i = pred[:, idx_i]
+    pred_j = pred[:, idx_j]
+    tgt_i = tgt[:, idx_i]
+    tgt_j = tgt[:, idx_j]
+
+    diff_target = tgt_i - tgt_j
+    diff_pred = pred_i - pred_j
+
+    # 동점 제외
+    non_tie_mask = diff_target.abs() > 1e-6
+
+    if non_tie_mask.sum() == 0:
+        return 1.0  # 모든 쌍이 동점이면 100%
+
+    # 순위 일치: sign(diff_target) == sign(diff_pred)
+    correct = (torch.sign(diff_target) == torch.sign(diff_pred)) & non_tie_mask
+    accuracy = correct.sum().float() / non_tie_mask.sum().float()
+
+    return accuracy.item()
+
+
 def load_training_data(data_path: str) -> Dict:
     """NPZ 데이터 로드 및 전처리"""
     logger.info(f"📂 데이터 로딩: {data_path}")
@@ -351,8 +522,14 @@ def create_dataloaders_no_leakage(
     val_ratio: float = 0.15,
     test_ratio: float = 0.15,
     samples_per_face: int = 6,
+    use_face_group_sampler: bool = False,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """데이터 리키지 방지: 얼굴 단위로 train/val/test 분할"""
+    """데이터 리키지 방지: 얼굴 단위로 train/val/test 분할
+
+    Args:
+        use_face_group_sampler: True이면 FaceGroupBatchSampler를 사용하여
+            같은 얼굴의 샘플을 같은 배치에 배치 (Ranking Loss용)
+    """
 
     dataset = HairstyleDatasetV6(
         face_features=data["face_features"],
@@ -369,6 +546,8 @@ def create_dataloaders_no_leakage(
     logger.info(f"  - 총 샘플: {total_samples:,}개")
     logger.info(f"  - 총 얼굴: {num_faces:,}개")
     logger.info(f"  - 얼굴당 샘플: {samples_per_face}개")
+    if use_face_group_sampler:
+        logger.info(f"  - Face Group Sampler 활성화 (Ranking Loss용)")
 
     np.random.seed(42)
     face_indices = np.random.permutation(num_faces)
@@ -408,29 +587,58 @@ def create_dataloaders_no_leakage(
     val_dataset = Subset(dataset, val_sample_indices)
     test_dataset = Subset(dataset, test_sample_indices)
 
-    train_loader = DataLoader(
-        train_dataset,
+    # val/test 로더는 rank_weight와 무관하게 항상 FaceGroupBatchSampler(shuffle=False)를
+    # 사용한다. validate()가 항상 6개 단위 reshape로 pairwise 지표를 계산하므로,
+    # 배치 경계가 반드시 samples_per_face의 배수로 정렬되어야 서로 다른 얼굴을 섞어
+    # 비교하는 오프셋 버그가 발생하지 않는다. (val/test 인덱스는 이미 얼굴별 연속)
+    val_sampler = FaceGroupBatchSampler(
+        val_sample_indices,
+        samples_per_face=samples_per_face,
         batch_size=batch_size,
-        shuffle=True,
-        num_workers=0,
-        pin_memory=True,
+        shuffle=False,
     )
-
+    test_sampler = FaceGroupBatchSampler(
+        test_sample_indices,
+        samples_per_face=samples_per_face,
+        batch_size=batch_size,
+        shuffle=False,
+    )
     val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
+        dataset,
+        batch_sampler=val_sampler,
+        num_workers=0,
+        pin_memory=True,
+    )
+    test_loader = DataLoader(
+        dataset,
+        batch_sampler=test_sampler,
         num_workers=0,
         pin_memory=True,
     )
 
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True,
-    )
+    # train 로더는 기존 로직 유지: rank_weight>0(=use_face_group_sampler)일 때만
+    # FaceGroupBatchSampler를 사용하고, 그 외에는 일반 셔플 DataLoader를 사용한다.
+    if use_face_group_sampler:
+        train_sampler = FaceGroupBatchSampler(
+            train_sample_indices,
+            samples_per_face=samples_per_face,
+            batch_size=batch_size,
+            shuffle=True,
+        )
+        train_loader = DataLoader(
+            dataset,
+            batch_sampler=train_sampler,
+            num_workers=0,
+            pin_memory=True,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=True,
+        )
 
     return train_loader, val_loader, test_loader
 
@@ -441,10 +649,19 @@ def train_epoch(
     optimizer: optim.Optimizer,
     criterion: nn.Module,
     device: torch.device,
-) -> float:
-    """1 에폭 학습"""
+    rank_weight: float = 0.0,
+    rank_margin: float = 0.05,
+    samples_per_face: int = 6,
+) -> Dict[str, float]:
+    """1 에폭 학습
+
+    Returns:
+        dict with keys: total_loss, mse_loss, rank_loss
+    """
     model.train()
     total_loss = 0.0
+    total_mse_loss = 0.0
+    total_rank_loss = 0.0
 
     for face_feat, skin_feat, style_emb, scores in train_loader:
         face_feat = face_feat.to(device)
@@ -455,25 +672,55 @@ def train_epoch(
         optimizer.zero_grad()
         pred_scores = model(face_feat, skin_feat, style_emb)
 
-        loss = criterion(pred_scores.unsqueeze(1), scores)
+        mse_loss = criterion(pred_scores.unsqueeze(1), scores)
+
+        if rank_weight > 0:
+            rank_loss = pairwise_ranking_loss(
+                pred_scores,
+                scores,
+                samples_per_face=samples_per_face,
+                margin=rank_margin,
+            )
+            loss = mse_loss + rank_weight * rank_loss
+            total_rank_loss += rank_loss.item()
+        else:
+            loss = mse_loss
 
         loss.backward()
         optimizer.step()
 
         total_loss += loss.item()
+        total_mse_loss += mse_loss.item()
 
-    avg_loss = total_loss / len(train_loader)
-    return avg_loss
+    num_batches = len(train_loader)
+    return {
+        "total_loss": total_loss / num_batches,
+        "mse_loss": total_mse_loss / num_batches,
+        "rank_loss": total_rank_loss / num_batches if rank_weight > 0 else 0.0,
+    }
 
 
 def validate(
-    model: nn.Module, val_loader: DataLoader, criterion: nn.Module, device: torch.device
-) -> Tuple[float, float, float]:
-    """검증"""
+    model: nn.Module,
+    val_loader: DataLoader,
+    criterion: nn.Module,
+    device: torch.device,
+    rank_weight: float = 0.0,
+    rank_margin: float = 0.05,
+    samples_per_face: int = 6,
+) -> Dict[str, float]:
+    """검증
+
+    Returns:
+        dict with keys: total_loss, mse_loss, rank_loss, mae_normalized, mae_original, pairwise_accuracy
+    """
     model.eval()
-    total_loss = 0.0
+    total_mse_loss = 0.0
+    total_rank_loss = 0.0
     total_normalized_mae = 0.0
     total_original_mae = 0.0
+    total_pairwise_acc = 0.0
+    num_rank_batches = 0
 
     with torch.no_grad():
         for face_feat, skin_feat, style_emb, scores in val_loader:
@@ -484,28 +731,69 @@ def validate(
 
             pred_scores = model(face_feat, skin_feat, style_emb)
 
-            loss = criterion(pred_scores.unsqueeze(1), scores)
+            mse_loss = criterion(pred_scores.unsqueeze(1), scores)
             normalized_mae = torch.abs(pred_scores.unsqueeze(1) - scores).mean()
 
             pred_original = pred_scores.unsqueeze(1) * LABEL_RANGE + LABEL_MIN
             scores_original = scores * LABEL_RANGE + LABEL_MIN
             original_mae = torch.abs(pred_original - scores_original).mean()
 
-            total_loss += loss.item()
+            total_mse_loss += mse_loss.item()
             total_normalized_mae += normalized_mae.item()
             total_original_mae += original_mae.item()
 
+            # Ranking metrics (항상 계산, 모니터링용)
+            batch_size = pred_scores.size(0)
+            if batch_size >= samples_per_face:
+                rank_loss = pairwise_ranking_loss(
+                    pred_scores,
+                    scores,
+                    samples_per_face=samples_per_face,
+                    margin=rank_margin,
+                )
+                pair_acc = compute_pairwise_accuracy(
+                    pred_scores, scores, samples_per_face=samples_per_face
+                )
+                total_rank_loss += rank_loss.item()
+                total_pairwise_acc += pair_acc
+                num_rank_batches += 1
+
     num_batches = len(val_loader)
-    return (
-        total_loss / num_batches,
-        total_normalized_mae / num_batches,
-        total_original_mae / num_batches,
-    )
+
+    # ranking 배치가 하나도 없으면 지표를 0.0으로 위장하지 않고 NaN으로 반환한다.
+    # (best model 선택은 mse/total_loss 기반이므로 NaN이 선택 기준에 새어들면 안 됨)
+    if num_rank_batches > 0:
+        rank_loss = total_rank_loss / num_rank_batches
+        pairwise_accuracy = total_pairwise_acc / num_rank_batches
+    else:
+        rank_loss = float("nan")
+        pairwise_accuracy = float("nan")
+
+    # total_loss는 항상 유한해야 한다: ranking 배치가 없을 때는 ranking 항을 더하지 않는다.
+    total_loss = total_mse_loss / num_batches
+    if rank_weight > 0 and num_rank_batches > 0:
+        total_loss += rank_weight * rank_loss
+
+    return {
+        "total_loss": total_loss,
+        "mse_loss": total_mse_loss / num_batches,
+        "rank_loss": rank_loss,
+        "mae_normalized": total_normalized_mae / num_batches,
+        "mae_original": total_original_mae / num_batches,
+        "pairwise_accuracy": pairwise_accuracy,
+    }
 
 
 def count_parameters(model: nn.Module) -> int:
     """모델 파라미터 수 계산"""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def _fmt_metric(value: float, fmt: str = ".4f") -> str:
+    """지표 포맷팅. NaN(ranking 배치 없음)이면 'N/A'로 표시."""
+    if value != value:  # NaN 체크
+        return "N/A"
+    return format(value, fmt)
 
 
 def train_model(
@@ -517,6 +805,8 @@ def train_model(
     patience: int = 15,
     token_dim: int = 128,
     num_heads: int = 4,
+    rank_weight: float = 0.0,
+    rank_margin: float = 0.05,
 ):
     """모델 학습 메인 함수 (V6 - Multi-Token Attention)"""
     logger.info("=" * 60)
@@ -526,6 +816,10 @@ def train_model(
     logger.info(f"  - Token dimension: {token_dim}")
     logger.info(f"  - Attention heads: {num_heads}")
     logger.info(f"  - 라벨 정규화: {LABEL_MIN}~{LABEL_MAX} → 0~1")
+    if rank_weight > 0:
+        logger.info(f"  - Ranking Loss: weight={rank_weight}, margin={rank_margin}")
+    else:
+        logger.info(f"  - Ranking Loss: 비활성화 (rank_weight=0)")
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -536,9 +830,10 @@ def train_model(
     # 데이터 로드
     data = load_training_data(data_path)
 
-    # 데이터로더 생성
+    # 데이터로더 생성 (ranking 활성화 시 FaceGroupBatchSampler 사용)
+    use_face_group = rank_weight > 0
     train_loader, val_loader, test_loader = create_dataloaders_no_leakage(
-        data, batch_size=batch_size
+        data, batch_size=batch_size, use_face_group_sampler=use_face_group
     )
 
     # V6 모델 생성
@@ -572,9 +867,14 @@ def train_model(
 
     history = {
         "train_loss": [],
+        "train_mse_loss": [],
+        "train_rank_loss": [],
         "val_loss": [],
+        "val_mse_loss": [],
+        "val_rank_loss": [],
         "val_mae_normalized": [],
         "val_mae_original": [],
+        "val_pairwise_accuracy": [],
         "lr": [],
     }
 
@@ -586,34 +886,62 @@ def train_model(
     logger.info(f"  - Batch size: {batch_size}")
     logger.info(f"  - Learning rate: {learning_rate}")
     logger.info(f"  - Early stopping patience: {patience}")
+    if rank_weight > 0:
+        logger.info(
+            f"  - Loss: MSE + {rank_weight} * RankingLoss (margin={rank_margin})"
+        )
 
     for epoch in range(epochs):
-        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
-        val_loss, val_mae_norm, val_mae_orig = validate(
-            model, val_loader, criterion, device
+        train_metrics = train_epoch(
+            model,
+            train_loader,
+            optimizer,
+            criterion,
+            device,
+            rank_weight=rank_weight,
+            rank_margin=rank_margin,
+        )
+        val_metrics = validate(
+            model,
+            val_loader,
+            criterion,
+            device,
+            rank_weight=rank_weight,
+            rank_margin=rank_margin,
         )
 
         current_lr = optimizer.param_groups[0]["lr"]
 
-        history["train_loss"].append(train_loss)
-        history["val_loss"].append(val_loss)
-        history["val_mae_normalized"].append(val_mae_norm)
-        history["val_mae_original"].append(val_mae_orig)
+        history["train_loss"].append(train_metrics["total_loss"])
+        history["train_mse_loss"].append(train_metrics["mse_loss"])
+        history["train_rank_loss"].append(train_metrics["rank_loss"])
+        history["val_loss"].append(val_metrics["total_loss"])
+        history["val_mse_loss"].append(val_metrics["mse_loss"])
+        history["val_rank_loss"].append(val_metrics["rank_loss"])
+        history["val_mae_normalized"].append(val_metrics["mae_normalized"])
+        history["val_mae_original"].append(val_metrics["mae_original"])
+        history["val_pairwise_accuracy"].append(val_metrics["pairwise_accuracy"])
         history["lr"].append(current_lr)
 
         if (epoch + 1) % 5 == 0 or epoch == 0:
-            logger.info(
+            log_msg = (
                 f"Epoch [{epoch+1:3d}/{epochs}] "
-                f"Train Loss: {train_loss:.4f} | "
-                f"Val Loss: {val_loss:.4f} | "
-                f"MAE(orig): {val_mae_orig:.2f} | "
-                f"LR: {current_lr:.6f}"
+                f"Train Loss: {train_metrics['total_loss']:.4f} | "
+                f"Val Loss: {val_metrics['total_loss']:.4f} | "
+                f"MAE(orig): {val_metrics['mae_original']:.2f}"
             )
+            if rank_weight > 0:
+                log_msg += (
+                    f" | RankLoss: {_fmt_metric(val_metrics['rank_loss'])}"
+                    f" | PairAcc: {_fmt_metric(val_metrics['pairwise_accuracy'], '.3f')}"
+                )
+            log_msg += f" | LR: {current_lr:.6f}"
+            logger.info(log_msg)
 
-        scheduler.step(val_loss)
+        scheduler.step(val_metrics["total_loss"])
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_metrics["total_loss"] < best_val_loss:
+            best_val_loss = val_metrics["total_loss"]
             patience_counter = 0
 
             model_path = output_dir / "hairstyle_recommender_v6_multitoken.pt"
@@ -636,6 +964,8 @@ def train_model(
                         "label_max": LABEL_MAX,
                         "label_range": LABEL_RANGE,
                         "attention_type": "multi_token",
+                        "rank_weight": rank_weight,
+                        "rank_margin": rank_margin,
                     },
                 },
                 model_path,
@@ -652,12 +982,23 @@ def train_model(
 
     # 최종 테스트
     logger.info(f"\n🧪 최종 테스트 평가:")
-    test_loss, test_mae_norm, test_mae_orig = validate(
-        model, test_loader, criterion, device
+    test_metrics = validate(
+        model,
+        test_loader,
+        criterion,
+        device,
+        rank_weight=rank_weight,
+        rank_margin=rank_margin,
     )
-    logger.info(f"  - Test Loss: {test_loss:.4f}")
-    logger.info(f"  - Test MAE (정규화): {test_mae_norm:.4f}")
-    logger.info(f"  - Test MAE (원본 스케일): {test_mae_orig:.2f}점")
+    logger.info(f"  - Test Loss: {test_metrics['total_loss']:.4f}")
+    logger.info(f"  - Test MSE Loss: {test_metrics['mse_loss']:.4f}")
+    logger.info(f"  - Test MAE (정규화): {test_metrics['mae_normalized']:.4f}")
+    logger.info(f"  - Test MAE (원본 스케일): {test_metrics['mae_original']:.2f}점")
+    if rank_weight > 0:
+        logger.info(f"  - Test Ranking Loss: {_fmt_metric(test_metrics['rank_loss'])}")
+    logger.info(
+        f"  - Test Pairwise Accuracy: {_fmt_metric(test_metrics['pairwise_accuracy'], '.3f')}"
+    )
 
     # 학습 기록 저장
     history_path = output_dir / "training_history_v6_multitoken.json"
@@ -725,7 +1066,11 @@ def train_model(
     logger.info("✅ V6 학습 완료!")
     logger.info("=" * 60)
     logger.info(f"  - Best Val Loss: {best_val_loss:.4f}")
-    logger.info(f"  - Test MAE: {test_mae_orig:.2f}점 (원본 스케일)")
+    logger.info(f"  - Test MAE: {test_metrics['mae_original']:.2f}점 (원본 스케일)")
+    if rank_weight > 0:
+        logger.info(
+            f"  - Test Pairwise Accuracy: {_fmt_metric(test_metrics['pairwise_accuracy'], '.3f')}"
+        )
     logger.info(
         f"  - 모델 경로: {output_dir / 'hairstyle_recommender_v6_multitoken.pt'}"
     )
@@ -752,6 +1097,18 @@ def main():
         "--token-dim", type=int, default=128, help="Attention 토큰 차원"
     )
     parser.add_argument("--num-heads", type=int, default=4, help="Attention heads 수")
+    parser.add_argument(
+        "--rank-weight",
+        type=float,
+        default=0.0,
+        help="Pairwise Ranking Loss 가중치 (0=비활성화, 1.0=MSE와 동일 가중치)",
+    )
+    parser.add_argument(
+        "--rank-margin",
+        type=float,
+        default=0.05,
+        help="Ranking Loss 마진 (정규화 스케일, 기본 0.05 ≈ 원본 4.25점)",
+    )
 
     args = parser.parse_args()
 
@@ -764,6 +1121,8 @@ def main():
         patience=args.patience,
         token_dim=args.token_dim,
         num_heads=args.num_heads,
+        rank_weight=args.rank_weight,
+        rank_margin=args.rank_margin,
     )
 
 
