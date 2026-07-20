@@ -315,6 +315,16 @@ class FaceGroupBatchSampler(Sampler):
         batch_size: int = 64,
         shuffle: bool = True,
     ):
+        if samples_per_face < 2:
+            raise ValueError("samples_per_face must be at least 2")
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        if len(sample_indices) % samples_per_face != 0:
+            raise ValueError(
+                "sample_indices length must be divisible by samples_per_face; "
+                "incomplete face groups are not allowed"
+            )
+
         self.samples_per_face = samples_per_face
         self.shuffle = shuffle
 
@@ -322,16 +332,16 @@ class FaceGroupBatchSampler(Sampler):
         self.face_groups = []
         for i in range(0, len(sample_indices), samples_per_face):
             group = sample_indices[i : i + samples_per_face]
-            if len(group) == samples_per_face:
-                # 그룹 무결성 검증: 한 그룹의 인덱스는 전부 같은 얼굴이어야 함
-                face_ids = {idx // samples_per_face for idx in group}
-                assert len(face_ids) == 1, (
+            # 그룹 무결성 검증: 한 그룹의 인덱스는 전부 같은 얼굴이어야 함
+            face_ids = {idx // samples_per_face for idx in group}
+            if len(face_ids) != 1:
+                raise ValueError(
                     f"FaceGroupBatchSampler 그룹 무결성 위반: 인덱스 {group}가 "
                     f"서로 다른 얼굴 {sorted(face_ids)}에 걸쳐 있습니다. "
                     f"sample_indices는 얼굴별로 연속된 {samples_per_face}개 "
                     f"단위로 정렬되어 있어야 합니다."
                 )
-                self.face_groups.append(group)
+            self.face_groups.append(group)
 
         # 배치당 얼굴 수 (batch_size를 samples_per_face의 배수로 조정)
         self.faces_per_batch = max(1, batch_size // samples_per_face)
@@ -540,6 +550,14 @@ def create_dataloaders_no_leakage(
     )
 
     total_samples = len(dataset)
+    if samples_per_face < 2:
+        raise ValueError("samples_per_face must be at least 2")
+    if total_samples % samples_per_face != 0:
+        raise ValueError(
+            "total samples must be divisible by samples_per_face; "
+            "incomplete face groups are not allowed"
+        )
+
     num_faces = total_samples // samples_per_face
 
     logger.info(f"\n🔍 데이터 리키지 방지 모드:")
@@ -555,6 +573,11 @@ def create_dataloaders_no_leakage(
     num_test_faces = int(num_faces * test_ratio)
     num_val_faces = int(num_faces * val_ratio)
     num_train_faces = num_faces - num_test_faces - num_val_faces
+    if min(num_train_faces, num_val_faces, num_test_faces) < 1:
+        raise ValueError(
+            "train/validation/test splits must each contain at least one face; "
+            "increase the dataset size or adjust val_ratio/test_ratio"
+        )
 
     train_face_indices = face_indices[:num_train_faces]
     val_face_indices = face_indices[num_train_faces : num_train_faces + num_val_faces]
