@@ -32,6 +32,7 @@ from models.ml_recommender import (
     get_ml_recommender,
 )
 from core.dependencies import get_face_detection_service, get_hybrid_service
+from services.style_image_service import get_style_image_service
 
 router = APIRouter()
 
@@ -213,7 +214,8 @@ async def analyze_face(
             "recommendations": recommendation_result.get("recommendations", []),
         }
 
-        # Naver 검색 URL 추가
+        # Naver 검색 URL + AI 예시 이미지 URL 추가
+        style_image_service = get_style_image_service()
         for rec in analysis_result["recommendations"]:
             style_name = rec.get("style_name", "")
             if gender == "male":
@@ -225,6 +227,13 @@ async def analyze_face(
             encoded_query = urllib.parse.quote(search_query)
             rec["image_search_url"] = (
                 f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
+            )
+            # AI 생성 예시 이미지 (매핑 없으면 None - 프론트는 null 처리)
+            rec["image_url"] = style_image_service.build_image_url(
+                style_name=style_name,
+                hairstyle_id=rec.get("hairstyle_id"),
+                gender=gender,
+                base_url=str(request.base_url),
             )
 
         # Cache result
@@ -399,6 +408,7 @@ async def analyze_face_hybrid(
 
         # 3. Add Naver search URLs (with gender prefix for better results)
         logger.info(f"[SEARCH URL] Adding search URLs with gender={gender}")
+        style_image_service = get_style_image_service()
         for idx, rec in enumerate(recommendation_result.get("recommendations", [])):
             style_name = rec.get("style_name", "")
 
@@ -420,6 +430,13 @@ async def analyze_face_hybrid(
             encoded_query = urllib.parse.quote(search_query)
             rec["image_search_url"] = (
                 f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
+            )
+            # AI 생성 예시 이미지 (매핑 없으면 None - 프론트는 null 처리)
+            rec["image_url"] = style_image_service.build_image_url(
+                style_name=style_name,
+                hairstyle_id=rec.get("hairstyle_id"),
+                gender=gender,
+                base_url=str(request.base_url),
             )
 
         # 4. Save to database using Repository pattern

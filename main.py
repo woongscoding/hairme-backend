@@ -36,6 +36,7 @@ from api.endpoints.usage import router as usage_router
 from api.endpoints.auth import router as auth_router
 from api.endpoints.credits import router as credits_router
 from api.endpoints.results import router as results_router
+from api.endpoints.style_images import router as style_images_router
 
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
@@ -252,6 +253,7 @@ app.include_router(usage_router, prefix="/api", tags=["usage"])
 app.include_router(auth_router, prefix="/api", tags=["auth"])
 app.include_router(credits_router, prefix="/api", tags=["credits"])
 app.include_router(results_router, prefix="/api", tags=["results"])
+app.include_router(style_images_router, prefix="/api", tags=["styles"])
 
 
 # ========== Startup Event ==========

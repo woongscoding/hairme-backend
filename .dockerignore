@@ -103,6 +103,11 @@ evaluation/
 !data_source/style_characteristics.json
 !data_source/valid_hairstyles.json
 !data_source/trending_hairstyles.json
+!data_source/style_images/styles.json
+!data_source/style_images/image_manifest.json
+
+# Style example images: raw originals excluded, serving WebP included
+data_source/style_images/generated/
 
 # Security reports
 bandit-report.json
