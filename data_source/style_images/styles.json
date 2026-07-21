@@ -1,0 +1,3100 @@
+{
+  "source": {
+    "ml_styles": 310,
+    "trending_styles": 36,
+    "image_keys": 84
+  },
+  "image_keys": [
+    {
+      "image_key": "C컬펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "S컬펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "가르마스타일",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 5
+    },
+    {
+      "image_key": "가르마펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 20
+    },
+    {
+      "image_key": "가일컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 14
+    },
+    {
+      "image_key": "그레이스펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "글램펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "내추럴펌",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "다운펌",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "단발",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "댄디컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "드롭컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "디지털펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "레게스타일",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "레이어드컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "롭",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "리젠트컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 17
+    },
+    {
+      "image_key": "리프컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 11
+    },
+    {
+      "image_key": "맨번",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "머쉬룸컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "멀릿",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "모드컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "모히칸스타일",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "물결펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "믹시컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "바디펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "바버스타일",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "밤톨머리",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "버즈컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "베이비펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "보브컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "볼륨매직",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "볼륨매직+C컬펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "볼륨매직+쉐도우펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "볼륨펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "블랙숏컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "블레이드컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "블레이드펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "샤기컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "세미리젠트컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "세미리프컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 7
+    },
+    {
+      "image_key": "세미울프컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "세미크롭컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "소프트댄디컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 11
+    },
+    {
+      "image_key": "소프트멀릿",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "소프트모히칸",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "소프트컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "소프트투블럭",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 12
+    },
+    {
+      "image_key": "쉐도우펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "쉼표머리",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 10
+    },
+    {
+      "image_key": "스왓컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 20
+    },
+    {
+      "image_key": "스킨페이드",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 13
+    },
+    {
+      "image_key": "스킨헤드",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "스핀스왈로펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 12
+    },
+    {
+      "image_key": "슬릭백언더컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "시스루댄디",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 3
+    },
+    {
+      "image_key": "시스루뱅",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 5
+    },
+    {
+      "image_key": "아이비리그컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 2
+    },
+    {
+      "image_key": "애즈펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 5
+    },
+    {
+      "image_key": "언더컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "올백",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 4
+    },
+    {
+      "image_key": "울프컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 13
+    },
+    {
+      "image_key": "원랭스컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "이탈리안보브",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "장발스타일",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 13
+    },
+    {
+      "image_key": "장발펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 6
+    },
+    {
+      "image_key": "장발히피펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 10
+    },
+    {
+      "image_key": "젤리펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "중단발",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "커튼뱅",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "퀴프",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "크롭컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 30
+    },
+    {
+      "image_key": "태슬컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "텍스쳐컷",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "텍스쳐펌",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "투블럭",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "포마드",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 25
+    },
+    {
+      "image_key": "프렌치크롭",
+      "gender": "male",
+      "generate_for": [
+        "male"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "플리츠펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "플립컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "픽시컷",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "허그펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "허쉬컷",
+      "gender": "unisex",
+      "generate_for": [
+        "male",
+        "female"
+      ],
+      "variant_count": 1
+    },
+    {
+      "image_key": "히피펌",
+      "gender": "female",
+      "generate_for": [
+        "female"
+      ],
+      "variant_count": 2
+    }
+  ],
+  "ml_styles": [
+    {
+      "hairstyle_id": 0,
+      "raw_name": "5:5 가르마 (Middle Part): 얼굴의 단점을 그대로 드러내고, 하트형 얼굴의 넓은 이마를 강조할 수 있습니다.",
+      "canonical": "5:5가르마",
+      "image_key": "가르마스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 1,
+      "raw_name": "5:5 가르마 펌",
+      "canonical": "5:5가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 2,
+      "raw_name": "5:5 가르마펌 (볼륨 과다)",
+      "canonical": "5:5가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 3,
+      "raw_name": "가르마 스타일 (5:5 또는 6:4)",
+      "canonical": "가르마스타일",
+      "image_key": "가르마스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 4,
+      "raw_name": "가르마 스타일 (6:4 or 7:3)",
+      "canonical": "가르마스타일",
+      "image_key": "가르마스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 5,
+      "raw_name": "가르마 스타일 (6:4 또는 7:3 비율)",
+      "canonical": "가르마스타일",
+      "image_key": "가르마스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 6,
+      "raw_name": "가르마 스타일 (6:4 또는 7:3)",
+      "canonical": "가르마스타일",
+      "image_key": "가르마스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 7,
+      "raw_name": "가르마 펌 (5:5 or 6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 8,
+      "raw_name": "가르마 펌 (5:5 또는 6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 9,
+      "raw_name": "가르마 펌 (5:5, 6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 10,
+      "raw_name": "가르마 펌 (6:4 or 7:3)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 11,
+      "raw_name": "가르마 펌 (6:4 또는 7:3)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 12,
+      "raw_name": "가르마 펌 (6:4 또는 7:3, 부드러운 인상)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 13,
+      "raw_name": "가르마 펌 (6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 14,
+      "raw_name": "가르마 펌 (Comma Perm): 앞머리에 컬을 넣어 이마를 살짝 가려주고 시선을 분산시켜 얼굴 비율을 균형있게 만듭니다.",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 15,
+      "raw_name": "가르마 펌 (Gareuma Perm)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 16,
+      "raw_name": "가르마펌 (5:5 or 6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 17,
+      "raw_name": "가르마펌 (5:5 과한 스타일)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 18,
+      "raw_name": "가르마펌 (5:5 또는 6:4)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 19,
+      "raw_name": "가르마펌 (5:5 스타일)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 20,
+      "raw_name": "가르마펌 (5:5)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 21,
+      "raw_name": "가르마펌 (6:4 or 7:3)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 22,
+      "raw_name": "가르마펌 (6:4 또는 7:3)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 23,
+      "raw_name": "가르마펌 (Gareuma Perm)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 24,
+      "raw_name": "가르마펌 (과도한 컬)",
+      "canonical": "가르마펌",
+      "image_key": "가르마펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 25,
+      "raw_name": "가일 컷",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 26,
+      "raw_name": "가일 컷 (Gael Cut)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 27,
+      "raw_name": "가일 컷 (자연스러운 컬 추가)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 28,
+      "raw_name": "가일컷",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 29,
+      "raw_name": "가일컷 (Gael Cut)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 30,
+      "raw_name": "가일컷 (볼륨 강조)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 31,
+      "raw_name": "가일컷 (볼륨 살짝)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 32,
+      "raw_name": "가일컷 (앞머리 살짝 내린 스타일)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 33,
+      "raw_name": "가일컷 (약간 부드럽게 연출)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 34,
+      "raw_name": "가일컷 (약간의 볼륨)",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 35,
+      "raw_name": "가일컷: 앞머리를 살짝 올려 이마를 드러내어 시원하고 세련된 느낌을 줍니다. 옆머리는 슬림하게 정리하여 갸름한 턱선을 강조합니다.",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 36,
+      "raw_name": "가일컷: 옆머리를 짧게 하고 앞머리를 한쪽 방향으로 넘겨 세련된 느낌을 연출하며, 이마를 살짝 드러내 시원한 인상을 줄 수 있습니다.",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 37,
+      "raw_name": "가일컷: 이마를 살짝 드러내어 남성적인 매력을 강조할 수 있습니다.",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 38,
+      "raw_name": "가일컷: 이마를 살짝 드러내어 시원한 인상을 주면서도 세련된 느낌을 연출합니다.",
+      "canonical": "가일컷",
+      "image_key": "가일컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 39,
+      "raw_name": "강한 투블럭: 각진 느낌을 더욱 강조하여 부드러운 인상을 해칠 수 있으며, 턱선이 도드라져 보일 수 있습니다.",
+      "canonical": "강한투블럭",
+      "image_key": "투블럭",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 40,
+      "raw_name": "댄디 컷",
+      "canonical": "댄디컷",
+      "image_key": "댄디컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 41,
+      "raw_name": "댄디 컷 (소프트 투블럭)",
+      "canonical": "댄디컷",
+      "image_key": "댄디컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 42,
+      "raw_name": "드롭 컷",
+      "canonical": "드롭컷",
+      "image_key": "드롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 43,
+      "raw_name": "레게 스타일",
+      "canonical": "레게스타일",
+      "image_key": "레게스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 44,
+      "raw_name": "리젠트 컷",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 45,
+      "raw_name": "리젠트 컷 (Regent Cut)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 46,
+      "raw_name": "리젠트 컷 (Regent cut)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 47,
+      "raw_name": "리젠트 컷 (과도한 볼륨)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 48,
+      "raw_name": "리젠트 컷 (깔끔한 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 49,
+      "raw_name": "리젠트 컷 (너무 짧은 기장)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 50,
+      "raw_name": "리젠트 컷 (너무 짧은 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 51,
+      "raw_name": "리젠트 컷 (단정하고 깔끔한 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 52,
+      "raw_name": "리젠트 컷 (볼륨 강조)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 53,
+      "raw_name": "리젠트 컷 (볼륨펌)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 54,
+      "raw_name": "리젠트 컷 (세미)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 55,
+      "raw_name": "리젠트 컷 (앞머리 살짝 내린 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 56,
+      "raw_name": "리젠트 컷 (앞머리 올림)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 57,
+      "raw_name": "리젠트컷",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 58,
+      "raw_name": "리젠트컷 (너무 각진 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 59,
+      "raw_name": "리젠트컷 (너무 짧은 스타일)",
+      "canonical": "리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 60,
+      "raw_name": "리프 컷",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 61,
+      "raw_name": "리프 컷 (Leaf Cut)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 62,
+      "raw_name": "리프 컷 (Leaf Cut): 옆머리를 차분하게 정리하고 윗머리에 볼륨을 주어 하트형 얼굴의 좁은 턱을 커버합니다. 봄웜톤 피부에 잘 어울립니다.",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 63,
+      "raw_name": "리프 컷 (가벼운 질감)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 64,
+      "raw_name": "리프컷",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 65,
+      "raw_name": "리프컷 (Leaf Cut)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 66,
+      "raw_name": "리프컷 (가르마 스타일링)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 67,
+      "raw_name": "리프컷 (가벼운 질감)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 68,
+      "raw_name": "리프컷 (볼륨펌 병행)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 69,
+      "raw_name": "리프컷 (볼륨펌)",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 70,
+      "raw_name": "리프컷: 옆머리를 차분하게 정리하고 앞머리에 포인트를 주어 트렌디하면서도 세련된 이미지를 연출하며, 하트형 얼굴의 시선을 분산시켜줍니다.",
+      "canonical": "리프컷",
+      "image_key": "리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 71,
+      "raw_name": "모히칸 스타일",
+      "canonical": "모히칸스타일",
+      "image_key": "모히칸스타일",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 72,
+      "raw_name": "바버 스타일 (페이드컷)",
+      "canonical": "바버스타일",
+      "image_key": "바버스타일",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 73,
+      "raw_name": "바버 스타일 페이드 컷",
+      "canonical": "바버스타일페이드컷",
+      "image_key": "바버스타일",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 74,
+      "raw_name": "밤톨머리",
+      "canonical": "밤톨머리",
+      "image_key": "밤톨머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 75,
+      "raw_name": "베이비 펌",
+      "canonical": "베이비펌",
+      "image_key": "베이비펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 76,
+      "raw_name": "베이비 펌 (Baby Perm)",
+      "canonical": "베이비펌",
+      "image_key": "베이비펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 77,
+      "raw_name": "베이비펌",
+      "canonical": "베이비펌",
+      "image_key": "베이비펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 78,
+      "raw_name": "볼륨매직 (앞머리 살짝)",
+      "canonical": "볼륨매직",
+      "image_key": "볼륨매직",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 79,
+      "raw_name": "볼륨매직 + C컬펌",
+      "canonical": "볼륨매직+C컬펌",
+      "image_key": "볼륨매직+C컬펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 80,
+      "raw_name": "볼륨매직 + 쉐도우펌",
+      "canonical": "볼륨매직+쉐도우펌",
+      "image_key": "볼륨매직+쉐도우펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 81,
+      "raw_name": "볼륨매직 스타일",
+      "canonical": "볼륨매직스타일",
+      "image_key": "볼륨매직",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 82,
+      "raw_name": "볼륨펌",
+      "canonical": "볼륨펌",
+      "image_key": "볼륨펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 83,
+      "raw_name": "볼륨펌 (Volume Perm)",
+      "canonical": "볼륨펌",
+      "image_key": "볼륨펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 84,
+      "raw_name": "볼륨펌 (앞머리 살짝 내린 스타일)",
+      "canonical": "볼륨펌",
+      "image_key": "볼륨펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 85,
+      "raw_name": "블랙 숏컷 (페이드컷)",
+      "canonical": "블랙숏컷",
+      "image_key": "블랙숏컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 86,
+      "raw_name": "블레이드 컷 (Blade Cut)",
+      "canonical": "블레이드컷",
+      "image_key": "블레이드컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 87,
+      "raw_name": "블레이드 펌 (과도한 컬)",
+      "canonical": "블레이드펌",
+      "image_key": "블레이드펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 88,
+      "raw_name": "블레이드펌",
+      "canonical": "블레이드펌",
+      "image_key": "블레이드펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 89,
+      "raw_name": "샤기 컷 (Shaggy Cut)",
+      "canonical": "샤기컷",
+      "image_key": "샤기컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 90,
+      "raw_name": "샤기 컷 (Shaggy cut)",
+      "canonical": "샤기컷",
+      "image_key": "샤기컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 91,
+      "raw_name": "샤기컷",
+      "canonical": "샤기컷",
+      "image_key": "샤기컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 92,
+      "raw_name": "세미 리젠트 컷",
+      "canonical": "세미리젠트컷",
+      "image_key": "세미리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 93,
+      "raw_name": "세미 리젠트 컷 (Semi Regent Cut)",
+      "canonical": "세미리젠트컷",
+      "image_key": "세미리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 94,
+      "raw_name": "세미 리젠트컷",
+      "canonical": "세미리젠트컷",
+      "image_key": "세미리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 95,
+      "raw_name": "세미 리프 컷",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 96,
+      "raw_name": "세미 리프컷",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 97,
+      "raw_name": "세미 리프컷 (Semi-Leaf Cut)",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 98,
+      "raw_name": "세미 리프컷: 옆머리와 뒷머리를 자연스럽게 연결하여 트렌디하면서도 부담스럽지 않은 스타일을 연출합니다. 봄웜톤 피부에 잘 어울리는 따뜻한 브라운 컬러를 추천합니다.",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 99,
+      "raw_name": "세미 리프컷: 윗머리에 볼륨을 주고 옆머리는 슬림하게 정리하여 트렌디하면서도 갸름한 얼굴형을 돋보이게 합니다.",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 100,
+      "raw_name": "세미 리프컷: 자연스러운 볼륨과 컬로 트렌디함을 더할 수 있습니다.",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 101,
+      "raw_name": "세미 리프컷: 자연스러운 컬과 레이어드로 트렌디하면서도 봄웜톤 피부에 잘 어울립니다.",
+      "canonical": "세미리프컷",
+      "image_key": "세미리프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 102,
+      "raw_name": "세미 울프컷",
+      "canonical": "세미울프컷",
+      "image_key": "세미울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 103,
+      "raw_name": "세미 크롭컷",
+      "canonical": "세미크롭컷",
+      "image_key": "세미크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 104,
+      "raw_name": "세미 크롭컷 (Semi Crop Cut)",
+      "canonical": "세미크롭컷",
+      "image_key": "세미크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 105,
+      "raw_name": "세미 크롭컷: 짧은 기장으로 깔끔하고 남성적인 이미지를 강조하며, 봄웜톤 피부에 활력을 더해줍니다. 옆머리를 슬림하게 연출하여 얼굴형을 더욱 갸름하게 보이도록 합니다.",
+      "canonical": "세미크롭컷",
+      "image_key": "세미크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 106,
+      "raw_name": "소프트 댄디컷",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 107,
+      "raw_name": "소프트 댄디컷 (Semi-Dandy Cut)",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 108,
+      "raw_name": "소프트 댄디컷 (Soft Dandy Cut)",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 109,
+      "raw_name": "소프트 댄디컷 (Soft Dandy Cut): 부드러운 질감으로 하트형 얼굴의 각진 부분을 보완하고 따뜻한 인상을 줍니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 110,
+      "raw_name": "소프트 댄디컷 (볼륨펌)",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 111,
+      "raw_name": "소프트 댄디컷 (자연스러운 볼륨)",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 112,
+      "raw_name": "소프트 댄디컷: 계란형 얼굴에 부드러운 인상을 더해주는 스타일입니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 113,
+      "raw_name": "소프트 댄디컷: 부드러운 텍스처와 자연스러운 볼륨으로 계란형 얼굴을 더욱 돋보이게 합니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 114,
+      "raw_name": "소프트 댄디컷: 자연스러운 볼륨과 부드러운 컬로 하트형 얼굴의 날렵한 턱선을 보완하고, 봄웜톤 피부를 더욱 화사하게 만들어줍니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 115,
+      "raw_name": "소프트 댄디컷: 자연스러운 볼륨과 텍스처로 하트형 얼굴의 부드러운 인상을 살려줍니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 116,
+      "raw_name": "소프트 댄디컷: 자연스럽게 떨어지는 앞머리가 부드러운 인상을 주면서 하트형 얼굴의 균형을 맞춰줍니다.",
+      "canonical": "소프트댄디컷",
+      "image_key": "소프트댄디컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 117,
+      "raw_name": "소프트 모히칸",
+      "canonical": "소프트모히칸",
+      "image_key": "소프트모히칸",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 118,
+      "raw_name": "소프트 모히칸 (Soft Mohican)",
+      "canonical": "소프트모히칸",
+      "image_key": "소프트모히칸",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 119,
+      "raw_name": "소프트 컷 (Soft Cut)",
+      "canonical": "소프트컷",
+      "image_key": "소프트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 120,
+      "raw_name": "소프트 투블럭",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 121,
+      "raw_name": "소프트 투블럭 (Semi-Buzz Cut)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 122,
+      "raw_name": "소프트 투블럭 (Semi-layered cut)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 123,
+      "raw_name": "소프트 투블럭 (Soft Two Block)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 124,
+      "raw_name": "소프트 투블럭 (볼륨펌)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 125,
+      "raw_name": "소프트 투블럭 (자연스러운 텍스쳐)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 126,
+      "raw_name": "소프트 투블럭 (짧은 기장)",
+      "canonical": "소프트투블럭",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 127,
+      "raw_name": "소프트 투블럭 댄디컷",
+      "canonical": "소프트투블럭댄디컷",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 128,
+      "raw_name": "소프트 투블럭 컷",
+      "canonical": "소프트투블럭컷",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 129,
+      "raw_name": "소프트 투블럭 컷 (Soft Two Block Cut)",
+      "canonical": "소프트투블럭컷",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 130,
+      "raw_name": "소프트 투블럭 컷 (Soft Two-Block Cut)",
+      "canonical": "소프트투블럭컷",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 131,
+      "raw_name": "소프트 투블럭 컷 (자연스러운 볼륨)",
+      "canonical": "소프트투블럭컷",
+      "image_key": "소프트투블럭",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 132,
+      "raw_name": "숏 리젠트 컷",
+      "canonical": "숏리젠트컷",
+      "image_key": "리젠트컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 133,
+      "raw_name": "쉐도우 펌",
+      "canonical": "쉐도우펌",
+      "image_key": "쉐도우펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 134,
+      "raw_name": "쉼표 머리",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 135,
+      "raw_name": "쉼표 머리 (Comma Hair)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 136,
+      "raw_name": "쉼표머리",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 137,
+      "raw_name": "쉼표머리 (Comma Hair)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 138,
+      "raw_name": "쉼표머리 (가르마 스타일)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 139,
+      "raw_name": "쉼표머리 (가르마펌)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 140,
+      "raw_name": "쉼표머리 (과도한 컬)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 141,
+      "raw_name": "쉼표머리 (과한 스타일링 부담)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 142,
+      "raw_name": "쉼표머리 (과한 스타일링)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 143,
+      "raw_name": "쉼표머리 (앞머리 컬 강조)",
+      "canonical": "쉼표머리",
+      "image_key": "쉼표머리",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 144,
+      "raw_name": "스왓 컷",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 145,
+      "raw_name": "스왓 컷 (너무 짧고 강한 스타일)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 146,
+      "raw_name": "스왓 컷 (밤톨머리)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 147,
+      "raw_name": "스왓 컷 (빡빡머리)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 148,
+      "raw_name": "스왓 컷 (짧은 스포츠형)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 149,
+      "raw_name": "스왓컷",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 150,
+      "raw_name": "스왓컷 (Sport Cut)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 151,
+      "raw_name": "스왓컷 (Sport cut)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 152,
+      "raw_name": "스왓컷 (Swag Cut)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 153,
+      "raw_name": "스왓컷 (Swat Cut)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 154,
+      "raw_name": "스왓컷 (너무 짧은 스타일)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 155,
+      "raw_name": "스왓컷 (밤톨머리)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 156,
+      "raw_name": "스왓컷 (빡빡머리)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 157,
+      "raw_name": "스왓컷 (빡빡이)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 158,
+      "raw_name": "스왓컷 (스포츠형 짧은 머리)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 159,
+      "raw_name": "스왓컷 (스포츠형)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 160,
+      "raw_name": "스왓컷 (짧은 스포츠형)",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 161,
+      "raw_name": "스왓컷: 너무 짧은 머리는 계란형 얼굴의 균형을 깨뜨릴 수 있습니다.",
+      "canonical": "스왓컷",
+      "image_key": "스왓컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 162,
+      "raw_name": "스킨 페이드",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 163,
+      "raw_name": "스킨 페이드 (Skin Fade)",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 164,
+      "raw_name": "스킨 페이드 (너무 짧은 스포츠형)",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 165,
+      "raw_name": "스킨 페이드 (밤톨 스타일)",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 166,
+      "raw_name": "스킨 페이드 (짧은 스포츠형)",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 167,
+      "raw_name": "스킨 페이드 컷",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 168,
+      "raw_name": "스킨 페이드컷",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 169,
+      "raw_name": "스킨 페이드컷 (밤톨머리)",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 170,
+      "raw_name": "스킨 페이드컷 (짧은 스포츠 스타일)",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 171,
+      "raw_name": "스킨 페이드컷 (짧은 스포츠형)",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 172,
+      "raw_name": "스킨 페이드컷: 강한 인상을 주어 오히려 얼굴의 균형을 깨뜨릴 수 있습니다.",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 173,
+      "raw_name": "스킨 페이드컷: 지나치게 짧은 옆머리는 광대뼈를 부각시켜 얼굴형의 단점을 드러낼 수 있습니다.",
+      "canonical": "스킨페이드컷",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 174,
+      "raw_name": "스킨페이드",
+      "canonical": "스킨페이드",
+      "image_key": "스킨페이드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 175,
+      "raw_name": "스킨헤드",
+      "canonical": "스킨헤드",
+      "image_key": "스킨헤드",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 176,
+      "raw_name": "스핀 스왈로 펌",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 177,
+      "raw_name": "스핀 스왈로 펌 (Spin Swallow Perm)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 178,
+      "raw_name": "스핀 스왈로 펌 (Spin Swallows Perm)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 179,
+      "raw_name": "스핀 스왈로 펌 (과한 컬)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 180,
+      "raw_name": "스핀 스왈로펌",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 181,
+      "raw_name": "스핀 스왈로펌 (강한 컬)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 182,
+      "raw_name": "스핀 스왈로펌 (과한 컬)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 183,
+      "raw_name": "스핀스왈로 펌",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 184,
+      "raw_name": "스핀스왈로펌",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 185,
+      "raw_name": "스핀스왈로펌 (강한 컬)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 186,
+      "raw_name": "스핀스왈로펌 (과한 컬)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 187,
+      "raw_name": "스핀스왈로펌 (전체)",
+      "canonical": "스핀스왈로펌",
+      "image_key": "스핀스왈로펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 188,
+      "raw_name": "슬릭백 언더컷",
+      "canonical": "슬릭백언더컷",
+      "image_key": "슬릭백언더컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 189,
+      "raw_name": "슬릭백 언더컷 (Slicked Back Undercut)",
+      "canonical": "슬릭백언더컷",
+      "image_key": "슬릭백언더컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 190,
+      "raw_name": "시스루 댄디",
+      "canonical": "시스루댄디",
+      "image_key": "시스루댄디",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 191,
+      "raw_name": "시스루 댄디컷",
+      "canonical": "시스루댄디컷",
+      "image_key": "시스루댄디",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 192,
+      "raw_name": "시스루 뱅",
+      "canonical": "시스루뱅",
+      "image_key": "시스루뱅",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 193,
+      "raw_name": "시스루 뱅 다운펌",
+      "canonical": "시스루뱅다운펌",
+      "image_key": "시스루뱅",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 194,
+      "raw_name": "시스루 뱅 댄디컷",
+      "canonical": "시스루뱅댄디컷",
+      "image_key": "시스루댄디",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 195,
+      "raw_name": "시스루 뱅 스타일",
+      "canonical": "시스루뱅스타일",
+      "image_key": "시스루뱅",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 196,
+      "raw_name": "시스루 뱅 앞머리 + 쉐도우 펌",
+      "canonical": "시스루뱅앞머리+쉐도우펌",
+      "image_key": "시스루뱅",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 197,
+      "raw_name": "시스루 뱅 앞머리 스타일",
+      "canonical": "시스루뱅앞머리스타일",
+      "image_key": "시스루뱅",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 198,
+      "raw_name": "아이비리그 컷",
+      "canonical": "아이비리그컷",
+      "image_key": "아이비리그컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 199,
+      "raw_name": "아이비리그컷",
+      "canonical": "아이비리그컷",
+      "image_key": "아이비리그컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 200,
+      "raw_name": "애즈 펌",
+      "canonical": "애즈펌",
+      "image_key": "애즈펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 201,
+      "raw_name": "애즈 펌 (가르마 펌)",
+      "canonical": "애즈펌",
+      "image_key": "애즈펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 202,
+      "raw_name": "애즈펌",
+      "canonical": "애즈펌",
+      "image_key": "애즈펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 203,
+      "raw_name": "애즈펌 (가르마펌)",
+      "canonical": "애즈펌",
+      "image_key": "애즈펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 204,
+      "raw_name": "애즈펌 (앞머리가 너무 긴 스타일)",
+      "canonical": "애즈펌",
+      "image_key": "애즈펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 205,
+      "raw_name": "올백 (Slicked Back Hair): 넓은 이마를 강조하여 얼굴 비율을 더욱 불균형하게 만들 수 있습니다.",
+      "canonical": "올백",
+      "image_key": "올백",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 206,
+      "raw_name": "올백 스타일",
+      "canonical": "올백스타일",
+      "image_key": "올백",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 207,
+      "raw_name": "올백 스타일: 이마를 완전히 드러내어 넓은 이마를 강조하고 얼굴의 단점을 부각시킬 수 있습니다.",
+      "canonical": "올백스타일",
+      "image_key": "올백",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 208,
+      "raw_name": "올백 포마드",
+      "canonical": "올백포마드",
+      "image_key": "올백",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 209,
+      "raw_name": "울프 컷",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 210,
+      "raw_name": "울프 컷 (Wolf Cut)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 211,
+      "raw_name": "울프 컷 (Wolf cut)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 212,
+      "raw_name": "울프 컷 (개성 강한 스타일)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 213,
+      "raw_name": "울프컷",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 214,
+      "raw_name": "울프컷 (Wolf Cut)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 215,
+      "raw_name": "울프컷 (나이들어 보일 수 있음)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 216,
+      "raw_name": "울프컷 (너무 강한 인상)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 217,
+      "raw_name": "울프컷 (지저분한 느낌)",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 218,
+      "raw_name": "울프컷: 날카로운 느낌이 강하여 하트형 얼굴의 부드러운 이미지를 해칠 수 있습니다.",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 219,
+      "raw_name": "울프컷: 날카로운 이미지를 강조하여 부드러운 인상과 상반됩니다.",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 220,
+      "raw_name": "울프컷: 자칫 과해 보일 수 있으며, 부드러운 인상과 어울리지 않을 수 있습니다.",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 221,
+      "raw_name": "울프컷: 턱 주변에 볼륨이 집중되어 턱을 더 좁아 보이게 만들 수 있습니다.",
+      "canonical": "울프컷",
+      "image_key": "울프컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 222,
+      "raw_name": "장발 스타일",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 223,
+      "raw_name": "장발 스타일 (5:5 가르마)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 224,
+      "raw_name": "장발 스타일 (Long Hair Style)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 225,
+      "raw_name": "장발 스타일 (Long Hair)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 226,
+      "raw_name": "장발 스타일 (Long hairstyle)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 227,
+      "raw_name": "장발 스타일 (긴 머리)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 228,
+      "raw_name": "장발 스타일 (울프컷, 히피펌)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 229,
+      "raw_name": "장발 스타일 (히피 스타일)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 230,
+      "raw_name": "장발 스타일 (히피펌 등)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 231,
+      "raw_name": "장발 스타일 (히피펌, 쉐도우펌)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 232,
+      "raw_name": "장발 스타일 (히피펌, 울프컷 등)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 233,
+      "raw_name": "장발 스타일 (히피펌, 울프컷)",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 234,
+      "raw_name": "장발 스타일: 하트형 얼굴의 뾰족한 턱선을 더욱 강조할 수 있으며, 전체적으로 답답한 인상을 줄 수 있습니다.",
+      "canonical": "장발스타일",
+      "image_key": "장발스타일",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 235,
+      "raw_name": "장발 파마 (Long Perm)",
+      "canonical": "장발파마",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 236,
+      "raw_name": "장발 펌",
+      "canonical": "장발펌",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 237,
+      "raw_name": "장발 펌 (Long Hair Perm)",
+      "canonical": "장발펌",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 238,
+      "raw_name": "장발 펌 (Long Perm)",
+      "canonical": "장발펌",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 239,
+      "raw_name": "장발 펌 (히피펌 등)",
+      "canonical": "장발펌",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 240,
+      "raw_name": "장발 펌 스타일",
+      "canonical": "장발펌스타일",
+      "image_key": "장발펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 241,
+      "raw_name": "장발 히피 스타일",
+      "canonical": "장발히피스타일",
+      "image_key": "장발히피펌",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 242,
+      "raw_name": "장발 히피 스타일 (Long Hippie Style)",
+      "canonical": "장발히피스타일",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 243,
+      "raw_name": "장발 히피 스타일 (얼굴형 강조)",
+      "canonical": "장발히피스타일",
+      "image_key": "장발히피펌",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 244,
+      "raw_name": "장발 히피펌",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 245,
+      "raw_name": "장발 히피펌 (Long Hippie Perm)",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 246,
+      "raw_name": "장발 히피펌 (지저분해 보일 수 있음)",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 247,
+      "raw_name": "장발 히피펌: 과도한 볼륨과 컬은 얼굴을 더 넓어 보이게 만들 수 있습니다.",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 248,
+      "raw_name": "장발 히피펌: 과도한 볼륨은 하트형 얼굴의 좁은 턱을 더욱 부각시킬 수 있습니다.",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 249,
+      "raw_name": "장발 히피펌: 관리가 어렵고, 얼굴의 깔끔한 이미지를 가릴 수 있습니다.",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 250,
+      "raw_name": "장발 히피펌: 봄웜톤 피부와 어울리지 않고, 얼굴 비율을 망칠 수 있습니다.",
+      "canonical": "장발히피펌",
+      "image_key": "장발히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 251,
+      "raw_name": "짧은 스포츠 머리 (Buzz Cut): 각진 얼굴형을 더욱 부각시키고, 좁은 턱을 더욱 도드라지게 할 수 있습니다.",
+      "canonical": "짧은스포츠머리",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 252,
+      "raw_name": "짧은 스포츠 스타일 (예: 크롭컷)",
+      "canonical": "짧은스포츠스타일",
+      "image_key": "스왓컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 253,
+      "raw_name": "짧은 크롭 컷",
+      "canonical": "짧은크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 254,
+      "raw_name": "크롭 컷",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 255,
+      "raw_name": "크롭 컷 (Crop Cut)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 256,
+      "raw_name": "크롭 컷 (다운펌 병행)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 257,
+      "raw_name": "크롭 컷 (다운펌)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 258,
+      "raw_name": "크롭 컷 (세련된 짧은 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 259,
+      "raw_name": "크롭 컷 (앞머리 살짝 긴 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 260,
+      "raw_name": "크롭 컷 (앞머리 살짝 길게)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 261,
+      "raw_name": "크롭 컷 (앞머리 살짝 내린 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 262,
+      "raw_name": "크롭컷",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 263,
+      "raw_name": "크롭컷 (Crop Cut)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 264,
+      "raw_name": "크롭컷 (기장 조절)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 265,
+      "raw_name": "크롭컷 (기장 짧게)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 266,
+      "raw_name": "크롭컷 (다운펌 병행)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 267,
+      "raw_name": "크롭컷 (다운펌)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 268,
+      "raw_name": "크롭컷 (세미)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 269,
+      "raw_name": "크롭컷 (소프트)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 270,
+      "raw_name": "크롭컷 (아이비리그컷 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 271,
+      "raw_name": "크롭컷 (앞머리 내린 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 272,
+      "raw_name": "크롭컷 (앞머리 내림)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 273,
+      "raw_name": "크롭컷 (앞머리 살짝 기르게)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 274,
+      "raw_name": "크롭컷 (앞머리 살짝 기장감 있게)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 275,
+      "raw_name": "크롭컷 (앞머리 살짝 긴 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 276,
+      "raw_name": "크롭컷 (앞머리 살짝 길게)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 277,
+      "raw_name": "크롭컷 (앞머리 살짝 내리기)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 278,
+      "raw_name": "크롭컷 (앞머리 살짝 내린 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 279,
+      "raw_name": "크롭컷 (앞머리 살짝 내린)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 280,
+      "raw_name": "크롭컷 (앞머리 살짝 올리는 스타일)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 281,
+      "raw_name": "크롭컷 (앞머리 스타일링에 따라)",
+      "canonical": "크롭컷",
+      "image_key": "크롭컷",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 282,
+      "raw_name": "크롭컷 + 다운펌",
+      "canonical": "크롭컷+다운펌",
+      "image_key": "크롭컷",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 283,
+      "raw_name": "포마드",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 284,
+      "raw_name": "포마드 (Pomade)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 285,
+      "raw_name": "포마드 (과도한 볼륨)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 286,
+      "raw_name": "포마드 (나이들어 보일 수 있음)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 287,
+      "raw_name": "포마드 (너무 각진 스타일)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 288,
+      "raw_name": "포마드 (너무 올백 스타일)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 289,
+      "raw_name": "포마드 (너무 클래식한 스타일)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 290,
+      "raw_name": "포마드 (올백)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 291,
+      "raw_name": "포마드 (클래식)",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 292,
+      "raw_name": "포마드 스타일",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 293,
+      "raw_name": "포마드 스타일 (7:3 가르마)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 294,
+      "raw_name": "포마드 스타일 (Pomade Style)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 295,
+      "raw_name": "포마드 스타일 (Pompadour)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 296,
+      "raw_name": "포마드 스타일 (가르마 위치 조절)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 297,
+      "raw_name": "포마드 스타일 (가르마)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 298,
+      "raw_name": "포마드 스타일 (강한 고정력)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 299,
+      "raw_name": "포마드 스타일 (너무 과한 볼륨)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 300,
+      "raw_name": "포마드 스타일 (너무 딱 붙는 스타일)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 301,
+      "raw_name": "포마드 스타일 (단정한 스타일)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 302,
+      "raw_name": "포마드 스타일 (볼륨 살린 스타일)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 303,
+      "raw_name": "포마드 스타일 (볼륨펌 병행)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "unisex"
+    },
+    {
+      "hairstyle_id": 304,
+      "raw_name": "포마드 스타일 (옆, 뒤 짧게)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 305,
+      "raw_name": "포마드 스타일 (올백)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 306,
+      "raw_name": "포마드 스타일 (짧은 기장)",
+      "canonical": "포마드스타일",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 307,
+      "raw_name": "포마드: 이마를 완전히 드러내는 스타일은 넓은 이마를 강조할 수 있습니다.",
+      "canonical": "포마드",
+      "image_key": "포마드",
+      "gender": "male"
+    },
+    {
+      "hairstyle_id": 308,
+      "raw_name": "히피펌",
+      "canonical": "히피펌",
+      "image_key": "히피펌",
+      "gender": "female"
+    },
+    {
+      "hairstyle_id": 309,
+      "raw_name": "히피펌 (Hippie Perm)",
+      "canonical": "히피펌",
+      "image_key": "히피펌",
+      "gender": "female"
+    }
+  ],
+  "trending_styles": [
+    {
+      "style_name": "텍스쳐 펌",
+      "canonical": "텍스쳐펌",
+      "image_key": "텍스쳐펌",
+      "gender": "male"
+    },
+    {
+      "style_name": "텍스쳐 컷",
+      "canonical": "텍스쳐컷",
+      "image_key": "텍스쳐컷",
+      "gender": "male"
+    },
+    {
+      "style_name": "프렌치 크롭",
+      "canonical": "프렌치크롭",
+      "image_key": "프렌치크롭",
+      "gender": "male"
+    },
+    {
+      "style_name": "다운펌",
+      "canonical": "다운펌",
+      "image_key": "다운펌",
+      "gender": "male"
+    },
+    {
+      "style_name": "버즈컷",
+      "canonical": "버즈컷",
+      "image_key": "버즈컷",
+      "gender": "male"
+    },
+    {
+      "style_name": "멀릿",
+      "canonical": "멀릿",
+      "image_key": "멀릿",
+      "gender": "male"
+    },
+    {
+      "style_name": "소프트 멀릿",
+      "canonical": "소프트멀릿",
+      "image_key": "소프트멀릿",
+      "gender": "male"
+    },
+    {
+      "style_name": "머쉬룸 컷",
+      "canonical": "머쉬룸컷",
+      "image_key": "머쉬룸컷",
+      "gender": "male"
+    },
+    {
+      "style_name": "언더컷",
+      "canonical": "언더컷",
+      "image_key": "언더컷",
+      "gender": "male"
+    },
+    {
+      "style_name": "맨번",
+      "canonical": "맨번",
+      "image_key": "맨번",
+      "gender": "male"
+    },
+    {
+      "style_name": "퀴프",
+      "canonical": "퀴프",
+      "image_key": "퀴프",
+      "gender": "male"
+    },
+    {
+      "style_name": "모드 컷",
+      "canonical": "모드컷",
+      "image_key": "모드컷",
+      "gender": "male"
+    },
+    {
+      "style_name": "레이어드 컷",
+      "canonical": "레이어드컷",
+      "image_key": "레이어드컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "보브 컷",
+      "canonical": "보브컷",
+      "image_key": "보브컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "이탈리안 보브",
+      "canonical": "이탈리안보브",
+      "image_key": "이탈리안보브",
+      "gender": "female"
+    },
+    {
+      "style_name": "롭",
+      "canonical": "롭",
+      "image_key": "롭",
+      "gender": "female"
+    },
+    {
+      "style_name": "태슬 컷",
+      "canonical": "태슬컷",
+      "image_key": "태슬컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "플립컷",
+      "canonical": "플립컷",
+      "image_key": "플립컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "픽시 컷",
+      "canonical": "픽시컷",
+      "image_key": "픽시컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "믹시 컷",
+      "canonical": "믹시컷",
+      "image_key": "믹시컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "원랭스 컷",
+      "canonical": "원랭스컷",
+      "image_key": "원랭스컷",
+      "gender": "female"
+    },
+    {
+      "style_name": "C컬 펌",
+      "canonical": "C컬펌",
+      "image_key": "C컬펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "S컬 펌",
+      "canonical": "S컬펌",
+      "image_key": "S컬펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "물결 펌",
+      "canonical": "물결펌",
+      "image_key": "물결펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "젤리 펌",
+      "canonical": "젤리펌",
+      "image_key": "젤리펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "허그 펌",
+      "canonical": "허그펌",
+      "image_key": "허그펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "그레이스 펌",
+      "canonical": "그레이스펌",
+      "image_key": "그레이스펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "글램 펌",
+      "canonical": "글램펌",
+      "image_key": "글램펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "바디 펌",
+      "canonical": "바디펌",
+      "image_key": "바디펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "디지털 펌",
+      "canonical": "디지털펌",
+      "image_key": "디지털펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "플리츠 펌",
+      "canonical": "플리츠펌",
+      "image_key": "플리츠펌",
+      "gender": "female"
+    },
+    {
+      "style_name": "허쉬컷",
+      "canonical": "허쉬컷",
+      "image_key": "허쉬컷",
+      "gender": "unisex"
+    },
+    {
+      "style_name": "커튼뱅",
+      "canonical": "커튼뱅",
+      "image_key": "커튼뱅",
+      "gender": "unisex"
+    },
+    {
+      "style_name": "내추럴 펌",
+      "canonical": "내추럴펌",
+      "image_key": "내추럴펌",
+      "gender": "unisex"
+    },
+    {
+      "style_name": "단발",
+      "canonical": "단발",
+      "image_key": "단발",
+      "gender": "unisex"
+    },
+    {
+      "style_name": "중단발",
+      "canonical": "중단발",
+      "image_key": "중단발",
+      "gender": "unisex"
+    }
+  ]
+}

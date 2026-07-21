@@ -148,6 +148,7 @@ scripts/train_model_v3.py
 scripts/evaluate_*.py
 scripts/merge_all_data.py
 scripts/generate_style_*.py
+!scripts/generate_style_images.py
 scripts/prepare_and_train_final_model.py
 scripts/create_diverse_embeddings*.py
 scripts/create_dummy_embeddings.py

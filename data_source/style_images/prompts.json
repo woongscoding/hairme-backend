@@ -1,0 +1,573 @@
+{
+  "_readme": [
+    "헤어스타일 예시 이미지 생성 프롬프트 세트 (사람 검토/수정용).",
+    "scripts/generate_style_images.py가 이 파일을 읽어 Imagen 4 Ultra로 이미지를 생성한다.",
+    "최종 프롬프트 = template의 {gender_word}, {hair_description}을 각 항목 값으로 치환.",
+    "id는 image_key당 고유하며 파일명({gender}_{id}_{key}_{n}.png)에 사용 - 절대 재번호화하지 말 것 (스타일 추가 시 뒤에 append).",
+    "gender는 예시 사진 속 모델의 성별. 유니섹스 스타일은 male/female 항목이 각각 존재한다.",
+    "스타일이 잘못 나오면 해당 hair_description을 수정 후 그 항목만 재생성: --only 옵션 사용."
+  ],
+  "model": "gemini-3-pro-image",
+  "_model_note": "원래 imagen-4.0-ultra-generate-001 예정이었으나 Imagen 4 계열이 신규 프로젝트에서 404(차단)라 Gemini 3 Pro Image로 대체 (장당 약 $0.13)",
+  "aspect_ratio": "3:4",
+  "images_per_style": 2,
+  "template": "Professional studio portrait photo of a Korean {gender_word} in their 20s, front-facing, chest-up view, neutral light gray background, soft studio lighting, natural makeup, plain white top, photorealistic, {hair_description}",
+  "gender_words": {
+    "male": "man",
+    "female": "woman"
+  },
+  "test_set": [
+    "male/가르마펌",
+    "male/크롭컷",
+    "female/레이어드컷",
+    "female/보브컷"
+  ],
+  "styles": [
+    {
+      "id": 1,
+      "image_key": "C컬펌",
+      "gender": "female",
+      "hair_description": "medium-length dark brown hair with a C-curl perm, the ends curved inward in one smooth C shape at collarbone level, sleek healthy shine and a light see-through fringe"
+    },
+    {
+      "id": 2,
+      "image_key": "S컬펌",
+      "gender": "female",
+      "hair_description": "medium-long dark hair with an S-curl perm, soft S-shaped waves flowing from mid-length to the ends, romantic bouncy volume framing the face"
+    },
+    {
+      "id": 3,
+      "image_key": "가르마스타일",
+      "gender": "male",
+      "hair_description": "medium-short black hair neatly parted to one side in a 6:4 ratio, smooth straight texture with light volume on top, part line clearly visible and forehead partially exposed"
+    },
+    {
+      "id": 4,
+      "image_key": "가르마펌",
+      "gender": "male",
+      "hair_description": "medium-short black hair with a 6:4 side-part perm, soft C-shaped curls sweeping across the forehead line, airy volume on top and neatly trimmed sides, popular Korean men's gareuma perm"
+    },
+    {
+      "id": 5,
+      "image_key": "가일컷",
+      "gender": "male",
+      "hair_description": "short Korean gael cut, the fringe swept diagonally to one side exposing part of the forehead, slim tapered sides and subtle natural texture on top"
+    },
+    {
+      "id": 6,
+      "image_key": "그레이스펌",
+      "gender": "female",
+      "hair_description": "medium-long layered hair with a grace perm, elegant loose flowing waves with graceful root volume, softly side-swept fringe, refined feminine look"
+    },
+    {
+      "id": 7,
+      "image_key": "글램펌",
+      "gender": "female",
+      "hair_description": "long hair with a glam perm, deep voluminous glamorous waves rolling from mid-length to the ends, luxurious full-bodied finish"
+    },
+    {
+      "id": 8,
+      "image_key": "내추럴펌",
+      "gender": "male",
+      "hair_description": "medium-short black hair with a natural perm, loose effortless waves with soft matte texture, natural fringe resting lightly on the forehead"
+    },
+    {
+      "id": 8,
+      "image_key": "내추럴펌",
+      "gender": "female",
+      "hair_description": "medium-long hair with a natural perm, relaxed loose waves that look effortlessly air-dried, soft natural volume and a light curtain fringe"
+    },
+    {
+      "id": 9,
+      "image_key": "다운펌",
+      "gender": "male",
+      "hair_description": "short neat black hair with a down perm, the sides and fringe pressed naturally close to the head for a clean tidy silhouette, straight fringe covering the forehead"
+    },
+    {
+      "id": 10,
+      "image_key": "단발",
+      "gender": "male",
+      "hair_description": "chin-length men's bob haircut, smooth straight black hair with a middle part, strands tucked casually behind the ears"
+    },
+    {
+      "id": 10,
+      "image_key": "단발",
+      "gender": "female",
+      "hair_description": "classic chin-length bob haircut, smooth straight hair with a clean rounded line and natural inward curve at the ends"
+    },
+    {
+      "id": 11,
+      "image_key": "댄디컷",
+      "gender": "male",
+      "hair_description": "classic Korean dandy cut, medium-short straight black hair with a soft flat fringe covering the forehead, cleanly trimmed sides, neat and polished impression"
+    },
+    {
+      "id": 12,
+      "image_key": "드롭컷",
+      "gender": "male",
+      "hair_description": "Korean drop cut, the fringe falling in a rounded curve that drops slightly lower at the outer corners, two-block short sides, smooth glossy texture"
+    },
+    {
+      "id": 13,
+      "image_key": "디지털펌",
+      "gender": "female",
+      "hair_description": "long hair with a digital perm, defined springy waves from mid-length down to the ends that look naturally dry-styled, soft face-framing pieces"
+    },
+    {
+      "id": 14,
+      "image_key": "레게스타일",
+      "gender": "male",
+      "hair_description": "shoulder-length reggae-style dreadlocks, evenly twisted rope-like strands falling naturally, a few tied loosely back"
+    },
+    {
+      "id": 15,
+      "image_key": "레이어드컷",
+      "gender": "female",
+      "hair_description": "long layered haircut with light feathered layers framing the face, airy natural movement and a soft inward curve at the ends, effortless everyday Korean style"
+    },
+    {
+      "id": 16,
+      "image_key": "롭",
+      "gender": "female",
+      "hair_description": "long bob (lob) haircut ending just above the shoulders, sleek one-length line with a subtle inward bend, one side tucked behind the ear"
+    },
+    {
+      "id": 17,
+      "image_key": "리젠트컷",
+      "gender": "male",
+      "hair_description": "regent cut, the front hair swept up and back off the forehead with firm volume, short clean sides, lightly glossy styled finish"
+    },
+    {
+      "id": 18,
+      "image_key": "리프컷",
+      "gender": "male",
+      "hair_description": "Korean leaf cut, layered medium-short hair with feather-light airy texture, the fringe styled upward and outward like leaf tips, generous volume on the crown"
+    },
+    {
+      "id": 19,
+      "image_key": "맨번",
+      "gender": "male",
+      "hair_description": "long hair tied into a neat man bun at the back of the crown, hair swept cleanly back from the face, a few loose natural strands"
+    },
+    {
+      "id": 20,
+      "image_key": "머쉬룸컷",
+      "gender": "male",
+      "hair_description": "mushroom haircut with a rounded bowl-shaped silhouette, thick smooth fringe cut straight above the eyebrows, closely tapered nape and sides"
+    },
+    {
+      "id": 21,
+      "image_key": "멀릿",
+      "gender": "male",
+      "hair_description": "modern mullet haircut, short textured layers on top and sides with noticeably longer hair at the nape reaching the collar, edgy contemporary look"
+    },
+    {
+      "id": 22,
+      "image_key": "모드컷",
+      "gender": "male",
+      "hair_description": "mod cut, medium-length straight hair falling naturally over the forehead and ears in a rounded silhouette, soft matte texture, retro-inspired Korean style"
+    },
+    {
+      "id": 23,
+      "image_key": "모히칸스타일",
+      "gender": "male",
+      "hair_description": "mohican style haircut, the center strip of hair styled upward with strong hold, very short faded sides, bold sporty impression"
+    },
+    {
+      "id": 24,
+      "image_key": "물결펌",
+      "gender": "female",
+      "hair_description": "medium-long hair with a water-wave perm, gentle ripple-like waves flowing evenly through the hair, soft romantic texture with natural shine"
+    },
+    {
+      "id": 25,
+      "image_key": "믹시컷",
+      "gender": "female",
+      "hair_description": "mixie cut mixing pixie and mullet, short choppy layers on top with wispy longer pieces at the nape and around the ears, playful edgy texture"
+    },
+    {
+      "id": 26,
+      "image_key": "바디펌",
+      "gender": "female",
+      "hair_description": "medium-long hair with a body perm, large soft rounded waves adding full body and bounce throughout, voluminous blow-dried look"
+    },
+    {
+      "id": 27,
+      "image_key": "바버스타일",
+      "gender": "male",
+      "hair_description": "classic barbershop fade style, sides faded very short blending into a neatly groomed medium top, sharp clean edge lines, masculine polished finish"
+    },
+    {
+      "id": 28,
+      "image_key": "밤톨머리",
+      "gender": "male",
+      "hair_description": "Korean chestnut haircut, a very short rounded crop hugging the head shape evenly like a chestnut shell, dense neat texture"
+    },
+    {
+      "id": 29,
+      "image_key": "버즈컷",
+      "gender": "male",
+      "hair_description": "buzz cut, hair clipped uniformly a few millimeters short all over the head, clean sharp hairline, minimal masculine look"
+    },
+    {
+      "id": 30,
+      "image_key": "베이비펌",
+      "gender": "female",
+      "hair_description": "medium-length hair with a baby perm, fine soft natural curls and a light airy fringe, youthful gentle volume"
+    },
+    {
+      "id": 31,
+      "image_key": "보브컷",
+      "gender": "female",
+      "hair_description": "chin-length bob cut with a clean rounded silhouette, smooth glossy finish and a soft light fringe, chic modern Korean style"
+    },
+    {
+      "id": 32,
+      "image_key": "볼륨매직",
+      "gender": "male",
+      "hair_description": "medium-short hair with volume magic straightening, smooth straight strands with rounded inward volume at the ends, natural fringe lifted slightly off the forehead"
+    },
+    {
+      "id": 33,
+      "image_key": "볼륨매직+C컬펌",
+      "gender": "male",
+      "hair_description": "medium-short hair with volume magic straightening combined with a C-curl perm, sleek straight base with soft C-shaped curls at the fringe and ends"
+    },
+    {
+      "id": 34,
+      "image_key": "볼륨매직+쉐도우펌",
+      "gender": "male",
+      "hair_description": "medium-short hair with volume magic straightening and a subtle shadow perm, natural straight-looking hair with faint soft waves adding gentle body"
+    },
+    {
+      "id": 35,
+      "image_key": "볼륨펌",
+      "gender": "male",
+      "hair_description": "medium-short hair with a volume perm, soft rounded waves lifting the roots for full natural body, fringe gently curved over the forehead"
+    },
+    {
+      "id": 36,
+      "image_key": "블랙숏컷",
+      "gender": "male",
+      "hair_description": "short black fade haircut, closely tapered clean sides blending into a compact lightly textured top"
+    },
+    {
+      "id": 37,
+      "image_key": "블레이드컷",
+      "gender": "male",
+      "hair_description": "Korean blade cut, sleek layered medium-short hair with sharp straight blade-like ends, fringe grazing the eyebrows, glossy straight texture"
+    },
+    {
+      "id": 38,
+      "image_key": "블레이드펌",
+      "gender": "male",
+      "hair_description": "Korean blade perm, medium-short layered hair with loose sleek waves and a soft curtain-like parted fringe, natural flowing texture"
+    },
+    {
+      "id": 39,
+      "image_key": "샤기컷",
+      "gender": "male",
+      "hair_description": "shaggy cut, heavily layered medium hair with choppy wispy ends and a tousled airy texture, casual carefree vibe"
+    },
+    {
+      "id": 39,
+      "image_key": "샤기컷",
+      "gender": "female",
+      "hair_description": "shaggy cut, medium-long hair with heavy choppy layers, wispy fringe and tousled airy texture, effortlessly cool vibe"
+    },
+    {
+      "id": 40,
+      "image_key": "세미리젠트컷",
+      "gender": "male",
+      "hair_description": "semi-regent cut, front hair swept up and slightly back with moderate volume exposing the forehead, neat medium-short sides, softer than a full regent"
+    },
+    {
+      "id": 41,
+      "image_key": "세미리프컷",
+      "gender": "male",
+      "hair_description": "semi leaf cut, lightly layered medium-short hair with soft feathered texture and modest crown volume, fringe styled naturally to the side"
+    },
+    {
+      "id": 42,
+      "image_key": "세미울프컷",
+      "gender": "male",
+      "hair_description": "toned-down semi wolf cut, layered top with subtly longer textured hair at the nape, soft shaggy movement without extreme length contrast"
+    },
+    {
+      "id": 43,
+      "image_key": "세미크롭컷",
+      "gender": "male",
+      "hair_description": "semi crop cut, short textured top slightly longer than a classic crop, short fringe partially covering the forehead, cleanly tapered sides"
+    },
+    {
+      "id": 44,
+      "image_key": "소프트댄디컷",
+      "gender": "male",
+      "hair_description": "soft dandy cut, medium-short hair with a light airy fringe softly covering the forehead, gentle natural texture and neatly trimmed sides, warm approachable impression"
+    },
+    {
+      "id": 45,
+      "image_key": "소프트멀릿",
+      "gender": "male",
+      "hair_description": "soft mullet, layered medium hair with a subtly longer nape, soft tousled texture and a natural fringe, wearable everyday version of a mullet"
+    },
+    {
+      "id": 46,
+      "image_key": "소프트모히칸",
+      "gender": "male",
+      "hair_description": "soft mohican cut, the top styled gently upward toward the center line, short neat sides, casual sporty yet approachable look"
+    },
+    {
+      "id": 47,
+      "image_key": "소프트컷",
+      "gender": "male",
+      "hair_description": "soft layered men's cut with smooth natural texture, a light fringe falling over the forehead and a rounded gentle silhouette"
+    },
+    {
+      "id": 48,
+      "image_key": "소프트투블럭",
+      "gender": "male",
+      "hair_description": "soft two-block cut, undercut sides naturally covered by medium-length top hair, soft fringe over the forehead with natural volume, most popular Korean men's style"
+    },
+    {
+      "id": 49,
+      "image_key": "쉐도우펌",
+      "gender": "male",
+      "hair_description": "shadow perm, medium-short hair with natural loose waves that read as softly styled straight hair, airy fringe with a subtle curve, effortless volume"
+    },
+    {
+      "id": 50,
+      "image_key": "쉼표머리",
+      "gender": "male",
+      "hair_description": "Korean comma hair, the fringe curled inward at the tip like a comma exposing a sliver of forehead, two-block sides, glossy neat finish"
+    },
+    {
+      "id": 51,
+      "image_key": "스왓컷",
+      "gender": "male",
+      "hair_description": "Korean sport cut, very short crop with a slightly longer textured top and clean tapered sides, athletic tidy impression"
+    },
+    {
+      "id": 52,
+      "image_key": "스킨페이드",
+      "gender": "male",
+      "hair_description": "skin fade haircut, the sides shaved down to the skin blending smoothly upward into a short textured top, crisp sharp outline"
+    },
+    {
+      "id": 53,
+      "image_key": "스킨헤드",
+      "gender": "male",
+      "hair_description": "closely shaved head, an even ultra-short buzz over the entire scalp showing the head shape cleanly"
+    },
+    {
+      "id": 54,
+      "image_key": "스핀스왈로펌",
+      "gender": "male",
+      "hair_description": "Korean spin swallow perm, medium-short hair with defined springy curls flicking outward like swallow wings, voluminous textured fringe with strong curl definition"
+    },
+    {
+      "id": 55,
+      "image_key": "슬릭백언더컷",
+      "gender": "male",
+      "hair_description": "slicked-back undercut, the long top combed straight back with a glossy hold, disconnected closely shaved sides"
+    },
+    {
+      "id": 56,
+      "image_key": "시스루댄디",
+      "gender": "male",
+      "hair_description": "see-through dandy cut, medium-short straight hair with a thin see-through fringe letting the forehead subtly show through, clean light sides"
+    },
+    {
+      "id": 57,
+      "image_key": "시스루뱅",
+      "gender": "female",
+      "hair_description": "long straight hair with thin see-through bangs letting the forehead subtly show through, delicate face-framing strands, soft feminine Korean style"
+    },
+    {
+      "id": 58,
+      "image_key": "아이비리그컷",
+      "gender": "male",
+      "hair_description": "ivy league cut, short tapered sides with a slightly longer neatly side-parted top, preppy clean-cut polished finish"
+    },
+    {
+      "id": 59,
+      "image_key": "애즈펌",
+      "gender": "male",
+      "hair_description": "Korean as perm, medium-short hair with natural crumpled waves, a softly parted fringe with relaxed curl, effortless lived-in texture"
+    },
+    {
+      "id": 60,
+      "image_key": "언더컷",
+      "gender": "male",
+      "hair_description": "undercut, long textured top styled with loose movement over sharply clipped short sides and back, strong length contrast"
+    },
+    {
+      "id": 61,
+      "image_key": "올백",
+      "gender": "male",
+      "hair_description": "slicked-back hair, all hair combed straight back off the forehead with a glossy hold, fully exposed clean hairline, confident sharp impression"
+    },
+    {
+      "id": 62,
+      "image_key": "울프컷",
+      "gender": "male",
+      "hair_description": "wolf cut, heavily layered top with wild choppy texture and longer shaggy hair at the nape, edgy untamed impression"
+    },
+    {
+      "id": 62,
+      "image_key": "울프컷",
+      "gender": "female",
+      "hair_description": "wolf cut, medium-long hair with heavy shaggy layers, choppy curtain fringe and wild textured ends at the nape, trendy edgy style"
+    },
+    {
+      "id": 63,
+      "image_key": "원랭스컷",
+      "gender": "female",
+      "hair_description": "one-length cut, long perfectly even straight hair with a sharp blunt hemline, sleek glass-like shine, minimal sophisticated style"
+    },
+    {
+      "id": 64,
+      "image_key": "이탈리안보브",
+      "gender": "female",
+      "hair_description": "Italian bob, a jaw-to-neck length blunt bob with a soft inward curve and effortless volume, relaxed chic European-inspired finish"
+    },
+    {
+      "id": 65,
+      "image_key": "장발스타일",
+      "gender": "male",
+      "hair_description": "shoulder-length men's long hair, center parted and smoothly falling with natural texture, some strands tucked behind the ears, artistic calm vibe"
+    },
+    {
+      "id": 66,
+      "image_key": "장발펌",
+      "gender": "male",
+      "hair_description": "shoulder-length men's long hair with loose natural perm waves, center parted with soft flowing movement"
+    },
+    {
+      "id": 67,
+      "image_key": "장발히피펌",
+      "gender": "male",
+      "hair_description": "shoulder-length men's hippie perm, dense loose crimped waves throughout the long hair, free-spirited bohemian look"
+    },
+    {
+      "id": 68,
+      "image_key": "젤리펌",
+      "gender": "female",
+      "hair_description": "medium-length hair with a jelly perm, bouncy jelly-like soft waves with a glossy hydrated finish, lively springy texture"
+    },
+    {
+      "id": 69,
+      "image_key": "중단발",
+      "gender": "male",
+      "hair_description": "medium-length men's hair between chin and shoulder, smooth natural straight texture with a middle part, relaxed modern look"
+    },
+    {
+      "id": 69,
+      "image_key": "중단발",
+      "gender": "female",
+      "hair_description": "medium-length hair falling between chin and shoulders, smooth natural texture with a slight inward bend at the ends, versatile everyday Korean style"
+    },
+    {
+      "id": 70,
+      "image_key": "커튼뱅",
+      "gender": "male",
+      "hair_description": "medium hair with curtain bangs parted in the middle, the fringe framing both sides of the forehead and blending into the sides"
+    },
+    {
+      "id": 70,
+      "image_key": "커튼뱅",
+      "gender": "female",
+      "hair_description": "long hair with curtain bangs parted in the middle, the fringe sweeping outward to frame both sides of the face, soft romantic finish"
+    },
+    {
+      "id": 71,
+      "image_key": "퀴프",
+      "gender": "male",
+      "hair_description": "quiff hairstyle, the front hair swept upward and back into a voluminous quiff, neatly tapered sides, confident classic-modern mix"
+    },
+    {
+      "id": 72,
+      "image_key": "크롭컷",
+      "gender": "male",
+      "hair_description": "textured crop cut, a short choppy textured top with a blunt short fringe lying flat across the forehead, faded clean sides, trendy Korean men's style"
+    },
+    {
+      "id": 73,
+      "image_key": "태슬컷",
+      "gender": "female",
+      "hair_description": "tassel cut, a blunt short bob ending sharply at the jawline with tassel-like straight ends flicked slightly outward, chic modern Korean style"
+    },
+    {
+      "id": 74,
+      "image_key": "텍스쳐컷",
+      "gender": "male",
+      "hair_description": "textured cut, short-medium hair with defined choppy texture and natural matte movement, casually styled fringe"
+    },
+    {
+      "id": 75,
+      "image_key": "텍스쳐펌",
+      "gender": "male",
+      "hair_description": "texture perm, short-medium hair with irregular relaxed curls adding masculine texture and natural volume, casual effortless styling"
+    },
+    {
+      "id": 76,
+      "image_key": "투블럭",
+      "gender": "male",
+      "hair_description": "two-block cut, clipped short sides and back with clearly longer top hair covering the upper sides, straight natural fringe, iconic Korean men's cut"
+    },
+    {
+      "id": 77,
+      "image_key": "포마드",
+      "gender": "male",
+      "hair_description": "classic pomade hairstyle, hair slicked back and to the side with high-shine pomade, a sharp defined side part, faded clean sides, dapper classic look"
+    },
+    {
+      "id": 78,
+      "image_key": "프렌치크롭",
+      "gender": "male",
+      "hair_description": "French crop, short faded sides with a lightly textured top and a straight blunt fringe pressed down over the forehead"
+    },
+    {
+      "id": 79,
+      "image_key": "플리츠펌",
+      "gender": "female",
+      "hair_description": "medium-long hair with a pleats perm, fine ribbon-like pleated waves creating delicate crimped texture through the lengths"
+    },
+    {
+      "id": 80,
+      "image_key": "플립컷",
+      "gender": "female",
+      "hair_description": "flip cut, shoulder-length hair with the ends flipped outward in a C-shaped flick, light layers and lively bouncy movement"
+    },
+    {
+      "id": 81,
+      "image_key": "픽시컷",
+      "gender": "female",
+      "hair_description": "pixie cut, short cropped hair with soft textured layers, a wispy light fringe, ears and nape exposed, bold chic impression"
+    },
+    {
+      "id": 82,
+      "image_key": "허그펌",
+      "gender": "female",
+      "hair_description": "medium-long hair with a hug perm, soft inward-curving waves that wrap gently toward the face and shoulders, cozy natural volume"
+    },
+    {
+      "id": 83,
+      "image_key": "허쉬컷",
+      "gender": "male",
+      "hair_description": "hush cut, medium-length layered hair with airy wispy layers and soft curtain-like fringe, lightly tousled texture, trendy gender-fluid Korean style"
+    },
+    {
+      "id": 83,
+      "image_key": "허쉬컷",
+      "gender": "female",
+      "hair_description": "hush cut, long layered hair with feathery wispy layers, soft airy curtain fringe and tousled light texture, trendy effortless Korean style"
+    },
+    {
+      "id": 84,
+      "image_key": "히피펌",
+      "gender": "male",
+      "hair_description": "medium-length hippie perm, dense loose ramen-like waves falling naturally around the face, laid-back artistic vibe"
+    }
+  ]
+}
