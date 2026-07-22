@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # ===== AdMob 리워드 광고 (SSV) =====
     REWARD_AD_DAILY_LIMIT: int = 5  # 유저당 하루 보상 횟수 상한
 
+    # ===== 제휴 커머스 (쿠팡파트너스) =====
+    # 클릭 로그 테이블 (PK: user_id, SK: sk) - 콘솔에서 생성 필요
+    DYNAMODB_AFFILIATE_CLICKS_TABLE_NAME: str = "hairme-affiliate-clicks"
+
     # MLOps Configuration
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
     MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷

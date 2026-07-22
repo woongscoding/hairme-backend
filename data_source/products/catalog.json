@@ -1,0 +1,142 @@
+{
+  "_readme": [
+    "제휴 커머스 제품 카탈로그 (사람 검토/수정용 시드 파일).",
+    "services/product_recommendation_service.py가 이 파일을 읽어 스타일별 제품을 추천한다.",
+    "products의 항목은 플레이스홀더 - 쿠팡파트너스 가입 후 실제 제품/제휴 링크로 교체할 것.",
+    "affiliate_url은 반드시 쿠팡파트너스에서 생성한 링크를 넣는다 (https://link.coupang.com/...).",
+    "(예시)가 붙은 제품명은 실제 판매 제품으로 교체 필요.",
+    "style_mappings: 스타일 image_key → 카테고리 우선순위 (data_source/style_images/prompts.json의 image_key와 일치).",
+    "style_mappings에 없는 스타일은 서비스의 키워드 규칙(펌/매직/염색/컷)으로 category_fallbacks에 매핑된다.",
+    "category: curl_cream | essence | wax | pomade | color_shampoo | treatment"
+  ],
+  "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
+  "category_fallbacks": {
+    "perm": ["curl_cream", "essence", "treatment"],
+    "magic": ["essence", "treatment"],
+    "color": ["color_shampoo", "treatment"],
+    "cut": ["wax", "pomade", "essence"],
+    "default": ["essence", "treatment"]
+  },
+  "style_mappings": {
+    "포마드": ["pomade", "wax", "essence"],
+    "올백": ["pomade", "wax", "essence"],
+    "리젠트컷": ["pomade", "wax", "essence"],
+    "세미리젠트컷": ["pomade", "wax", "essence"],
+    "슬릭백언더컷": ["pomade", "wax", "essence"],
+    "바버스타일": ["pomade", "wax", "essence"],
+    "볼륨매직": ["essence", "treatment"],
+    "다운펌": ["wax", "essence", "treatment"]
+  },
+  "products": [
+    {
+      "product_id": "curl-001",
+      "name": "미쟝센 컬링 에센스",
+      "brand": "미쟝센",
+      "category": "curl_cream",
+      "price_krw": 9900,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-curl-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "curl-002",
+      "name": "컬 부스팅 크림 (예시)",
+      "brand": "(예시)",
+      "category": "curl_cream",
+      "price_krw": 12000,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-curl-002",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "essence-001",
+      "name": "미쟝센 퍼펙트 세럼",
+      "brand": "미쟝센",
+      "category": "essence",
+      "price_krw": 8900,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-essence-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "essence-002",
+      "name": "케라시스 헤어 세럼 (예시)",
+      "brand": "케라시스",
+      "category": "essence",
+      "price_krw": 7500,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-essence-002",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "wax-001",
+      "name": "미쟝센 파워스윙 왁스",
+      "brand": "미쟝센",
+      "category": "wax",
+      "price_krw": 7900,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-wax-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "wax-002",
+      "name": "갸스비 무빙러버 스파이키 엣지",
+      "brand": "갸스비",
+      "category": "wax",
+      "price_krw": 8500,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-wax-002",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "pomade-001",
+      "name": "클래식 슈퍼홀드 포마드 (예시)",
+      "brand": "(예시)",
+      "category": "pomade",
+      "price_krw": 18000,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-pomade-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "pomade-002",
+      "name": "워터 베이스 포마드 (예시)",
+      "brand": "(예시)",
+      "category": "pomade",
+      "price_krw": 16000,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-pomade-002",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "colorsh-001",
+      "name": "컬러 케어 샴푸 (예시)",
+      "brand": "(예시)",
+      "category": "color_shampoo",
+      "price_krw": 13000,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-colorsh-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "treat-001",
+      "name": "미쟝센 데미지케어 트리트먼트",
+      "brand": "미쟝센",
+      "category": "treatment",
+      "price_krw": 9500,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-treat-001",
+      "image_url": "",
+      "active": true
+    },
+    {
+      "product_id": "treat-002",
+      "name": "려 손상케어 트리트먼트 (예시)",
+      "brand": "려",
+      "category": "treatment",
+      "price_krw": 11000,
+      "affiliate_url": "https://link.coupang.com/PLACEHOLDER-treat-002",
+      "image_url": "",
+      "active": true
+    }
+  ]
+}

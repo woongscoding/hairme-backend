@@ -33,6 +33,9 @@ from database.user_repository import get_user_repository
 from services.credit_service import InsufficientCreditsError, get_credit_service
 from services.hairstyle_synthesis_service import get_synthesis_service
 from services.photo_storage_service import get_photo_storage_service
+from services.product_recommendation_service import (
+    get_product_recommendation_service,
+)
 from services.usage_limit_service import get_usage_limit_service
 from config.settings import settings
 
@@ -139,6 +142,19 @@ def _charge_quota(
     }
     # 레거시 흐름은 기존 동작 유지 (합성 실패해도 차감 롤백 없음)
     return None, quota, _NOOP_REFUND
+
+
+def _safe_product_recommendations(
+    style_name: Optional[str], gender: Optional[str] = None
+) -> list:
+    """합성 결과에 얹을 제휴 제품 추천. 실패해도 합성 응답을 깨뜨리면 안 된다."""
+    try:
+        return get_product_recommendation_service().get_recommendations(
+            style_name, gender=gender, limit=3
+        )
+    except Exception as e:
+        logger.warning(f"제품 추천 실패 (무시): {str(e)}")
+        return []
 
 
 def _store_result(
@@ -262,6 +278,9 @@ async def synthesize_hairstyle(
                 "cached": True,
                 "result_url": None,
                 "quota": None,
+                "recommended_products": _safe_product_recommendations(
+                    hairstyle_name, gender
+                ),
             }
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
@@ -317,6 +336,9 @@ async def synthesize_hairstyle(
             "cached": False,
             "result_url": result_url,
             "quota": quota,
+            "recommended_products": _safe_product_recommendations(
+                hairstyle_name, gender
+            ),
         }
 
     except InvalidFileFormatException as e:
@@ -396,6 +418,7 @@ async def synthesize_with_reference(
                 "cached": True,
                 "result_url": None,
                 "quota": None,
+                "recommended_products": _safe_product_recommendations(None, gender),
             }
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
@@ -450,6 +473,7 @@ async def synthesize_with_reference(
             "cached": False,
             "result_url": result_url,
             "quota": quota,
+            "recommended_products": _safe_product_recommendations(None, gender),
         }
 
     except InvalidFileFormatException as e:
