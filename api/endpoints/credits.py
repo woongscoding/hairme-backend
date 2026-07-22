@@ -16,6 +16,7 @@ from services.admob_ssv_service import (
 )
 from services.credit_service import get_credit_service
 from services.play_billing_service import (
+    ACK_STATE_NOT_ACKNOWLEDGED,
     InvalidPurchaseError,
     PlayBillingUnavailableError,
     get_play_billing_service,
@@ -58,8 +59,10 @@ async def purchase_credits(
     크레딧 구매 (Google Play 인앱결제 영수증 검증)
 
     1. purchases.products.get으로 purchase_token 검증
-    2. purchase_token 클레임 마커(조건부 put)로 중복 지급 방지
-    3. credit_service.grant(reason="purchase") - 지급 실패 시 마커 회수
+    2. 미승인 구매면 서버가 직접 acknowledge
+       (미승인 구매는 3일 후 Google 자동 환불 → "환불 + 크레딧 유지" 차단)
+    3. purchase_token 클레임 마커(조건부 put)로 중복 지급 방지
+    4. credit_service.grant(reason="purchase") - 지급 실패 시 마커 회수
     """
     amount = settings.CREDIT_PRODUCTS.get(body.product_id)
     if amount is None:
@@ -71,6 +74,14 @@ async def purchase_credits(
         receipt = await run_in_threadpool(
             play_service.verify_product_purchase, body.product_id, body.purchase_token
         )
+        # 승인은 클레임 마커 생성 전에 수행 - 실패 시 503으로 재시도를 유도해도
+        # 마커가 없으므로 다음 요청에서 지급까지 정상 재처리된다
+        if receipt.get("acknowledgement_state") == ACK_STATE_NOT_ACKNOWLEDGED:
+            await run_in_threadpool(
+                play_service.acknowledge_product_purchase,
+                body.product_id,
+                body.purchase_token,
+            )
     except InvalidPurchaseError:
         logger.warning(
             f"⚠️ 구매 영수증 검증 실패: user_id={user_id}, product={body.product_id}"
@@ -194,8 +205,10 @@ async def reward_ad_callback(request: Request):
         logger.warning(f"⚠️ 리워드 지급 대상 사용자 없음: user_id={user_id}")
         return {"success": True, "rewarded": False, "reason": "unknown_user"}
     except Exception:
-        # 지급 실패 시 클레임 회수 - AdMob 재시도에서 다시 처리되게 500
+        # 지급 실패 시 클레임 회수 + 일일 카운터 복구
+        # (AdMob 재시도가 사용자 보상 한도를 소모하지 않도록) - 재처리되게 500
         credit_service.release_ref(ref_key)
+        get_usage_limit_service().decrement_daily_counter(f"reward_ad#{user_id}")
         logger.error(f"❌ 리워드 크레딧 지급 실패: user_id={user_id}", exc_info=True)
         raise HTTPException(
             status_code=500,

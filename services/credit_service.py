@@ -6,6 +6,7 @@
   - Sort Key: sk (ISO8601 타임스탬프 + 트랜잭션 ID, 시간순 정렬)
 """
 
+import hashlib
 import os
 import uuid
 from datetime import datetime, timezone
@@ -22,6 +23,15 @@ except ImportError:
 
 from config.settings import settings
 from core.logging import logger
+
+
+def _mask_ref(ref_key: str) -> str:
+    """ref_key의 토큰 부분을 해시로 마스킹 (네임스페이스 접두사는 유지)"""
+    prefix, sep, secret = ref_key.partition("#")
+    if not sep:
+        prefix, secret = "", ref_key
+    digest = hashlib.sha256(secret.encode("utf-8")).hexdigest()[:12]
+    return f"{prefix}#{digest}" if prefix else digest
 
 
 class InsufficientCreditsError(Exception):
@@ -221,7 +231,10 @@ class CreditService:
             return True
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                logger.warning(f"⚠️ 중복 트랜잭션 처리 시도: ref_key={ref_key[:64]}")
+                # ref_key에 구매 토큰 등이 포함되므로 원문 대신 해시로 로깅
+                logger.warning(
+                    f"⚠️ 중복 트랜잭션 처리 시도: ref_hash={_mask_ref(ref_key)}"
+                )
                 return False
             logger.error(f"트랜잭션 클레임 기록 실패: {e.response['Error']['Message']}")
             raise
@@ -247,7 +260,12 @@ class CreditService:
         balance_after: int,
         ref_id: Optional[str],
     ) -> None:
-        """원장 기록 (실패해도 본 트랜잭션은 롤백하지 않음 - best effort)"""
+        """원장 기록 (실패해도 본 트랜잭션은 롤백하지 않음)
+
+        잔액은 이미 원자적으로 반영된 뒤라 여기서 실패하면 잔액↔원장이
+        어긋난다. 1회 재시도하고, 최종 실패 시 CS 대사가 가능하도록
+        복구에 필요한 전체 정보를 CRITICAL 구조화 로그로 남긴다.
+        """
         now = datetime.now(timezone.utc).isoformat()
         item: Dict[str, Any] = {
             "user_id": user_id,
@@ -260,10 +278,23 @@ class CreditService:
         if ref_id:
             item["ref_id"] = ref_id
 
-        try:
-            self.ledger_table.put_item(Item=item)
-        except Exception as e:
-            logger.error(f"⚠️ 크레딧 원장 기록 실패 (잔액은 반영됨): {str(e)}")
+        for attempt in (1, 2):
+            try:
+                self.ledger_table.put_item(Item=item)
+                return
+            except Exception as e:
+                if attempt == 1:
+                    logger.warning(f"크레딧 원장 기록 1차 실패 - 재시도: {str(e)}")
+                else:
+                    # 수동 대사(재기록)에 필요한 모든 필드를 남긴다 (ref는 해시)
+                    logger.critical(
+                        "❌ LEDGER_WRITE_FAILED 크레딧 원장 기록 최종 실패 "
+                        "(잔액은 반영됨 - 수동 대사 필요): "
+                        f"user_id={user_id}, amount={amount}, reason={reason}, "
+                        f"balance_after={balance_after}, created_at={now}, "
+                        f"ref_hash={_mask_ref(ref_id) if ref_id else None}, "
+                        f"error={str(e)}"
+                    )
 
 
 # Singleton

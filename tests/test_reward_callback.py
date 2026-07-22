@@ -212,6 +212,22 @@ class TestRewardCallback:
         assert data["reason"] == "daily_limit_reached"
         mock_credit.grant.assert_not_called()
 
+    def test_grant_failure_restores_claim_and_counter(
+        self, client, mock_ssv, mock_credit, mock_usage
+    ):
+        """L4: 지급 실패 시 클레임 회수 + 일일 카운터 복구
+        (AdMob 재시도가 사용자 보상 한도를 소모하지 않도록)"""
+        mock_credit.grant.side_effect = Exception("DynamoDB down")
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 500
+        mock_credit.release_ref.assert_called_once_with("reward#tx-abc-123")
+        mock_usage.decrement_daily_counter.assert_called_once_with(
+            "reward_ad#reward-user-id"
+        )
+        assert "DynamoDB" not in response.text
+
     def test_grant_failure_releases_claim(
         self, client, mock_ssv, mock_credit, mock_usage
     ):

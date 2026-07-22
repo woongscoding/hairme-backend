@@ -250,6 +250,28 @@ class UsageLimitService:
             )
             raise
 
+    def decrement_daily_counter(self, key: str) -> None:
+        """
+        일일 카운터 되돌리기 (best effort)
+
+        카운터 증가 후 후속 처리(크레딧 지급 등)가 실패했을 때 호출한다.
+        복구가 실패해도 예외를 전파하지 않는다 - 사용자 한도가 1 소모되는
+        것이 지급 흐름 전체가 깨지는 것보다 낫기 때문.
+        """
+        today = self._today_kst()
+
+        try:
+            self.table.update_item(
+                Key={"device_id": key, "date": today},
+                UpdateExpression="SET #cnt = #cnt - :dec",
+                ConditionExpression="attribute_exists(#cnt) AND #cnt > :zero",
+                ExpressionAttributeNames={"#cnt": "count"},
+                ExpressionAttributeValues={":dec": 1, ":zero": 0},
+            )
+            logger.info(f"일일 카운터 복구: key={key}, date={today}")
+        except Exception as e:
+            logger.error(f"⚠️ 일일 카운터 복구 실패 (무시): key={key}, {str(e)}")
+
     def get_usage(self, device_id: str) -> Dict[str, Any]:
         """
         Get current usage info for a device.

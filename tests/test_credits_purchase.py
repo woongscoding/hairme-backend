@@ -34,11 +34,12 @@ def auth_headers():
 
 @pytest.fixture
 def mock_play():
-    """영수증 검증 성공을 기본값으로 모킹"""
+    """영수증 검증 성공(이미 승인된 구매)을 기본값으로 모킹"""
     service = MagicMock()
     service.verify_product_purchase.return_value = {
         "order_id": "GPA.1234-5678",
         "purchase_time_millis": "1720000000000",
+        "acknowledgement_state": 1,
     }
     with patch("api.endpoints.credits.get_play_billing_service", return_value=service):
         yield service
@@ -138,3 +139,55 @@ class TestPurchaseCredits:
     def test_missing_fields(self, client, auth_headers):
         response = client.post("/api/credits/purchase", json={}, headers=auth_headers)
         assert response.status_code == 422
+
+    def test_already_acknowledged_skips_acknowledge(
+        self, client, auth_headers, mock_play, mock_credit
+    ):
+        """이미 승인된 구매는 acknowledge를 다시 호출하지 않음"""
+        response = client.post(
+            "/api/credits/purchase", json=PURCHASE_BODY, headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        mock_play.acknowledge_product_purchase.assert_not_called()
+
+    def test_unacknowledged_purchase_is_acknowledged_before_grant(
+        self, client, auth_headers, mock_play, mock_credit
+    ):
+        """H1: 미승인 구매는 지급 전에 서버가 acknowledge (3일 후 자동 환불 차단)"""
+        mock_play.verify_product_purchase.return_value = {
+            "order_id": "GPA.1234-5678",
+            "purchase_time_millis": "1720000000000",
+            "acknowledgement_state": 0,
+        }
+
+        response = client.post(
+            "/api/credits/purchase", json=PURCHASE_BODY, headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        mock_play.acknowledge_product_purchase.assert_called_once_with(
+            "credits_10", "token-abc-123"
+        )
+        mock_credit.grant.assert_called_once()
+
+    def test_acknowledge_failure_returns_503_before_claim(
+        self, client, auth_headers, mock_play, mock_credit
+    ):
+        """acknowledge 실패 시 클레임 마커 생성 전에 503 - 재시도하면 정상 재처리"""
+        mock_play.verify_product_purchase.return_value = {
+            "order_id": "GPA.1234-5678",
+            "purchase_time_millis": "1720000000000",
+            "acknowledgement_state": 0,
+        }
+        mock_play.acknowledge_product_purchase.side_effect = (
+            PlayBillingUnavailableError()
+        )
+
+        response = client.post(
+            "/api/credits/purchase", json=PURCHASE_BODY, headers=auth_headers
+        )
+
+        assert response.status_code == 503
+        mock_credit.try_claim_ref.assert_not_called()
+        mock_credit.grant.assert_not_called()

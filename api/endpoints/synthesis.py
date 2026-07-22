@@ -269,38 +269,43 @@ async def synthesize_hairstyle(
         if quota_error is not None:
             return quota_error
 
-        # ===== 4. 합성 =====
-        service = get_synthesis_service()
-        result = service.synthesize_hairstyle(
-            image_data=image_data,
-            hairstyle_name=hairstyle_name,
-            gender=gender,
-            additional_instructions=additional_instructions,
-        )
-
-        processing_time = round(time.time() - start_time, 2)
-
-        if not result["success"]:
-            refund()
-            logger.warning(f"⚠️ 합성 실패: {result['message']}")
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "success": False,
-                    "message": result["message"],
-                    "processing_time": processing_time,
-                },
+        # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        try:
+            service = get_synthesis_service()
+            result = service.synthesize_hairstyle(
+                image_data=image_data,
+                hairstyle_name=hairstyle_name,
+                gender=gender,
+                additional_instructions=additional_instructions,
             )
 
-        # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
-        result_url = _store_result(
-            user_id,
-            image_data,
-            cache_key,
-            result["image_base64"],
-            result["image_format"],
-            hairstyle_name,
-        )
+            processing_time = round(time.time() - start_time, 2)
+
+            if not result["success"]:
+                refund()
+                logger.warning(f"⚠️ 합성 실패: {result['message']}")
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "success": False,
+                        "message": result["message"],
+                        "processing_time": processing_time,
+                    },
+                )
+
+            # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            result_url = _store_result(
+                user_id,
+                image_data,
+                cache_key,
+                result["image_base64"],
+                result["image_format"],
+                hairstyle_name,
+            )
+        except Exception:
+            # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파
+            refund()
+            raise
 
         logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
         return {
@@ -398,37 +403,42 @@ async def synthesize_with_reference(
         if quota_error is not None:
             return quota_error
 
-        # ===== 4. 합성 =====
-        service = get_synthesis_service()
-        result = service.synthesize_with_reference(
-            user_image_data=user_image_data,
-            reference_image_data=reference_image_data,
-            gender=gender,
-        )
-
-        processing_time = round(time.time() - start_time, 2)
-
-        if not result["success"]:
-            refund()
-            logger.warning(f"⚠️ 레퍼런스 합성 실패: {result['message']}")
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "success": False,
-                    "message": result["message"],
-                    "processing_time": processing_time,
-                },
+        # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        try:
+            service = get_synthesis_service()
+            result = service.synthesize_with_reference(
+                user_image_data=user_image_data,
+                reference_image_data=reference_image_data,
+                gender=gender,
             )
 
-        # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
-        result_url = _store_result(
-            user_id,
-            user_image_data,
-            cache_key,
-            result["image_base64"],
-            result["image_format"],
-            hairstyle_name=None,
-        )
+            processing_time = round(time.time() - start_time, 2)
+
+            if not result["success"]:
+                refund()
+                logger.warning(f"⚠️ 레퍼런스 합성 실패: {result['message']}")
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "success": False,
+                        "message": result["message"],
+                        "processing_time": processing_time,
+                    },
+                )
+
+            # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            result_url = _store_result(
+                user_id,
+                user_image_data,
+                cache_key,
+                result["image_base64"],
+                result["image_format"],
+                hairstyle_name=None,
+            )
+        except Exception:
+            # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파
+            refund()
+            raise
 
         logger.info(f"✅ 레퍼런스 합성 완료 ({processing_time}초)")
         return {

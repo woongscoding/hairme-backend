@@ -38,12 +38,14 @@ class TestVerifyProductPurchase:
                 "purchaseState": 0,
                 "orderId": "GPA.1234-5678",
                 "purchaseTimeMillis": "1720000000000",
+                "acknowledgementState": 0,
             },
         )
 
         receipt = service.verify_product_purchase("credits_10", "token-abc")
 
         assert receipt["order_id"] == "GPA.1234-5678"
+        assert receipt["acknowledgement_state"] == 0
         # 요청 URL에 패키지명/상품ID/토큰이 포함되는지 확인
         url = service._session.get.call_args.args[0]
         assert "com.hairme.app" in url
@@ -114,3 +116,35 @@ class TestCredentialLoading:
         ):
             with pytest.raises(PlayBillingUnavailableError):
                 svc._load_credentials()
+
+
+class TestAcknowledgeProductPurchase:
+    """H1: 서버 측 acknowledge (미승인 구매의 3일 후 자동 환불 차단)"""
+
+    def test_acknowledge_success(self, service):
+        service._session.post.return_value = _response(200)
+
+        service.acknowledge_product_purchase("credits_10", "token-abc")
+
+        url = service._session.post.call_args.args[0]
+        assert url.endswith(":acknowledge")
+        assert "credits_10" in url
+        assert "token-abc" in url
+
+    def test_already_acknowledged_400_is_not_fatal(self, service):
+        """이미 승인된 구매(동시 요청/앱 선승인)의 400은 성공으로 간주"""
+        service._session.post.return_value = _response(400)
+
+        service.acknowledge_product_purchase("credits_10", "token-abc")  # no raise
+
+    def test_server_error_raises_unavailable(self, service):
+        service._session.post.return_value = _response(500)
+
+        with pytest.raises(PlayBillingUnavailableError):
+            service.acknowledge_product_purchase("credits_10", "token-abc")
+
+    def test_network_error_raises_unavailable(self, service):
+        service._session.post.side_effect = ConnectionError("boom")
+
+        with pytest.raises(PlayBillingUnavailableError):
+            service.acknowledge_product_purchase("credits_10", "token-abc")

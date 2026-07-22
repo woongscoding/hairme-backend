@@ -31,11 +31,16 @@ PLAY_PRODUCTS_GET_URL = (
     "https://androidpublisher.googleapis.com/androidpublisher/v3"
     "/applications/{package_name}/purchases/products/{product_id}/tokens/{token}"
 )
+PLAY_PRODUCTS_ACK_URL = PLAY_PRODUCTS_GET_URL + ":acknowledge"
 
 # purchases.products.get 응답의 purchaseState 값
 PURCHASE_STATE_PURCHASED = 0
 PURCHASE_STATE_CANCELED = 1
 PURCHASE_STATE_PENDING = 2
+
+# purchases.products.get 응답의 acknowledgementState 값
+ACK_STATE_NOT_ACKNOWLEDGED = 0
+ACK_STATE_ACKNOWLEDGED = 1
 
 
 class PlayBillingError(Exception):
@@ -153,7 +158,55 @@ class PlayBillingService:
         return {
             "order_id": data.get("orderId"),
             "purchase_time_millis": data.get("purchaseTimeMillis"),
+            # 0=미승인(3일 내 미승인 시 Google이 자동 환불), 1=승인됨
+            "acknowledgement_state": int(
+                data.get("acknowledgementState", ACK_STATE_NOT_ACKNOWLEDGED)
+            ),
         }
+
+    def acknowledge_product_purchase(
+        self, product_id: str, purchase_token: str
+    ) -> None:
+        """
+        구매 서버 측 승인 (purchases.products.acknowledge)
+
+        미승인 구매는 3일 후 Google이 자동 환불하므로, 크레딧 지급 전에
+        서버가 직접 승인해 "자동 환불 + 크레딧 유지" 공격/사고를 차단한다.
+
+        이미 승인된 구매에 대한 400 응답은 성공으로 간주한다
+        (동시 요청 race 또는 앱이 먼저 승인한 경우).
+
+        Raises:
+            PlayBillingUnavailableError: Google API 장애 (클라이언트 재시도 유도)
+        """
+        url = PLAY_PRODUCTS_ACK_URL.format(
+            package_name=quote(self.package_name, safe=""),
+            product_id=quote(product_id, safe=""),
+            token=quote(purchase_token, safe=""),
+        )
+
+        try:
+            response = self.session.post(url, json={}, timeout=10)
+        except PlayBillingError:
+            raise
+        except Exception:
+            logger.error("❌ Play acknowledge 호출 실패 (네트워크)", exc_info=True)
+            raise PlayBillingUnavailableError("play acknowledge request failed")
+
+        if response.status_code in (200, 204):
+            logger.info(f"✅ Play 구매 승인 완료: product={product_id}")
+            return
+
+        if response.status_code == 400:
+            # 이미 승인된 구매를 다시 승인하면 400 - 지급 진행에 문제 없음
+            logger.warning(
+                f"⚠️ Play acknowledge 400 (이미 승인된 구매로 간주): "
+                f"product={product_id}"
+            )
+            return
+
+        logger.error(f"❌ Play acknowledge 오류: status={response.status_code}")
+        raise PlayBillingUnavailableError("play acknowledge error")
 
 
 # Singleton

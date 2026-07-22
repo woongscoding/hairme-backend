@@ -10,17 +10,70 @@ from typing import Dict, Any, Optional
 import httpx
 from fastapi import HTTPException, status
 
+from config.settings import settings
 from core.logging import logger
 
 KAKAO_USER_ME_URL = "https://kapi.kakao.com/v2/user/me"
+KAKAO_TOKEN_INFO_URL = "https://kapi.kakao.com/v1/user/access_token_info"
 
 
 class KakaoAuthService:
     """카카오 액세스 토큰 검증 및 프로필 조회"""
 
+    async def _verify_token_app_id(
+        self, client: httpx.AsyncClient, kakao_access_token: str
+    ) -> None:
+        """
+        토큰이 우리 카카오 앱에서 발급된 것인지 검증 (토큰 치환 공격 차단)
+
+        공격자가 자신이 통제하는 다른 카카오 앱의 토큰을 제출하는
+        confused-deputy 시나리오를 access_token_info의 app_id로 걸러낸다.
+        KAKAO_APP_ID 미설정 시 검증을 생략한다 (기존 배포 호환).
+        """
+        if not settings.KAKAO_APP_ID:
+            logger.warning(
+                "⚠️ KAKAO_APP_ID 미설정 - 카카오 토큰 발급 앱 검증 생략 "
+                "(프로덕션에서는 설정 권장)"
+            )
+            return
+
+        response = await client.get(
+            KAKAO_TOKEN_INFO_URL,
+            headers={"Authorization": f"Bearer {kakao_access_token}"},
+        )
+
+        if response.status_code == 401:
+            logger.warning("⚠️ 유효하지 않은 카카오 토큰 (access_token_info)")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="카카오 인증에 실패했습니다. 다시 로그인해주세요.",
+            )
+        if response.status_code != 200:
+            logger.error(
+                f"❌ 카카오 access_token_info 오류: status={response.status_code}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="카카오 로그인 서비스에 일시적 오류가 발생했습니다.",
+            )
+
+        token_app_id = str(response.json().get("app_id", ""))
+        if token_app_id != str(settings.KAKAO_APP_ID).strip():
+            logger.warning(
+                f"⚠️ 다른 카카오 앱에서 발급된 토큰으로 로그인 시도 차단: "
+                f"token_app_id={token_app_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="카카오 인증에 실패했습니다. 다시 로그인해주세요.",
+            )
+
     async def verify_access_token(self, kakao_access_token: str) -> Dict[str, Any]:
         """
         카카오 액세스 토큰 검증
+
+        1. access_token_info로 토큰 발급 앱(app_id)이 우리 앱인지 확인
+        2. /v2/user/me로 프로필 조회
 
         Returns:
             {
@@ -30,15 +83,18 @@ class KakaoAuthService:
             }
 
         Raises:
-            HTTPException(401): 토큰이 유효하지 않음
+            HTTPException(401): 토큰이 유효하지 않거나 다른 앱에서 발급됨
             HTTPException(503): 카카오 API 장애
         """
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
+                await self._verify_token_app_id(client, kakao_access_token)
                 response = await client.get(
                     KAKAO_USER_ME_URL,
                     headers={"Authorization": f"Bearer {kakao_access_token}"},
                 )
+        except HTTPException:
+            raise
         except httpx.HTTPError:
             logger.error("❌ 카카오 API 호출 실패 (네트워크)", exc_info=True)
             raise HTTPException(

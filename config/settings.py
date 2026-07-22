@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     DAILY_SYNTHESIS_LIMIT: int = 3
 
     # ===== 회원 인증 (Kakao 로그인 + 자체 JWT) =====
+    # 우리 카카오 앱의 네이티브/REST 앱 ID (숫자). 설정 시 access_token_info로
+    # 토큰이 우리 앱에서 발급된 것인지 검증한다 (토큰 치환 공격 차단).
+    # 미설정 시 검증 생략 (기존 배포 호환) - 프로덕션에서는 반드시 설정할 것.
+    KAKAO_APP_ID: str = ""
     JWT_SECRET_KEY: str = (
         ""  # 프로덕션에서는 Secrets Manager(hairme-jwt-secret)에서 로드
     )
