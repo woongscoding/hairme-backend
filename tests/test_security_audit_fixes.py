@@ -119,7 +119,9 @@ class TestSynthesisRefundOnException:
         response = self._post(client)
 
         assert response.status_code == 422
-        assert synthesis_mocks["credit"].grant.call_args.kwargs.get("reason") == "refund"
+        assert (
+            synthesis_mocks["credit"].grant.call_args.kwargs.get("reason") == "refund"
+        )
 
 
 # ========== M3: 카카오 app_id 검증 ==========

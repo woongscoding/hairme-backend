@@ -150,10 +150,14 @@ def generate_one(client, model: str, aspect_ratio: str, item: dict) -> bool:
     """이미지 1장 생성 (재시도 포함). 성공 여부 반환."""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            data, mime = _request_image_bytes(client, model, aspect_ratio, item["prompt"])
+            data, mime = _request_image_bytes(
+                client, model, aspect_ratio, item["prompt"]
+            )
             if data is None:
                 # 세이프티 필터 등으로 이미지가 반환되지 않은 경우
-                print(f"   ⚠️ 이미지 미반환 (시도 {attempt}/{MAX_RETRIES}) - 프롬프트 확인 필요")
+                print(
+                    f"   ⚠️ 이미지 미반환 (시도 {attempt}/{MAX_RETRIES}) - 프롬프트 확인 필요"
+                )
                 time.sleep(RETRY_DELAY * attempt)
                 continue
 
@@ -164,7 +168,9 @@ def generate_one(client, model: str, aspect_ratio: str, item: dict) -> bool:
             return True
         except Exception as e:
             # 에러 메시지에 키가 섞이지 않도록 타입과 요약만 출력
-            print(f"   ⚠️ 실패 (시도 {attempt}/{MAX_RETRIES}): {type(e).__name__}: {str(e)[:200]}")
+            print(
+                f"   ⚠️ 실패 (시도 {attempt}/{MAX_RETRIES}): {type(e).__name__}: {str(e)[:200]}"
+            )
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY * attempt)
     return False
@@ -176,10 +182,14 @@ def main():
 
     parser = argparse.ArgumentParser(description="헤어스타일 예시 이미지 배치 생성")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--test", action="store_true", help="테스트 세트만 생성 (검수용)")
+    group.add_argument(
+        "--test", action="store_true", help="테스트 세트만 생성 (검수용)"
+    )
     group.add_argument("--all", action="store_true", help="전체 스타일 생성")
     group.add_argument("--only", type=str, help="특정 image_key만 생성 (쉼표 구분)")
-    parser.add_argument("--dry-run", action="store_true", help="프롬프트만 출력, API 호출 없음")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="프롬프트만 출력, API 호출 없음"
+    )
     parser.add_argument("--yes", action="store_true", help="대량 생성 확인 생략")
     args = parser.parse_args()
 

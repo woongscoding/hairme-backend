@@ -54,7 +54,9 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="스타일 이미지 WebP 변환 + 매니페스트 생성")
+    parser = argparse.ArgumentParser(
+        description="스타일 이미지 WebP 변환 + 매니페스트 생성"
+    )
     parser.add_argument(
         "--prefer",
         type=str,
@@ -79,9 +81,7 @@ def main():
 
     # 1. WebP 변환 (기존 파일은 건너뜀)
     converted, skipped = 0, 0
-    sources = sorted(
-        p for p in GENERATED_DIR.iterdir() if FILENAME_RE.match(p.name)
-    )
+    sources = sorted(p for p in GENERATED_DIR.iterdir() if FILENAME_RE.match(p.name))
     for src in sources:
         dst = WEBP_DIR / (src.stem + ".webp")
         if dst.exists():
