@@ -1,0 +1,548 @@
+{
+  "female/C컬펌": {
+    "file": "female_001_C컬펌_1.webp",
+    "alts": [
+      "female_001_C컬펌_2.webp"
+    ]
+  },
+  "female/S컬펌": {
+    "file": "female_002_S컬펌_1.webp",
+    "alts": [
+      "female_002_S컬펌_2.webp"
+    ]
+  },
+  "female/그레이스펌": {
+    "file": "female_006_그레이스펌_1.webp",
+    "alts": [
+      "female_006_그레이스펌_2.webp"
+    ]
+  },
+  "female/글램펌": {
+    "file": "female_007_글램펌_1.webp",
+    "alts": [
+      "female_007_글램펌_2.webp"
+    ]
+  },
+  "female/내추럴펌": {
+    "file": "female_008_내추럴펌_1.webp",
+    "alts": [
+      "female_008_내추럴펌_2.webp"
+    ]
+  },
+  "female/단발": {
+    "file": "female_010_단발_1.webp",
+    "alts": [
+      "female_010_단발_2.webp"
+    ]
+  },
+  "female/디지털펌": {
+    "file": "female_013_디지털펌_1.webp",
+    "alts": [
+      "female_013_디지털펌_2.webp"
+    ]
+  },
+  "female/레이어드컷": {
+    "file": "female_015_레이어드컷_1.webp",
+    "alts": [
+      "female_015_레이어드컷_2.webp"
+    ]
+  },
+  "female/롭": {
+    "file": "female_016_롭_1.webp",
+    "alts": [
+      "female_016_롭_2.webp"
+    ]
+  },
+  "female/물결펌": {
+    "file": "female_024_물결펌_1.webp",
+    "alts": [
+      "female_024_물결펌_2.webp"
+    ]
+  },
+  "female/믹시컷": {
+    "file": "female_025_믹시컷_1.webp",
+    "alts": [
+      "female_025_믹시컷_2.webp"
+    ]
+  },
+  "female/바디펌": {
+    "file": "female_026_바디펌_1.webp",
+    "alts": [
+      "female_026_바디펌_2.webp"
+    ]
+  },
+  "female/베이비펌": {
+    "file": "female_030_베이비펌_1.webp",
+    "alts": [
+      "female_030_베이비펌_2.webp"
+    ]
+  },
+  "female/보브컷": {
+    "file": "female_031_보브컷_1.webp",
+    "alts": [
+      "female_031_보브컷_2.webp"
+    ]
+  },
+  "female/샤기컷": {
+    "file": "female_039_샤기컷_1.webp",
+    "alts": [
+      "female_039_샤기컷_2.webp"
+    ]
+  },
+  "female/시스루뱅": {
+    "file": "female_057_시스루뱅_1.webp",
+    "alts": [
+      "female_057_시스루뱅_2.webp"
+    ]
+  },
+  "female/울프컷": {
+    "file": "female_062_울프컷_1.webp",
+    "alts": [
+      "female_062_울프컷_2.webp"
+    ]
+  },
+  "female/원랭스컷": {
+    "file": "female_063_원랭스컷_1.webp",
+    "alts": [
+      "female_063_원랭스컷_2.webp"
+    ]
+  },
+  "female/이탈리안보브": {
+    "file": "female_064_이탈리안보브_1.webp",
+    "alts": [
+      "female_064_이탈리안보브_2.webp"
+    ]
+  },
+  "female/젤리펌": {
+    "file": "female_068_젤리펌_1.webp",
+    "alts": [
+      "female_068_젤리펌_2.webp"
+    ]
+  },
+  "female/중단발": {
+    "file": "female_069_중단발_1.webp",
+    "alts": [
+      "female_069_중단발_2.webp"
+    ]
+  },
+  "female/커튼뱅": {
+    "file": "female_070_커튼뱅_1.webp",
+    "alts": [
+      "female_070_커튼뱅_2.webp"
+    ]
+  },
+  "female/태슬컷": {
+    "file": "female_073_태슬컷_1.webp",
+    "alts": [
+      "female_073_태슬컷_2.webp"
+    ]
+  },
+  "female/플리츠펌": {
+    "file": "female_079_플리츠펌_1.webp",
+    "alts": [
+      "female_079_플리츠펌_2.webp"
+    ]
+  },
+  "female/플립컷": {
+    "file": "female_080_플립컷_1.webp",
+    "alts": [
+      "female_080_플립컷_2.webp"
+    ]
+  },
+  "female/픽시컷": {
+    "file": "female_081_픽시컷_1.webp",
+    "alts": [
+      "female_081_픽시컷_2.webp"
+    ]
+  },
+  "female/허그펌": {
+    "file": "female_082_허그펌_1.webp",
+    "alts": [
+      "female_082_허그펌_2.webp"
+    ]
+  },
+  "female/허쉬컷": {
+    "file": "female_083_허쉬컷_1.webp",
+    "alts": [
+      "female_083_허쉬컷_2.webp"
+    ]
+  },
+  "male/가르마스타일": {
+    "file": "male_003_가르마스타일_1.webp",
+    "alts": [
+      "male_003_가르마스타일_2.webp"
+    ]
+  },
+  "male/가르마펌": {
+    "file": "male_004_가르마펌_1.webp",
+    "alts": [
+      "male_004_가르마펌_2.webp"
+    ]
+  },
+  "male/가일컷": {
+    "file": "male_005_가일컷_1.webp",
+    "alts": [
+      "male_005_가일컷_2.webp"
+    ]
+  },
+  "male/내추럴펌": {
+    "file": "male_008_내추럴펌_1.webp",
+    "alts": [
+      "male_008_내추럴펌_2.webp"
+    ]
+  },
+  "male/다운펌": {
+    "file": "male_009_다운펌_1.webp",
+    "alts": [
+      "male_009_다운펌_2.webp"
+    ]
+  },
+  "male/단발": {
+    "file": "male_010_단발_1.webp",
+    "alts": [
+      "male_010_단발_2.webp"
+    ]
+  },
+  "male/댄디컷": {
+    "file": "male_011_댄디컷_1.webp",
+    "alts": [
+      "male_011_댄디컷_2.webp"
+    ]
+  },
+  "male/드롭컷": {
+    "file": "male_012_드롭컷_1.webp",
+    "alts": [
+      "male_012_드롭컷_2.webp"
+    ]
+  },
+  "male/레게스타일": {
+    "file": "male_014_레게스타일_1.webp",
+    "alts": [
+      "male_014_레게스타일_2.webp"
+    ]
+  },
+  "male/리젠트컷": {
+    "file": "male_017_리젠트컷_1.webp",
+    "alts": [
+      "male_017_리젠트컷_2.webp"
+    ]
+  },
+  "male/리프컷": {
+    "file": "male_018_리프컷_1.webp",
+    "alts": [
+      "male_018_리프컷_2.webp"
+    ]
+  },
+  "male/맨번": {
+    "file": "male_019_맨번_1.webp",
+    "alts": [
+      "male_019_맨번_2.webp"
+    ]
+  },
+  "male/머쉬룸컷": {
+    "file": "male_020_머쉬룸컷_1.webp",
+    "alts": [
+      "male_020_머쉬룸컷_2.webp"
+    ]
+  },
+  "male/멀릿": {
+    "file": "male_021_멀릿_1.webp",
+    "alts": [
+      "male_021_멀릿_2.webp"
+    ]
+  },
+  "male/모드컷": {
+    "file": "male_022_모드컷_1.webp",
+    "alts": [
+      "male_022_모드컷_2.webp"
+    ]
+  },
+  "male/모히칸스타일": {
+    "file": "male_023_모히칸스타일_1.webp",
+    "alts": [
+      "male_023_모히칸스타일_2.webp"
+    ]
+  },
+  "male/바버스타일": {
+    "file": "male_027_바버스타일_1.webp",
+    "alts": [
+      "male_027_바버스타일_2.webp"
+    ]
+  },
+  "male/밤톨머리": {
+    "file": "male_028_밤톨머리_1.webp",
+    "alts": [
+      "male_028_밤톨머리_2.webp"
+    ]
+  },
+  "male/버즈컷": {
+    "file": "male_029_버즈컷_1.webp",
+    "alts": [
+      "male_029_버즈컷_2.webp"
+    ]
+  },
+  "male/볼륨매직": {
+    "file": "male_032_볼륨매직_1.webp",
+    "alts": [
+      "male_032_볼륨매직_2.webp"
+    ]
+  },
+  "male/볼륨매직+C컬펌": {
+    "file": "male_033_볼륨매직+C컬펌_1.webp",
+    "alts": [
+      "male_033_볼륨매직+C컬펌_2.webp"
+    ]
+  },
+  "male/볼륨매직+쉐도우펌": {
+    "file": "male_034_볼륨매직+쉐도우펌_1.webp",
+    "alts": [
+      "male_034_볼륨매직+쉐도우펌_2.webp"
+    ]
+  },
+  "male/볼륨펌": {
+    "file": "male_035_볼륨펌_1.webp",
+    "alts": [
+      "male_035_볼륨펌_2.webp"
+    ]
+  },
+  "male/블랙숏컷": {
+    "file": "male_036_블랙숏컷_1.webp",
+    "alts": [
+      "male_036_블랙숏컷_2.webp"
+    ]
+  },
+  "male/블레이드컷": {
+    "file": "male_037_블레이드컷_1.webp",
+    "alts": [
+      "male_037_블레이드컷_2.webp"
+    ]
+  },
+  "male/블레이드펌": {
+    "file": "male_038_블레이드펌_1.webp",
+    "alts": [
+      "male_038_블레이드펌_2.webp"
+    ]
+  },
+  "male/샤기컷": {
+    "file": "male_039_샤기컷_1.webp",
+    "alts": [
+      "male_039_샤기컷_2.webp"
+    ]
+  },
+  "male/세미리젠트컷": {
+    "file": "male_040_세미리젠트컷_1.webp",
+    "alts": [
+      "male_040_세미리젠트컷_2.webp"
+    ]
+  },
+  "male/세미리프컷": {
+    "file": "male_041_세미리프컷_1.webp",
+    "alts": [
+      "male_041_세미리프컷_2.webp"
+    ]
+  },
+  "male/세미울프컷": {
+    "file": "male_042_세미울프컷_1.webp",
+    "alts": [
+      "male_042_세미울프컷_2.webp"
+    ]
+  },
+  "male/세미크롭컷": {
+    "file": "male_043_세미크롭컷_1.webp",
+    "alts": [
+      "male_043_세미크롭컷_2.webp"
+    ]
+  },
+  "male/소프트댄디컷": {
+    "file": "male_044_소프트댄디컷_1.webp",
+    "alts": [
+      "male_044_소프트댄디컷_2.webp"
+    ]
+  },
+  "male/소프트멀릿": {
+    "file": "male_045_소프트멀릿_1.webp",
+    "alts": [
+      "male_045_소프트멀릿_2.webp"
+    ]
+  },
+  "male/소프트모히칸": {
+    "file": "male_046_소프트모히칸_1.webp",
+    "alts": [
+      "male_046_소프트모히칸_2.webp"
+    ]
+  },
+  "male/소프트컷": {
+    "file": "male_047_소프트컷_1.webp",
+    "alts": [
+      "male_047_소프트컷_2.webp"
+    ]
+  },
+  "male/소프트투블럭": {
+    "file": "male_048_소프트투블럭_1.webp",
+    "alts": [
+      "male_048_소프트투블럭_2.webp"
+    ]
+  },
+  "male/쉐도우펌": {
+    "file": "male_049_쉐도우펌_1.webp",
+    "alts": [
+      "male_049_쉐도우펌_2.webp"
+    ]
+  },
+  "male/쉼표머리": {
+    "file": "male_050_쉼표머리_1.webp",
+    "alts": [
+      "male_050_쉼표머리_2.webp"
+    ]
+  },
+  "male/스왓컷": {
+    "file": "male_051_스왓컷_1.webp",
+    "alts": [
+      "male_051_스왓컷_2.webp"
+    ]
+  },
+  "male/스킨페이드": {
+    "file": "male_052_스킨페이드_1.webp",
+    "alts": [
+      "male_052_스킨페이드_2.webp"
+    ]
+  },
+  "male/스킨헤드": {
+    "file": "male_053_스킨헤드_1.webp",
+    "alts": [
+      "male_053_스킨헤드_2.webp"
+    ]
+  },
+  "male/스핀스왈로펌": {
+    "file": "male_054_스핀스왈로펌_1.webp",
+    "alts": [
+      "male_054_스핀스왈로펌_2.webp"
+    ]
+  },
+  "male/슬릭백언더컷": {
+    "file": "male_055_슬릭백언더컷_1.webp",
+    "alts": [
+      "male_055_슬릭백언더컷_2.webp"
+    ]
+  },
+  "male/시스루댄디": {
+    "file": "male_056_시스루댄디_1.webp",
+    "alts": [
+      "male_056_시스루댄디_2.webp"
+    ]
+  },
+  "male/아이비리그컷": {
+    "file": "male_058_아이비리그컷_1.webp",
+    "alts": [
+      "male_058_아이비리그컷_2.webp"
+    ]
+  },
+  "male/애즈펌": {
+    "file": "male_059_애즈펌_1.webp",
+    "alts": [
+      "male_059_애즈펌_2.webp"
+    ]
+  },
+  "male/언더컷": {
+    "file": "male_060_언더컷_1.webp",
+    "alts": [
+      "male_060_언더컷_2.webp"
+    ]
+  },
+  "male/올백": {
+    "file": "male_061_올백_1.webp",
+    "alts": [
+      "male_061_올백_2.webp"
+    ]
+  },
+  "male/울프컷": {
+    "file": "male_062_울프컷_1.webp",
+    "alts": [
+      "male_062_울프컷_2.webp"
+    ]
+  },
+  "male/장발스타일": {
+    "file": "male_065_장발스타일_1.webp",
+    "alts": [
+      "male_065_장발스타일_2.webp"
+    ]
+  },
+  "male/장발펌": {
+    "file": "male_066_장발펌_1.webp",
+    "alts": [
+      "male_066_장발펌_2.webp"
+    ]
+  },
+  "male/장발히피펌": {
+    "file": "male_067_장발히피펌_1.webp",
+    "alts": [
+      "male_067_장발히피펌_2.webp"
+    ]
+  },
+  "male/중단발": {
+    "file": "male_069_중단발_1.webp",
+    "alts": [
+      "male_069_중단발_2.webp"
+    ]
+  },
+  "male/커튼뱅": {
+    "file": "male_070_커튼뱅_1.webp",
+    "alts": [
+      "male_070_커튼뱅_2.webp"
+    ]
+  },
+  "male/퀴프": {
+    "file": "male_071_퀴프_1.webp",
+    "alts": [
+      "male_071_퀴프_2.webp"
+    ]
+  },
+  "male/크롭컷": {
+    "file": "male_072_크롭컷_1.webp",
+    "alts": [
+      "male_072_크롭컷_2.webp"
+    ]
+  },
+  "male/텍스쳐컷": {
+    "file": "male_074_텍스쳐컷_1.webp",
+    "alts": [
+      "male_074_텍스쳐컷_2.webp"
+    ]
+  },
+  "male/텍스쳐펌": {
+    "file": "male_075_텍스쳐펌_1.webp",
+    "alts": [
+      "male_075_텍스쳐펌_2.webp"
+    ]
+  },
+  "male/투블럭": {
+    "file": "male_076_투블럭_1.webp",
+    "alts": [
+      "male_076_투블럭_2.webp"
+    ]
+  },
+  "male/포마드": {
+    "file": "male_077_포마드_1.webp",
+    "alts": [
+      "male_077_포마드_2.webp"
+    ]
+  },
+  "male/프렌치크롭": {
+    "file": "male_078_프렌치크롭_1.webp",
+    "alts": [
+      "male_078_프렌치크롭_2.webp"
+    ]
+  },
+  "male/허쉬컷": {
+    "file": "male_083_허쉬컷_1.webp",
+    "alts": [
+      "male_083_허쉬컷_2.webp"
+    ]
+  },
+  "male/히피펌": {
+    "file": "male_084_히피펌_1.webp",
+    "alts": [
+      "male_084_히피펌_2.webp"
+    ]
+  }
+}
