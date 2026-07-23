@@ -85,10 +85,10 @@
     },
     {
       "product_id": "oil-002",
-      "name": "실키 헤어오일 (예시)",
-      "brand": "(예시)",
+      "name": "어노브 실크 헤어 오일 에센스",
+      "brand": "어노브",
       "category": "hair_oil",
-      "price_krw": 15000,
+      "price_krw": 20000,
       "affiliate_url": "https://link.coupang.com/PLACEHOLDER-oil-002",
       "image_url": "",
       "active": true
@@ -135,17 +135,17 @@
     },
     {
       "product_id": "pomade-002",
-      "name": "워터 베이스 포마드 (예시)",
-      "brand": "(예시)",
+      "name": "수아베시토 펌 스트롱 홀드 포마드",
+      "brand": "수아베시토",
       "category": "pomade",
-      "price_krw": 16000,
+      "price_krw": 20000,
       "affiliate_url": "https://link.coupang.com/PLACEHOLDER-pomade-002",
       "image_url": "",
       "active": true
     },
     {
       "product_id": "spray-001",
-      "name": "갸스비 세트&킵 헤어스프레이 (예시)",
+      "name": "갸스비 셋&킵 슈퍼하드 헤어스프레이",
       "brand": "갸스비",
       "category": "hair_spray",
       "price_krw": 9000,
@@ -165,13 +165,13 @@
     },
     {
       "product_id": "colorsh-001",
-      "name": "컬러 케어 샴푸 (예시)",
-      "brand": "(예시)",
+      "name": "컬러 케어 샴푸 (쿠팡 '컬러샴푸' 리뷰순 상위 제품으로 교체)",
+      "brand": "(교체 필요)",
       "category": "color_shampoo",
       "price_krw": 13000,
       "affiliate_url": "https://link.coupang.com/PLACEHOLDER-colorsh-001",
       "image_url": "",
-      "active": true
+      "active": false
     },
     {
       "product_id": "treat-001",
