@@ -94,9 +94,12 @@ class ProductRecommendationService:
 
         for keywords, group in _KEYWORD_GROUPS:
             if any(keyword in style_name for keyword in keywords):
-                if group == "cut" and gender != "male":
-                    # 여성 컷 스타일에 왁스/포마드는 부적합 - 기본 케어 제품으로
-                    return default
+                # 성별에 따라 제품군 분화: 남성 펌은 왁스 병행, 여성 컷은
+                # 왁스/포마드 대신 오일·케어 제품
+                if group == "perm" and gender == "male":
+                    group = "perm_male"
+                elif group == "cut" and gender != "male":
+                    group = "cut_female"
                 return fallbacks.get(group, default)
         return default
 

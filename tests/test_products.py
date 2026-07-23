@@ -70,7 +70,21 @@ class TestProductRecommendationService:
     def test_female_cut_gets_care_products_not_wax(self):
         products = self.service.get_recommendations("레이어드컷", gender="female")
         assert products
+        assert products[0]["category"] == "hair_oil"
         assert all(p["category"] not in ("wax", "pomade") for p in products)
+
+    def test_male_perm_includes_styling_wax(self):
+        products = self.service.get_recommendations("가르마펌", gender="male")
+        assert products[0]["category"] == "curl_cream"
+        assert any(p["category"] == "wax" for p in products)
+
+    def test_down_perm_recommends_self_perm_kit_first(self):
+        products = self.service.get_recommendations("다운펌", gender="male")
+        assert products[0]["category"] == "down_perm_kit"
+
+    def test_long_hair_style_recommends_oil_first(self):
+        products = self.service.get_recommendations("장발스타일", gender="male")
+        assert products[0]["category"] == "hair_oil"
 
     def test_unknown_style_falls_back_to_default(self):
         products = self.service.get_recommendations("존재하지않는스타일")
