@@ -49,10 +49,21 @@ class PhotoStorageService:
             if not BOTO3_AVAILABLE:
                 raise RuntimeError("boto3 is not installed")
             aws_region = os.getenv("AWS_REGION", settings.AWS_REGION)
+            # 리전 엔드포인트 고정 필수: 글로벌 엔드포인트(s3.amazonaws.com)로
+            # presigned URL이 생성되면 SignatureDoesNotMatch(403)로 이미지 로드 실패
             config = Config(
-                connect_timeout=5, read_timeout=15, retries={"max_attempts": 3}
+                connect_timeout=5,
+                read_timeout=15,
+                retries={"max_attempts": 3},
+                signature_version="s3v4",
+                s3={"addressing_style": "virtual"},
             )
-            self._client = boto3.client("s3", region_name=aws_region, config=config)
+            self._client = boto3.client(
+                "s3",
+                region_name=aws_region,
+                endpoint_url=f"https://s3.{aws_region}.amazonaws.com",
+                config=config,
+            )
         return self._client
 
     # ========== 결과 캐싱 (비용 절감 핵심) ==========
