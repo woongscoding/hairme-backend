@@ -161,7 +161,5 @@ class TestStyleImageEndpoint:
         assert res.status_code == 404
 
     def test_rejects_path_traversal(self, image_client):
-        res = image_client.get(
-            "/api/styles/images/..%2F..%2Fconfig%2Fsettings.py"
-        )
+        res = image_client.get("/api/styles/images/..%2F..%2Fconfig%2Fsettings.py")
         assert res.status_code in (404, 400)
