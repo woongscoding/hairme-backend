@@ -14,6 +14,9 @@ v1.2.0 변경사항:
 - Sigmoid 출력층 지원
 """
 
+import os
+import tempfile
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -1311,9 +1314,42 @@ class MLHairstyleRecommender:
 _recommender_instance = None
 
 
+def _download_current_model_from_s3() -> Optional[str]:
+    """
+    S3의 재학습 모델(models/current/model.pt)을 임시 경로로 다운로드
+
+    MLOPS_ENABLED=true일 때만 시도하며, 실패 시 None을 반환하여
+    이미지에 포함된 기본 모델로 폴백합니다.
+
+    Returns:
+        다운로드된 모델의 로컬 경로 또는 None
+    """
+    if os.getenv("MLOPS_ENABLED", "false").lower() != "true":
+        return None
+
+    bucket = os.getenv("MLOPS_S3_BUCKET", "hairme-mlops")
+    local_path = os.path.join(tempfile.gettempdir(), "hairme_model_current.pt")
+
+    try:
+        import boto3
+
+        s3 = boto3.client("s3", region_name=os.getenv("AWS_REGION", "ap-northeast-2"))
+        s3.download_file(bucket, "models/current/model.pt", local_path)
+        logger.info(
+            f"✅ S3 재학습 모델 다운로드 완료: s3://{bucket}/models/current/model.pt"
+        )
+        return local_path
+    except Exception as e:
+        logger.warning(f"⚠️ S3 재학습 모델 다운로드 실패 - 기본 모델 사용: {e}")
+        return None
+
+
 def get_ml_recommender() -> MLHairstyleRecommender:
     """
     ML 추천기 싱글톤 인스턴스 가져오기
+
+    MLOps가 활성화된 경우 S3의 재학습 모델을 우선 로드하고,
+    다운로드/로드 실패 시 이미지에 포함된 기본 모델로 폴백합니다.
 
     Returns:
         MLHairstyleRecommender 인스턴스
@@ -1322,7 +1358,17 @@ def get_ml_recommender() -> MLHairstyleRecommender:
 
     if _recommender_instance is None:
         logger.info("🔧 ML 추천기 초기화 중...")
-        _recommender_instance = MLHairstyleRecommender()
+
+        s3_model_path = _download_current_model_from_s3()
+        if s3_model_path:
+            try:
+                _recommender_instance = MLHairstyleRecommender(model_path=s3_model_path)
+            except Exception as e:
+                logger.warning(f"⚠️ S3 모델 로드 실패 - 기본 모델로 폴백: {e}")
+                _recommender_instance = MLHairstyleRecommender()
+        else:
+            _recommender_instance = MLHairstyleRecommender()
+
         logger.info("✅ ML 추천기 준비 완료")
 
     return _recommender_instance
