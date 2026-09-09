@@ -6,6 +6,22 @@ from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _mysql_backend_and_clean_cache(monkeypatch):
+    """
+    이 파일의 테스트는 MySQL(mock) 분기를 전제로 한다.
+    다른 테스트 모듈이 USE_DYNAMODB=true 를 환경에 남기면 DynamoDB 분기를 타
+    500 이 나므로(순서 의존 flake), 매 테스트마다 백엔드를 고정하고 공개 통계
+    캐시를 비운다.
+    """
+    import api.endpoints.feedback as feedback_module
+
+    monkeypatch.setenv("USE_DYNAMODB", "false")
+    feedback_module._public_stats_cache.clear()
+    yield
+    feedback_module._public_stats_cache.clear()
+
+
 class TestFeedbackEndpoint:
     """Test /api/feedback endpoint"""
 
