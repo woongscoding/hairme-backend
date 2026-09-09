@@ -229,7 +229,7 @@ jobs:
 
           RESPONSE=$(aws lambda invoke \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health"}},"rawPath":"/api/health","headers":{}}' \
+            --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1","protocol":"HTTP/1.1","userAgent":"deploy-check"}},"rawPath":"/api/health","headers":{}}' \
             --cli-binary-format raw-in-base64-out \
             --region $AWS_REGION \
             response.json)
@@ -394,7 +394,7 @@ jobs:
         run: |
           RESPONSE=$(aws lambda invoke \
             --function-name hairme-beauty \
-            --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health"}},"rawPath":"/api/health","headers":{}}' \
+            --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1","protocol":"HTTP/1.1","userAgent":"deploy-check"}},"rawPath":"/api/health","headers":{}}' \
             --cli-binary-format raw-in-base64-out \
             --region ap-northeast-2 \
             response.json)
