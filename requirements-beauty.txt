@@ -4,12 +4,12 @@
 # FastAPI & Web Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-python-multipart==0.0.6
+python-multipart==0.0.20
 
 # Database
 sqlalchemy==2.0.25
-pymysql==1.1.0
-cryptography==41.0.7
+pymysql==1.1.1
+cryptography==43.0.3
 boto3==1.35.0
 
 # Redis Caching
@@ -20,7 +20,7 @@ google-generativeai>=0.8.0
 google-genai>=1.52.0
 
 # Image Processing (NO PyTorch, NO scikit-learn for ML)
-pillow==10.2.0
+pillow==10.4.0
 opencv-python-headless==4.9.0.80
 numpy==1.26.3
 mediapipe==0.10.14
@@ -43,4 +43,4 @@ slowapi==0.1.9
 psutil==5.9.6
 
 # Monitoring
-sentry-sdk[fastapi]==1.40.0
+sentry-sdk[fastapi]==2.19.2

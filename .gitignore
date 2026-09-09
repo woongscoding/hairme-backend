@@ -55,6 +55,7 @@ data_source/*.json
 !data_source/valid_hairstyles.json
 !data_source/trending_hairstyles.json
 !data_source/style_characteristics.json
+!data_source/excluded_styles.json
 data_source/*.npz
 !data_source/style_embeddings.npz
 data_quality/
@@ -187,13 +188,15 @@ services/hybrid_recommender_improved.py
 
 # Config variations
 requirements_fixed.txt
-mypy.ini
+# mypy.ini is tracked: CI runs `mypy . --config-file mypy.ini`
 
 # Deployment review docs (temporary analysis)
 DEPLOYMENT_REVIEW_REQUEST.md
 
-# MLOps temporary files
+# MLOps temporary files / production data dumps (never commit)
 temp_*.json
+*temp_feedback*.json
+trainer_logs.json
 lambda_logs.json
 log_base64.txt
 models/training_history*.json

@@ -10,6 +10,12 @@ on:
       - main
   workflow_dispatch:  # Allow manual trigger
 
+# 배포가 동시에 두 개 돌면 Lambda update 충돌(ResourceConflictException)이 나므로
+# ref 단위로 직렬화한다. 진행 중인 배포를 취소하지는 않는다(중간에 끊기면 더 위험).
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-northeast-2
   ECR_REPOSITORY: hairme-lambda-proxy
@@ -130,6 +136,13 @@ jobs:
       - name: Update Lambda function
         env:
           IMAGE_URI: ${{ steps.build-image.outputs.image }}
+          # 시크릿/변수는 셸 env로 주입하고 jq --arg 로 감싼다.
+          # (워크플로 표현식을 스크립트 본문에 직접 펼치면 값에 따옴표/개행이 있을 때 깨진다)
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          KAKAO_APP_ID: ${{ vars.KAKAO_APP_ID }}
+          PLAY_PACKAGE_NAME: ${{ vars.PLAY_PACKAGE_NAME }}
+          ADMOB_REWARD_AD_UNIT_IDS: ${{ vars.ADMOB_REWARD_AD_UNIT_IDS }}
         run: |
           echo "Updating Lambda function: $LAMBDA_FUNCTION_NAME"
           echo "New image: $IMAGE_URI"
@@ -147,13 +160,66 @@ jobs:
 
           echo "Updating function configuration..."
           echo "Note: API keys are now managed via AWS Secrets Manager"
+
+          # --- 환경변수 병합 ---
+          # update-function-configuration --environment 는 env map 전체를 "치환"한다.
+          # 병합하지 않으면 콘솔에서 수동으로 넣어둔 변수가 배포 때마다 전부 날아간다.
+          # 병합 규칙: 콘솔에서 수동 설정한 변수는 보존되고, 워크플로에 정의된 키는 워크플로 값이 이긴다.
+          # 값이 빈 문자열인 항목(= GitHub vars/secrets 미설정)은 desired 에서 제외해
+          # 기존에 설정돼 있던 값을 빈 값으로 덮어쓰지 않도록 한다.
+          CURRENT_ENV=$(aws lambda get-function-configuration \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query 'Environment.Variables' \
+            --output json)
+          if [ -z "$CURRENT_ENV" ] || [ "$CURRENT_ENV" = "null" ]; then
+            CURRENT_ENV='{}'
+          fi
+
+          DESIRED_ENV=$(jq -n \
+            --arg allowed_origins "$ALLOWED_ORIGINS" \
+            --arg sentry_dsn "$SENTRY_DSN" \
+            --arg kakao_app_id "$KAKAO_APP_ID" \
+            --arg play_package_name "$PLAY_PACKAGE_NAME" \
+            --arg admob_reward_ad_unit_ids "$ADMOB_REWARD_AD_UNIT_IDS" \
+            '{
+               USE_DYNAMODB: "true",
+               DYNAMODB_TABLE_NAME: "hairme-analysis",
+               DYNAMODB_USAGE_TABLE_NAME: "hairstyle_usage",
+               ALLOWED_ORIGINS: $allowed_origins,
+               LOG_LEVEL: "INFO",
+               MODEL_NAME: "gemini-2.5-flash",
+               ENVIRONMENT: "production",
+               PHOTO_S3_BUCKET: "hairme-photos-364042451408",
+               MLOPS_ENABLED: "true",
+               MLOPS_S3_BUCKET: "hairme-mlops",
+               KAKAO_APP_ID: $kakao_app_id,
+               PLAY_PACKAGE_NAME: $play_package_name,
+               ADMOB_REWARD_AD_UNIT_IDS: $admob_reward_ad_unit_ids,
+               SENTRY_DSN: $sentry_dsn
+             } | with_entries(select(.value != ""))')
+
+          jq -n --argjson current "$CURRENT_ENV" --argjson desired "$DESIRED_ENV" \
+            '{Variables: ($current + $desired)}' > env.json
+
+          # 값에 시크릿이 포함되므로 키 이름만 로그에 남긴다
+          echo "Merged environment variable keys:"
+          jq -r '.Variables | keys | join(", ")' env.json
+
           aws lambda update-function-configuration \
             --function-name $LAMBDA_FUNCTION_NAME \
-            --environment "Variables={USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,DYNAMODB_USAGE_TABLE_NAME=hairstyle_usage,ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }},LOG_LEVEL=INFO,MODEL_NAME=gemini-2.5-flash,ENVIRONMENT=production,PHOTO_S3_BUCKET=hairme-photos-364042451408,MLOPS_ENABLED=true,MLOPS_S3_BUCKET=hairme-mlops}" \
+            --environment file://env.json \
             --memory-size 2048 \
             --timeout 120 \
             --region $AWS_REGION \
-            --output json
+            --output json > /dev/null
+
+          rm -f env.json
+
+          echo "Waiting for configuration update to complete..."
+          aws lambda wait function-updated \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION
 
           echo "Lambda function updated successfully!"
 
@@ -189,7 +255,9 @@ jobs:
             --query 'FunctionUrl' \
             --output text 2>/dev/null || echo "No function URL configured")
 
-          echo "Lambda Function URL: $FUNCTION_URL"
+          # Function URL 은 공개 엔드포인트이므로 로그에 노출하지 않는다 (step output 으로는 유지)
+          echo "::add-mask::$FUNCTION_URL"
+          echo "Lambda Function URL retrieved (masked in logs)"
           echo "function_url=$FUNCTION_URL" >> $GITHUB_OUTPUT
 
       - name: Deployment summary
@@ -260,6 +328,7 @@ jobs:
       - name: Update Beauty Lambda function
         env:
           IMAGE_URI: ${{ steps.build-image.outputs.image }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
           echo "Updating Beauty Lambda: hairme-beauty"
 
@@ -274,13 +343,50 @@ jobs:
             --function-name hairme-beauty \
             --region ap-northeast-2
 
+          # --- 환경변수 병합 (hairme-analyze 와 동일한 규칙) ---
+          # --environment 는 env map 전체를 치환하므로 기존 값을 읽어와 병합한다.
+          # 콘솔에서 수동 설정한 변수는 보존되고, 워크플로에 정의된 키는 워크플로 값이 이긴다.
+          CURRENT_ENV=$(aws lambda get-function-configuration \
+            --function-name hairme-beauty \
+            --region ap-northeast-2 \
+            --query 'Environment.Variables' \
+            --output json)
+          if [ -z "$CURRENT_ENV" ] || [ "$CURRENT_ENV" = "null" ]; then
+            CURRENT_ENV='{}'
+          fi
+
+          DESIRED_ENV=$(jq -n \
+            --arg sentry_dsn "$SENTRY_DSN" \
+            '{
+               LAMBDA_TYPE: "beauty",
+               USE_DYNAMODB: "true",
+               DYNAMODB_TABLE_NAME: "hairme-analysis",
+               DYNAMODB_USAGE_TABLE_NAME: "hairstyle_usage",
+               LOG_LEVEL: "INFO",
+               ENVIRONMENT: "production",
+               SENTRY_DSN: $sentry_dsn
+             } | with_entries(select(.value != ""))')
+
+          jq -n --argjson current "$CURRENT_ENV" --argjson desired "$DESIRED_ENV" \
+            '{Variables: ($current + $desired)}' > env-beauty.json
+
+          echo "Merged environment variable keys:"
+          jq -r '.Variables | keys | join(", ")' env-beauty.json
+
           aws lambda update-function-configuration \
             --function-name hairme-beauty \
-            --environment "Variables={LAMBDA_TYPE=beauty,USE_DYNAMODB=true,DYNAMODB_TABLE_NAME=hairme-analysis,DYNAMODB_USAGE_TABLE_NAME=hairstyle_usage,LOG_LEVEL=INFO,ENVIRONMENT=production}" \
+            --environment file://env-beauty.json \
             --memory-size 2048 \
             --timeout 120 \
             --region ap-northeast-2 \
-            --output json
+            --output json > /dev/null
+
+          rm -f env-beauty.json
+
+          echo "Waiting for configuration update to complete..."
+          aws lambda wait function-updated \
+            --function-name hairme-beauty \
+            --region ap-northeast-2
 
           echo "Beauty Lambda updated successfully!"
 

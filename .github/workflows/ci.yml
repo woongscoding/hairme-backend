@@ -59,7 +59,8 @@ jobs:
 
     - name: Run tests with pytest
       env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test_api_key' }}
+        # PR 테스트 실행에 실제 키가 절대 내려가지 않도록 고정 더미 값 사용
+        GEMINI_API_KEY: test_api_key
         DATABASE_URL: "sqlite:///:memory:"
         REDIS_ENABLED: 'false'
       run: |
