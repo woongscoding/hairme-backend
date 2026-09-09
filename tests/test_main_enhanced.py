@@ -79,9 +79,10 @@ class TestMiddleware:
 
     @pytest.mark.asyncio
     async def test_file_size_limit_middleware_rejects_large_files(self):
-        """Test that file size limit middleware rejects files larger than 10MB"""
+        """Test that file size limit middleware returns a 413 JSONResponse"""
+        import json
+
         from main import limit_upload_size, MAX_FILE_SIZE
-        from fastapi import HTTPException
 
         mock_request = Mock(spec=Request)
         mock_request.method = "POST"
@@ -90,12 +91,29 @@ class TestMiddleware:
         async def call_next(request):
             return Response()
 
-        # Should raise HTTPException with 413 status code
-        with pytest.raises(HTTPException) as exc_info:
-            await limit_upload_size(mock_request, call_next)
+        # Must RETURN a response (raising HTTPException in middleware -> 500)
+        result = await limit_upload_size(mock_request, call_next)
 
-        assert exc_info.value.status_code == 413
-        assert "File too large" in exc_info.value.detail
+        assert result.status_code == 413
+        body = json.loads(result.body.decode())
+        assert "File too large" in body["detail"]
+
+    @pytest.mark.asyncio
+    async def test_file_size_limit_middleware_ignores_invalid_content_length(self):
+        """Test that a malformed Content-Length header does not blow up"""
+        from main import limit_upload_size
+
+        mock_request = Mock(spec=Request)
+        mock_request.method = "POST"
+        mock_request.headers = {"content-length": "not-a-number"}
+
+        mock_response = Response(content="ok")
+
+        async def call_next(request):
+            return mock_response
+
+        result = await limit_upload_size(mock_request, call_next)
+        assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_file_size_limit_middleware_allows_small_files(self):
@@ -206,3 +224,89 @@ class TestSentryInitialization:
 
         # Sentry should be initialized
         assert mock_init_sentry.called or True  # Module already loaded
+
+
+class TestUploadSizeLimitIntegration:
+    """End-to-end behaviour of the upload size limit middleware"""
+
+    def test_oversized_post_returns_413_json_with_security_headers(self, client):
+        """Oversized POST must get a 413 JSON body AND the security headers"""
+        response = client.post(
+            "/api/analyze",
+            headers={"Content-Length": "20000000"},
+        )
+
+        assert response.status_code == 413
+        assert "File too large" in response.json()["detail"]
+
+        # 413 must not bypass the security headers middleware
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert "Content-Security-Policy" in response.headers
+
+
+class TestDocsExposure:
+    """Interactive API docs must be disabled in production"""
+
+    def test_docs_disabled_in_production(self):
+        from main import _docs_kwargs
+
+        kwargs = _docs_kwargs("production")
+
+        assert kwargs["docs_url"] is None
+        assert kwargs["redoc_url"] is None
+        assert kwargs["openapi_url"] is None
+
+    def test_docs_enabled_outside_production(self):
+        from main import _docs_kwargs
+
+        kwargs = _docs_kwargs("development")
+
+        assert kwargs["docs_url"] == "/docs"
+        assert kwargs["redoc_url"] == "/redoc"
+        assert kwargs["openapi_url"] == "/openapi.json"
+
+    def test_beauty_app_docs_disabled_in_production(self):
+        import main_beauty
+
+        kwargs = main_beauty._docs_kwargs("production")
+
+        assert kwargs["docs_url"] is None
+        assert kwargs["redoc_url"] is None
+        assert kwargs["openapi_url"] is None
+        assert main_beauty._docs_kwargs("development")["openapi_url"] == "/openapi.json"
+
+
+class TestBeautyConsultFailure:
+    """Beauty consult must not return 200 when the backend is unavailable"""
+
+    def test_consult_returns_503_when_service_fails(self, client):
+        import api.endpoints.beauty as beauty_module
+
+        mock_service = Mock()
+        mock_service.get_consultation.return_value = {
+            "success": False,
+            "message": "상담 서비스에 일시적인 문제가 발생했습니다.",
+            "intent": "error",
+            "suggestions": [],
+        }
+
+        with patch.object(beauty_module, "_get_service", return_value=mock_service):
+            response = client.post(
+                "/api/beauty/consult", json={"query": "단발이 어울릴까요?"}
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "상담 서비스를 현재 이용할 수 없습니다."
+
+    def test_features_reports_chatbot_availability(self, client):
+        response = client.get("/api/beauty/features")
+
+        assert response.status_code == 200
+        chatbot = response.json()["features"]["chatbot"]
+
+        assert "available" in chatbot
+        assert chatbot["status"] in ("available", "unavailable")
+        # services.chatbot_service does not exist in this repo (legacy)
+        assert chatbot["available"] is False
+        assert chatbot["status"] == "unavailable"

@@ -1,6 +1,7 @@
 """Feedback submission and statistics endpoints"""
 
 import os
+import time
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 from typing import List, Dict, Any, Optional
@@ -16,6 +17,47 @@ router = APIRouter()
 
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
+
+# ========== Public feedback stats: identifier stripping + TTL cache ==========
+# 공개 통계 응답에서 절대 노출하면 안 되는 식별자 필드
+# (analysis_id가 노출되면 타인의 분석 결과에 피드백을 남길 수 있음)
+_PUBLIC_STATS_HIDDEN_FIELDS = frozenset(
+    {"id", "analysis_id", "image_hash", "user_id", "device_id", "ip_address"}
+)
+
+# 전체 스캔 비용 DoS 완화용 in-process 캐시 (Lambda 컨테이너별로 분리됨 - 의도된 동작)
+_PUBLIC_STATS_CACHE_TTL_SECONDS = 60
+_public_stats_cache: Dict[str, Any] = {}
+
+
+def _strip_public_identifiers(stats: Dict[str, Any]) -> Dict[str, Any]:
+    """공개 통계 응답에서 recent_feedbacks의 식별자 필드를 제거한다"""
+    sanitized = dict(stats)
+    recent = sanitized.get("recent_feedbacks") or []
+
+    sanitized["recent_feedbacks"] = [
+        {k: v for k, v in item.items() if k not in _PUBLIC_STATS_HIDDEN_FIELDS}
+        for item in recent
+        if isinstance(item, dict)
+    ]
+    return sanitized
+
+
+def _get_cached_public_stats(backend: str) -> Optional[Dict[str, Any]]:
+    """TTL 이내의 캐시된 공개 통계를 반환 (없으면 None)"""
+    entry = _public_stats_cache.get(backend)
+    if not entry:
+        return None
+
+    if time.monotonic() - entry["ts"] > _PUBLIC_STATS_CACHE_TTL_SECONDS:
+        return None
+
+    return entry["data"]
+
+
+def _set_cached_public_stats(backend: str, data: Dict[str, Any]) -> None:
+    """공개 통계를 in-process 캐시에 저장"""
+    _public_stats_cache[backend] = {"data": data, "ts": time.monotonic()}
 
 
 @router.post("/feedback", response_model=FeedbackResponse)
@@ -219,6 +261,13 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
         HTTPException: 500 for database errors
     """
     use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
+    backend = "dynamodb" if use_dynamodb else "mysql"
+
+    # ========== In-process TTL cache (전체 스캔 비용 DoS 완화) ==========
+    cached = _get_cached_public_stats(backend)
+    if cached is not None:
+        logger.info(f"📊 통계 조회 (캐시 히트, backend={backend})")
+        return cached
 
     # ========== DynamoDB Backend ==========
     if use_dynamodb:
@@ -237,7 +286,10 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
                 f"피드백 {stats['total_feedback']}개"
             )
 
-            return stats
+            # 공개 엔드포인트이므로 식별자 제거 (관리자용 /api/admin/feedback-stats는 원본 유지)
+            public_stats = _strip_public_identifiers(stats)
+            _set_cached_public_stats(backend, public_stats)
+            return public_stats
 
         except HTTPException:
             raise
@@ -335,14 +387,19 @@ async def get_feedback_stats(request: Request) -> Dict[str, Any]:
                 f"📊 통계 조회 (MySQL): 전체 {total}개, 피드백 {feedback_count}개"
             )
 
-            return {
-                "success": True,
-                "total_analysis": total,
-                "total_feedback": feedback_count,
-                "like_counts": like_counts,
-                "dislike_counts": dislike_counts,
-                "recent_feedbacks": recent_data,
-            }
+            # 공개 엔드포인트이므로 식별자 제거 (관리자용 엔드포인트는 원본 유지)
+            public_stats = _strip_public_identifiers(
+                {
+                    "success": True,
+                    "total_analysis": total,
+                    "total_feedback": feedback_count,
+                    "like_counts": like_counts,
+                    "dislike_counts": dislike_counts,
+                    "recent_feedbacks": recent_data,
+                }
+            )
+            _set_cached_public_stats(backend, public_stats)
+            return public_stats
 
         except Exception as e:
             logger.error(f"❌ MySQL 통계 조회 실패: {str(e)}", exc_info=True)

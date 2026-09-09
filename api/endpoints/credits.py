@@ -1,5 +1,7 @@
 """크레딧 조회/구매 엔드포인트"""
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -11,8 +13,11 @@ from core.logging import logger
 from core.jwt_auth import get_current_user_id
 from services.admob_ssv_service import (
     InvalidSSVError,
+    REWARD_MAX_AGE_SECONDS,
     SSVUnavailableError,
     get_admob_ssv_service,
+    is_reward_timestamp_fresh,
+    parse_ad_unit_allowlist,
 )
 from services.credit_service import get_credit_service
 from services.play_billing_service import (
@@ -135,6 +140,55 @@ async def purchase_credits(
 # 리워드 광고 1회 시청당 지급 크레딧
 REWARD_AD_CREDIT = 1
 
+# ad_unit 허용 목록 미설정 경고는 (개발/테스트 환경에서) 1회만 남긴다
+_ad_unit_allowlist_warned = False
+
+
+def _verify_ad_unit(ad_unit: Optional[str]) -> None:
+    """콜백의 ad_unit이 우리 리워드 광고 단위인지 확인
+
+    허용 목록이 비어 있으면 프로덕션에서는 fail-closed(503),
+    개발/테스트에서는 경고만 남기고 통과시킨다.
+    """
+    global _ad_unit_allowlist_warned
+
+    allowlist = parse_ad_unit_allowlist(settings.ADMOB_REWARD_AD_UNIT_IDS)
+    if not allowlist:
+        if settings.ENVIRONMENT == "production":
+            logger.error(
+                "❌ ADMOB_REWARD_AD_UNIT_IDS not configured "
+                "- 리워드 콜백을 처리할 수 없습니다 (fail-closed)"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="검증 서비스를 일시적으로 사용할 수 없습니다.",
+            )
+        if not _ad_unit_allowlist_warned:
+            logger.warning(
+                "⚠️ ADMOB_REWARD_AD_UNIT_IDS 미설정 - ad_unit 검증을 건너뜁니다 "
+                "(프로덕션에서는 거부됨)"
+            )
+            _ad_unit_allowlist_warned = True
+        return
+
+    if ad_unit not in allowlist:
+        logger.warning(f"⚠️ 허용되지 않은 리워드 ad_unit: {ad_unit}")
+        raise HTTPException(status_code=400, detail="검증에 실패했습니다.")
+
+
+def _verify_timestamp(raw_timestamp: Optional[str]) -> None:
+    """콜백 발급 시각 신선도 검사 (서명된 콜백의 무기한 재사용 방지)"""
+    if raw_timestamp is None:
+        logger.debug("SSV 콜백에 timestamp 없음 - 신선도 검사 생략")
+        return
+
+    if not is_reward_timestamp_fresh(raw_timestamp):
+        logger.warning(
+            f"⚠️ SSV 콜백 timestamp 만료/비정상: {raw_timestamp} "
+            f"(허용 {REWARD_MAX_AGE_SECONDS}초)"
+        )
+        raise HTTPException(status_code=400, detail="검증에 실패했습니다.")
+
 
 @router.get("/credits/reward-callback")
 @limiter.limit("120/minute")
@@ -161,6 +215,10 @@ async def reward_ad_callback(request: Request):
             status_code=503,
             detail="검증 서비스를 일시적으로 사용할 수 없습니다.",
         )
+
+    # 서명이 유효해도 우리 광고 단위가 아니거나 오래된 콜백이면 거부
+    _verify_ad_unit(params.get("ad_unit"))
+    _verify_timestamp(params.get("timestamp"))
 
     user_id = params.get("user_id")
     transaction_id = params.get("transaction_id")

@@ -9,8 +9,10 @@ Features:
 - Hair Color Synthesis (Gemini)
 """
 
+import hmac
 import os
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -69,11 +71,25 @@ startup_status = {
     "retrain_queue": False,
 }
 
+
 # ========== FastAPI App Initialization ==========
+def _docs_kwargs(environment: str) -> dict:
+    """
+    Interactive API docs are disabled in production.
+
+    Swagger UI / ReDoc / openapi.json expose the full internal API surface
+    (admin routes, request schemas), so they are only served outside production.
+    """
+    if environment == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title=settings.APP_TITLE,
     description=settings.APP_DESCRIPTION,
     version=settings.APP_VERSION,
+    **_docs_kwargs(settings.ENVIRONMENT),
 )
 
 # Attach limiter to app state
@@ -101,6 +117,40 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+
+# ========== File Size Limit Middleware ==========
+# NOTE: registered BEFORE add_security_headers so that the security headers
+# middleware wraps it (later registrations run *outside* earlier ones).
+# Without this ordering the 413 response would bypass the security headers.
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    """Limit file upload size to prevent DoS attacks"""
+    if request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                declared_size = int(content_length)
+            except (TypeError, ValueError):
+                declared_size = 0
+
+            if declared_size > MAX_FILE_SIZE:
+                logger.warning(
+                    f"🚫 File too large: {declared_size} bytes (max: {MAX_FILE_SIZE})"
+                )
+                # NOTE: HTTPException raised inside an http middleware is not
+                # handled by ExceptionMiddleware (it runs further in), so it
+                # would surface as a plain 500. Return a response instead.
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+                    },
+                )
+    return await call_next(request)
 
 
 # ========== Security Headers Middleware ==========
@@ -222,26 +272,6 @@ async def lambda_init_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-# ========== File Size Limit Middleware ==========
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.middleware("http")
-async def limit_upload_size(request: Request, call_next):
-    """Limit file upload size to prevent DoS attacks"""
-    if request.method == "POST":
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > MAX_FILE_SIZE:
-            logger.warning(
-                f"🚫 File too large: {int(content_length)} bytes (max: {MAX_FILE_SIZE})"
-            )
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB",
-            )
-    return await call_next(request)
-
-
 # ========== Register Routers ==========
 app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
@@ -326,13 +356,37 @@ async def root():
 
 
 # ========== Health Check Endpoint ==========
+def _is_admin_request(request: Request) -> bool:
+    """
+    Validate the X-API-Key header against ADMIN_API_KEY (constant-time).
+
+    Fails closed: returns False when the header is missing or when
+    ADMIN_API_KEY is not configured on the server.
+    """
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        return False
+
+    if not settings.ADMIN_API_KEY:
+        logger.error(
+            "ADMIN_API_KEY가 서버에 설정되지 않았습니다 (deep health check 거부)"
+        )
+        return False
+
+    return hmac.compare_digest(api_key, settings.ADMIN_API_KEY)
+
+
 @app.get("/api/health")
-async def health_check(deep: bool = False):
+@limiter.limit("30/minute")
+async def health_check(request: Request, deep: bool = False):
     """
     Enhanced health check endpoint with actual service validation
 
     Query parameters:
-    - deep: If true, runs comprehensive checks including Gemini API ping (slower)
+    - deep: If true, runs comprehensive checks including Gemini API ping (slower).
+            Requires a valid X-API-Key (admin key). When the key is missing or
+            invalid the request is silently downgraded to a shallow check
+            (deep_denied=true) so external monitors keep working.
 
     Returns:
     - status: "healthy", "degraded", or "unhealthy"
@@ -343,6 +397,13 @@ async def health_check(deep: bool = False):
     """
     from core.health_check import get_health_check_service
 
+    # ========== Deep check requires the admin API key ==========
+    deep_denied = False
+    if deep and not _is_admin_request(request):
+        logger.warning("⚠️ deep health check 요청이 인증되지 않아 기본 체크로 대체됨")
+        deep = False
+        deep_denied = True
+
     # Basic startup status
     # Gemini is required, MediaPipe and ML are optional fallbacks
     required_services_ok = startup_status["gemini"]
@@ -351,6 +412,8 @@ async def health_check(deep: bool = False):
         "status": "healthy" if required_services_ok else "degraded",
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
+        "deep": deep,
+        "deep_denied": deep_denied,
         "startup": {
             "required_services": {"gemini": startup_status["gemini"]},
             "optional_services": {

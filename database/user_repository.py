@@ -5,6 +5,11 @@
 - GSI: kakao_id-index (Partition Key: kakao_id)
 - Attributes: nickname, email, credits(N), training_consent(BOOL),
   created_at, last_login_at, status
+
+같은 테이블에 kakao_id 유일성 마커 아이템도 저장한다.
+- user_id = "kakao#<kakao_id>", ref_user_id = 실제 user_id
+- 마커에는 kakao_id 속성이 없으므로 kakao_id-index GSI에 색인되지 않는다
+  (= get_by_kakao_id가 마커를 반환할 일이 없음)
 """
 
 import os
@@ -16,6 +21,7 @@ try:
     import boto3
     from botocore.exceptions import ClientError
     from botocore.config import Config
+    from boto3.dynamodb.types import TypeSerializer
 
     BOTO3_AVAILABLE = True
 except ImportError:
@@ -23,6 +29,22 @@ except ImportError:
 
 from config.settings import settings
 from core.logging import logger
+
+# kakao_id 유일성 마커 아이템의 user_id 접두사
+KAKAO_MARKER_PREFIX = "kakao#"
+
+
+class UserAlreadyExistsError(Exception):
+    """같은 kakao_id로 이미 가입된 사용자가 있음 (동시 가입 경합)"""
+
+    def __init__(self, kakao_id: str):
+        self.kakao_id = kakao_id
+        super().__init__(f"이미 가입된 카카오 계정입니다: {kakao_id}")
+
+
+def kakao_marker_id(kakao_id: str) -> str:
+    """kakao_id 유일성 마커 아이템의 파티션 키"""
+    return f"{KAKAO_MARKER_PREFIX}{kakao_id}"
 
 
 def _now_iso() -> str:
@@ -113,17 +135,77 @@ class UserRepository:
         if email:
             item["email"] = email
 
+        # kakao_id 유일성 마커 + 실제 사용자 아이템을 한 트랜잭션으로 기록.
+        # GSI 조회는 최종 일관성이라 "조회 후 생성"만으로는 동시 요청에서
+        # 같은 kakao_id로 계정이 여러 개 생기고 가입 보너스도 중복 지급된다.
+        marker = {
+            "user_id": kakao_marker_id(kakao_id),
+            "ref_user_id": item["user_id"],
+            "created_at": now,
+        }
+
         try:
-            self.table.put_item(
-                Item=item,
-                ConditionExpression="attribute_not_exists(user_id)",
+            serializer = TypeSerializer()
+            table_name = self.table.name
+            self.table.meta.client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Put": {
+                            "TableName": table_name,
+                            "Item": {
+                                k: serializer.serialize(v) for k, v in marker.items()
+                            },
+                            "ConditionExpression": "attribute_not_exists(user_id)",
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": table_name,
+                            "Item": {
+                                k: serializer.serialize(v) for k, v in item.items()
+                            },
+                            "ConditionExpression": "attribute_not_exists(user_id)",
+                        }
+                    },
+                ]
             )
         except ClientError as e:
+            if e.response["Error"]["Code"] == "TransactionCanceledException":
+                reasons = e.response.get("CancellationReasons") or []
+                marker_failed = bool(reasons) and (
+                    reasons[0].get("Code") == "ConditionalCheckFailed"
+                )
+                if marker_failed:
+                    logger.info(
+                        f"동시 가입 감지 - 기존 계정으로 전환: kakao_id={kakao_id}"
+                    )
+                    raise UserAlreadyExistsError(kakao_id)
             logger.error(f"사용자 생성 실패: {e.response['Error']['Message']}")
             raise
 
         logger.info(f"✅ 신규 회원 가입: user_id={item['user_id']}")
         return _to_plain(item)
+
+    def get_by_kakao_marker(self, kakao_id: str) -> Optional[Dict[str, Any]]:
+        """유일성 마커를 강한 일관성으로 읽어 실제 사용자 조회
+
+        GSI(get_by_kakao_id)는 최종 일관성이라 방금 생성된 계정이 보이지 않을
+        수 있다. 동시 가입 경합에서 확실히 기존 계정을 찾기 위한 경로.
+        """
+        try:
+            response = self.table.get_item(
+                Key={"user_id": kakao_marker_id(kakao_id)},
+                ConsistentRead=True,
+            )
+        except ClientError as e:
+            logger.error(f"카카오 마커 조회 실패: {e.response['Error']['Message']}")
+            raise
+
+        marker = response.get("Item")
+        ref_user_id = marker.get("ref_user_id") if marker else None
+        if not ref_user_id:
+            return None
+        return self.get_by_id(ref_user_id)
 
     def update_last_login(self, user_id: str) -> None:
         """마지막 로그인 시각 갱신"""

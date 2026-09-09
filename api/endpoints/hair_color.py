@@ -4,13 +4,18 @@ Phase 3: 염색 추천 + 합성 API
 - 퍼스널컬러 기반 염색 추천
 - 트렌드 염색 컬러 조회
 - 가상 염색 시뮬레이션
+
+과금 정책 (합성 계열은 core.quota 공용 로직 사용):
+- 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
+- 비로그인: device_id 일일 무료 제한 + 클라이언트 IP 일일 상한
+- 모든 입력 검증은 과금보다 먼저 수행
 """
 
 import re
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Form
+from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -18,6 +23,8 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
+from core.jwt_auth import get_optional_user_id
+from core.quota import charge_synthesis_quota, client_ip_from_request
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
     MAX_HAIRSTYLE_NAME_LENGTH,
@@ -25,8 +32,6 @@ from core.upload_validation import (
     validate_file_extension,
     validate_image_upload,
 )
-from services.usage_limit_service import get_usage_limit_service
-from config.settings import settings
 
 # Lazy import - service will be imported when needed (Lambda cold start optimization)
 _hair_color_service = None
@@ -87,6 +92,9 @@ class SynthesisResponse(BaseModel):
     color_name: str = Field(..., description="적용된 염색명")
     color_hex: str = Field(..., description="적용된 HEX 코드")
     processing_time: float = Field(..., description="처리 시간 (초)")
+    quota: Optional[Dict[str, Any]] = Field(
+        None, description="과금 정보 (크레딧 잔액 또는 무료 잔여 횟수)"
+    )
 
 
 # ========== Endpoints ==========
@@ -204,8 +212,11 @@ async def synthesize_hair_color(
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
     color_name: str = Form(..., description="염색 컬러명 (예: 밀크브라운)"),
     color_hex: str = Form(None, description="HEX 코드 (선택, 미입력시 자동 조회)"),
-    device_id: str = Form(..., description="디바이스 고유 ID (일일 사용량 제한용)"),
+    device_id: Optional[str] = Form(
+        None, description="디바이스 고유 ID (비로그인 일일 사용량 제한용)"
+    ),
     additional_instructions: Optional[str] = Form(None, description="추가 요청사항"),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ):
     """
     가상 염색 시뮬레이션 API
@@ -227,9 +238,8 @@ async def synthesize_hair_color(
     start_time = time.time()
 
     try:
-        # ========== 1. 입력 검증 (사용량 차감 전에 수행) ==========
-        trimmed_device_id = device_id.strip()
-        if not trimmed_device_id:
+        # ========== 1. 입력 검증 (과금 전에 수행) ==========
+        if not user_id and not (device_id or "").strip():
             raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
 
         # File validation
@@ -260,33 +270,6 @@ async def synthesize_hair_color(
         image_data = await file.read()
         validate_image_upload(image_data)
 
-        # ========== 2. Daily usage limit: atomic check + increment ==========
-        # 유효하지 않은 요청으로 타인의 사용량이 소진되지 않도록 검증 후 차감
-        try:
-            usage_service = get_usage_limit_service()
-            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
-
-            if not usage_result["allowed"]:
-                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "error": "daily_limit_exceeded",
-                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
-                        "daily_limit": daily_limit,
-                        "used": usage_result["used"],
-                        "remaining": 0,
-                    },
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Usage limit check failed (blocking): {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-            )
-
         logger.info(f"🎨 염색 시뮬레이션 요청: {color_name}")
 
         # If HEX not provided, look up by color name
@@ -300,22 +283,33 @@ async def synthesize_hair_color(
                 color_hex = "#8B4513"  # Default brown if not found
                 logger.warning(f"컬러 미발견, 기본값 사용: {color_name} -> {color_hex}")
 
-        log_structured(
-            "hair_color_synthesis_start",
-            {
-                "color_name": color_name,
-                "color_hex": color_hex,
-                "file_size_kb": round(len(image_data) / 1024, 2),
-            },
+        # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
+        quota_error, quota, refund = charge_synthesis_quota(
+            user_id, device_id, client_ip_from_request(request)
         )
+        if quota_error is not None:
+            return quota_error
 
-        # Synthesize
-        result = service.synthesize_hair_color(
-            image_data=image_data,
-            color_name=color_name,
-            color_hex=color_hex,
-            additional_instructions=additional_instructions,
-        )
+        # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
+        try:
+            log_structured(
+                "hair_color_synthesis_start",
+                {
+                    "color_name": color_name,
+                    "color_hex": color_hex,
+                    "file_size_kb": round(len(image_data) / 1024, 2),
+                },
+            )
+
+            result = service.synthesize_hair_color(
+                image_data=image_data,
+                color_name=color_name,
+                color_hex=color_hex,
+                additional_instructions=additional_instructions,
+            )
+        except Exception:
+            refund()
+            raise
 
         processing_time = round(time.time() - start_time, 2)
 
@@ -333,8 +327,10 @@ async def synthesize_hair_color(
                 color_name=color_name,
                 color_hex=color_hex,
                 processing_time=processing_time,
+                quota=quota,
             )
         else:
+            refund()
             log_structured(
                 "hair_color_synthesis_failed",
                 {"color_name": color_name, "message": result["message"]},
@@ -379,7 +375,10 @@ async def synthesize_recommended_color(
         ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
     ),
     color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)"),
-    device_id: str = Form(..., description="디바이스 고유 ID (일일 사용량 제한용)"),
+    device_id: Optional[str] = Form(
+        None, description="디바이스 고유 ID (비로그인 일일 사용량 제한용)"
+    ),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ):
     """
     퍼스널컬러 기반 추천 염색 시뮬레이션
@@ -400,35 +399,11 @@ async def synthesize_recommended_color(
     start_time = time.time()
 
     try:
-        # Daily usage limit: atomic check + increment (server-side enforcement)
-        trimmed_device_id = device_id.strip()
-        if not trimmed_device_id:
+        # ========== 1. 입력 검증 (과금 전에 수행) ==========
+        # 잘못된 요청(퍼스널컬러/인덱스/파일 오류)으로 크레딧·무료 한도가
+        # 소진되지 않도록, 모든 검증이 끝난 뒤에만 과금한다.
+        if not user_id and not (device_id or "").strip():
             raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
-
-        try:
-            usage_service = get_usage_limit_service()
-            usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
-
-            if not usage_result["allowed"]:
-                daily_limit = settings.DAILY_SYNTHESIS_LIMIT
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "error": "daily_limit_exceeded",
-                        "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
-                        "daily_limit": daily_limit,
-                        "used": usage_result["used"],
-                        "remaining": 0,
-                    },
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Usage limit check failed (blocking): {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-            )
 
         valid_types = ["봄웜", "여름쿨", "가을웜", "겨울쿨"]
         if personal_color not in valid_types:
@@ -441,7 +416,7 @@ async def synthesize_recommended_color(
         service = _get_service()
         result = service.get_recommendations(personal_color, include_trends=False)
 
-        if color_index >= len(result.recommended):
+        if color_index < 0 or color_index >= len(result.recommended):
             raise HTTPException(
                 status_code=400,
                 detail=f"color_index가 범위를 벗어났습니다. (최대: {len(result.recommended) - 1})",
@@ -459,12 +434,23 @@ async def synthesize_recommended_color(
             f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}"
         )
 
-        # Synthesize
-        synthesis_result = service.synthesize_hair_color(
-            image_data=image_data,
-            color_name=selected_color.name,
-            color_hex=selected_color.hex,
+        # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
+        quota_error, quota, refund = charge_synthesis_quota(
+            user_id, device_id, client_ip_from_request(request)
         )
+        if quota_error is not None:
+            return quota_error
+
+        # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
+        try:
+            synthesis_result = service.synthesize_hair_color(
+                image_data=image_data,
+                color_name=selected_color.name,
+                color_hex=selected_color.hex,
+            )
+        except Exception:
+            refund()
+            raise
 
         processing_time = round(time.time() - start_time, 2)
 
@@ -482,8 +468,10 @@ async def synthesize_recommended_color(
                     "description": selected_color.description,
                 },
                 "processing_time": processing_time,
+                "quota": quota,
             }
         else:
+            refund()
             return JSONResponse(
                 status_code=422,
                 content={

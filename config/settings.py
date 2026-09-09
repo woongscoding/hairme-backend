@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     # Daily Synthesis Limit
     DAILY_SYNTHESIS_LIMIT: int = 3
+    # 비로그인(device_id) 합성은 device_id 회전으로 우회 가능하므로 IP 단위 일일 상한을 추가로 둔다.
+    ANON_IP_DAILY_SYNTHESIS_LIMIT: int = 15
 
     # ===== 회원 인증 (Kakao 로그인 + 자체 JWT) =====
     # 우리 카카오 앱의 네이티브/REST 앱 ID (숫자). 설정 시 access_token_info로
@@ -71,6 +73,9 @@ class Settings(BaseSettings):
 
     # ===== AdMob 리워드 광고 (SSV) =====
     REWARD_AD_DAILY_LIMIT: int = 5  # 유저당 하루 보상 횟수 상한
+    # 우리 앱의 AdMob 리워드 광고 단위 ID 허용목록 (쉼표 구분).
+    # SSV 검증 키는 전 퍼블리셔 공용이므로, 비어 있으면 프로덕션에서 콜백을 거부한다.
+    ADMOB_REWARD_AD_UNIT_IDS: str = ""
 
     # ===== 제휴 커머스 (쿠팡파트너스) =====
     # 클릭 로그 테이블 (PK: user_id, SK: sk) - 콘솔에서 생성 필요

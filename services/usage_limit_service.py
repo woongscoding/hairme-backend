@@ -1,6 +1,7 @@
 """Daily usage limit service using DynamoDB (HairstyleDailyUsage table)"""
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
@@ -18,6 +19,40 @@ from core.logging import logger
 
 # KST timezone (UTC+9)
 KST = timezone(timedelta(hours=9))
+
+# device_id 형식 제한
+# - 이 테이블의 파티션 키는 "reward_ad#<user_id>", "ip#<addr>" 같은 서버 전용
+#   네임스페이스 키와 공유된다. 클라이언트가 보낸 device_id에 '#'이 들어가면
+#   타인의 리워드/IP 카운터를 조작할 수 있으므로 '#'과 공백을 금지한다.
+# - Android ID(16자리 hex), UUID(하이픈 포함), 일반적인 설치 ID는 모두 통과한다.
+DEVICE_ID_MIN_LENGTH = 8
+DEVICE_ID_MAX_LENGTH = 128
+DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
+
+
+def validate_device_id(device_id: str) -> str:
+    """
+    device_id 형식 검증 후 정규화(strip)된 값 반환.
+
+    Raises:
+        ValueError: 형식이 올바르지 않은 경우 (엔드포인트에서 400으로 매핑)
+    """
+    if not isinstance(device_id, str):
+        raise ValueError("device_id는 필수입니다.")
+
+    trimmed = device_id.strip()
+    if not trimmed:
+        raise ValueError("device_id는 필수입니다.")
+
+    if not (DEVICE_ID_MIN_LENGTH <= len(trimmed) <= DEVICE_ID_MAX_LENGTH):
+        raise ValueError(
+            f"device_id는 {DEVICE_ID_MIN_LENGTH}~{DEVICE_ID_MAX_LENGTH}자여야 합니다."
+        )
+
+    if not DEVICE_ID_PATTERN.match(trimmed):
+        raise ValueError("device_id 형식이 올바르지 않습니다.")
+
+    return trimmed
 
 
 class UsageLimitService:
@@ -85,7 +120,7 @@ class UsageLimitService:
                 "remaining": int,
             }
         """
-        usage = self.get_usage(device_id)
+        usage = self.get_usage(validate_device_id(device_id))
         allowed = usage["used"] < self.daily_limit
         return {
             "allowed": allowed,
@@ -106,7 +141,11 @@ class UsageLimitService:
 
         Returns:
             { "daily_limit": int, "used": int, "remaining": int }
+
+        Raises:
+            ValueError: device_id 형식이 올바르지 않은 경우
         """
+        device_id = validate_device_id(device_id)
         today = self._today_kst()
         ttl_value = self._tomorrow_kst_epoch()
 
@@ -161,7 +200,11 @@ class UsageLimitService:
         """
         Atomically check and increment usage count for a device.
         Kept for backward compatibility. Prefer check_usage() + increment_usage().
+
+        Raises:
+            ValueError: device_id 형식이 올바르지 않은 경우
         """
+        device_id = validate_device_id(device_id)
         today = self._today_kst()
         ttl_value = self._tomorrow_kst_epoch()
 
@@ -272,6 +315,20 @@ class UsageLimitService:
         except Exception as e:
             logger.error(f"⚠️ 일일 카운터 복구 실패 (무시): key={key}, {str(e)}")
 
+    def decrement_usage(self, device_id: str) -> None:
+        """
+        디바이스 일일 사용량 되돌리기 (best effort)
+
+        합성이 실패해 사용자에게 결과가 전달되지 않았을 때 무료 한도를 복구한다.
+        복구 실패는 전파하지 않는다 (decrement_daily_counter와 동일한 정책).
+        """
+        try:
+            validated = validate_device_id(device_id)
+        except ValueError as e:
+            logger.error(f"⚠️ 사용량 복구 스킵 (잘못된 device_id): {str(e)}")
+            return
+        self.decrement_daily_counter(validated)
+
     def get_usage(self, device_id: str) -> Dict[str, Any]:
         """
         Get current usage info for a device.
@@ -281,7 +338,11 @@ class UsageLimitService:
 
         Returns:
             { "daily_limit": int, "used": int, "remaining": int }
+
+        Raises:
+            ValueError: device_id 형식이 올바르지 않은 경우
         """
+        device_id = validate_device_id(device_id)
         today = self._today_kst()
 
         try:

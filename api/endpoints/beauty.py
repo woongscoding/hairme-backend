@@ -6,6 +6,7 @@
 - 리포트 생성
 """
 
+import importlib.util
 import time
 from typing import List, Optional, Dict, Any
 
@@ -35,6 +36,22 @@ def _get_service():
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+# 상담 서비스 장애를 컨테이너당 1회만 error 로그로 남기기 위한 플래그
+_consultation_failure_logged = False
+
+
+def _is_consultation_available() -> bool:
+    """
+    AI 상담(챗봇) 백엔드 사용 가능 여부.
+
+    상담은 services.chatbot_service에 의존하는데 해당 모듈은 현재 저장소에
+    존재하지 않는 legacy 모듈이다. 실제 import 가능 여부로 판단한다.
+    """
+    try:
+        return importlib.util.find_spec("services.chatbot_service") is not None
+    except (ImportError, ValueError):
+        return False
 
 
 # ========== Response Models ==========
@@ -313,6 +330,21 @@ async def consult_beauty(request: Request, consultation: ConsultationRequest):
             session_id=consultation.session_id,
         )
 
+        # 상담 백엔드(chatbot service)가 없으면 get_consultation은 항상
+        # success=False를 반환한다. 200으로 감싸면 장애가 은폐되므로 503 처리.
+        if not result.get("success"):
+            global _consultation_failure_logged
+            if not _consultation_failure_logged:
+                _consultation_failure_logged = True
+                logger.error(
+                    "❌ BeautyMe 상담 서비스 사용 불가 (chatbot backend unavailable): "
+                    f"intent={result.get('intent')}, message={result.get('message')}"
+                )
+            raise HTTPException(
+                status_code=503,
+                detail="상담 서비스를 현재 이용할 수 없습니다.",
+            )
+
         return ConsultationResponse(
             success=result["success"],
             message=result["message"],
@@ -320,6 +352,8 @@ async def consult_beauty(request: Request, consultation: ConsultationRequest):
             suggestions=result.get("suggestions", []),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ BeautyMe 상담 오류: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -387,6 +421,8 @@ async def get_features():
 
     BeautyMe 플랫폼에서 제공하는 모든 기능을 소개합니다.
     """
+    consultation_available = _is_consultation_available()
+
     return {
         "name": "BeautyMe",
         "version": "1.0.0",
@@ -432,6 +468,8 @@ async def get_features():
             "chatbot": {
                 "name": "AI 상담",
                 "description": "RAG 기반 뷰티 상담 챗봇",
+                "available": consultation_available,
+                "status": "available" if consultation_available else "unavailable",
                 "items": ["자연어 질문 응답", "맞춤형 상담", "지식 베이스 검색"],
             },
         },

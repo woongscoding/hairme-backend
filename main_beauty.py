@@ -11,7 +11,8 @@ NO PyTorch - Fast cold start (~10s)
 """
 
 import os
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -48,11 +49,20 @@ limiter = Limiter(key_func=get_remote_address)
 # ========== Service Startup Status Tracking ==========
 startup_status = {"mediapipe": False, "gemini": False}
 
+
 # ========== FastAPI App Initialization ==========
+def _docs_kwargs(environment: str) -> dict:
+    """Interactive API docs are disabled in production."""
+    if environment == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
 app = FastAPI(
     title="BeautyMe Beauty API",
     description="Personal Color + Hair Color Recommendation (Lightweight)",
     version="1.0.0",
+    **_docs_kwargs(settings.ENVIRONMENT),
 )
 
 # Attach limiter to app state
@@ -73,6 +83,38 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+
+# ========== File Size Limit Middleware ==========
+# NOTE: registered BEFORE add_security_headers so the security headers
+# middleware wraps it (later registrations run *outside* earlier ones).
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    """Limit file upload size to prevent DoS attacks"""
+    if request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                declared_size = int(content_length)
+            except (TypeError, ValueError):
+                declared_size = 0
+
+            if declared_size > MAX_FILE_SIZE:
+                logger.warning(
+                    f"File too large: {declared_size} bytes (max: {MAX_FILE_SIZE})"
+                )
+                # HTTPException raised inside http middleware is not handled by
+                # ExceptionMiddleware, so it would surface as a plain 500.
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "detail": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
+                    },
+                )
+    return await call_next(request)
 
 
 # ========== Security Headers Middleware ==========
@@ -159,23 +201,6 @@ async def lambda_init_middleware(request: Request, call_next):
     """Ensure Lambda is initialized before processing requests"""
     if IS_LAMBDA and not _lambda_initialized:
         ensure_lambda_initialization()
-    return await call_next(request)
-
-
-# ========== File Size Limit Middleware ==========
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.middleware("http")
-async def limit_upload_size(request: Request, call_next):
-    """Limit file upload size to prevent DoS attacks"""
-    if request.method == "POST":
-        content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB",
-            )
     return await call_next(request)
 
 

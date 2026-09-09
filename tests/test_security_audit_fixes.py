@@ -28,6 +28,11 @@ from core.jwt_auth import create_access_token
 from main import app
 from services.credit_service import CreditService, _mask_ref
 from services.kakao_auth_service import KakaoAuthService
+from database.user_repository import (
+    UserAlreadyExistsError,
+    UserRepository,
+    kakao_marker_id,
+)
 from services.usage_limit_service import UsageLimitService
 
 
@@ -249,3 +254,83 @@ class TestDecrementDailyCounter:
         )
         with patch.object(UsageLimitService, "table", new=table):
             svc.decrement_daily_counter("reward_ad#user-1")  # no raise
+
+
+# ========== H3: 카카오 가입 경합 (kakao_id 유일성 트랜잭션) ==========
+class TestUserCreateUniqueness:
+    def _repo_with_table(self):
+        repo = UserRepository()
+        table = MagicMock()
+        table.name = "hairme-users"
+        repo._table = table
+        return repo, table
+
+    def test_create_writes_marker_and_user_in_one_transaction(self):
+        repo, table = self._repo_with_table()
+
+        user = repo.create(kakao_id="12345678", nickname="테스트유저")
+
+        items = table.meta.client.transact_write_items.call_args.kwargs["TransactItems"]
+        assert len(items) == 2
+        marker_put, user_put = items[0]["Put"], items[1]["Put"]
+        assert marker_put["Item"]["user_id"]["S"] == kakao_marker_id("12345678")
+        assert marker_put["Item"]["ref_user_id"]["S"] == user["user_id"]
+        assert marker_put["ConditionExpression"] == "attribute_not_exists(user_id)"
+        assert user_put["Item"]["user_id"]["S"] == user["user_id"]
+        assert user_put["ConditionExpression"] == "attribute_not_exists(user_id)"
+        # 마커에는 kakao_id 속성이 없어야 GSI에 색인되지 않는다
+        assert "kakao_id" not in marker_put["Item"]
+
+    def test_create_raises_user_already_exists_on_marker_conflict(self):
+        repo, table = self._repo_with_table()
+        table.meta.client.transact_write_items.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "TransactionCanceledException",
+                    "Message": "Transaction cancelled",
+                },
+                "CancellationReasons": [
+                    {"Code": "ConditionalCheckFailed"},
+                    {"Code": "None"},
+                ],
+            },
+            "TransactWriteItems",
+        )
+
+        with pytest.raises(UserAlreadyExistsError):
+            repo.create(kakao_id="12345678", nickname="테스트유저")
+
+    def test_create_reraises_other_client_errors(self):
+        repo, table = self._repo_with_table()
+        table.meta.client.transact_write_items.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "ProvisionedThroughputExceededException",
+                    "Message": "x",
+                }
+            },
+            "TransactWriteItems",
+        )
+
+        with pytest.raises(ClientError):
+            repo.create(kakao_id="12345678", nickname="테스트유저")
+
+    def test_get_by_kakao_marker_uses_consistent_read(self):
+        repo, table = self._repo_with_table()
+        table.get_item.side_effect = [
+            {"Item": {"user_id": kakao_marker_id("12345678"), "ref_user_id": "u-1"}},
+            {"Item": {"user_id": "u-1", "credits": 3}},
+        ]
+
+        user = repo.get_by_kakao_marker("12345678")
+
+        assert user["user_id"] == "u-1"
+        first_kwargs = table.get_item.call_args_list[0].kwargs
+        assert first_kwargs["ConsistentRead"] is True
+        assert first_kwargs["Key"]["user_id"] == "kakao#12345678"
+
+    def test_get_by_kakao_marker_returns_none_when_absent(self):
+        repo, table = self._repo_with_table()
+        table.get_item.return_value = {}
+
+        assert repo.get_by_kakao_marker("12345678") is None

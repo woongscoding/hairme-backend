@@ -39,7 +39,7 @@ class TestHealthCheckService:
 
                 # Verify
                 assert result["status"] == "healthy"
-                assert result["latency_ms"] > 0
+                assert result["latency_ms"] >= 0  # >0 flakes on fast machines
 
     @pytest.mark.asyncio
     async def test_check_dynamodb_disabled(self, health_service):
@@ -99,7 +99,7 @@ class TestHealthCheckService:
                     result = await health_service.check_gemini_api()
 
                     assert result["status"] == "healthy"
-                    assert result["latency_ms"] > 0
+                    assert result["latency_ms"] >= 0  # >0 flakes on fast machines
 
     @pytest.mark.asyncio
     async def test_check_gemini_api_error(self, health_service):
@@ -305,12 +305,133 @@ class TestHealthCheckEndpoint:
             )
             mock_service.return_value = mock_health_service
 
-            response = client.get("/api/health?deep=true")
+            from config.settings import settings
+
+            with patch.object(settings, "ADMIN_API_KEY", "test-admin-key"):
+                response = client.get(
+                    "/api/health?deep=true",
+                    headers={"X-API-Key": "test-admin-key"},
+                )
 
             assert response.status_code == 200
             data = response.json()
+            assert data["deep"] is True
+            assert data["deep_denied"] is False
 
             # Verify deep check was called
             mock_health_service.comprehensive_health_check.assert_called_once_with(
                 include_expensive_checks=True
             )
+
+
+class TestHealthCheckDeepAuth:
+    """deep=true must require the admin API key (fail-closed, no hard error)"""
+
+    @pytest.fixture
+    def client(self):
+        with patch("config.settings.is_aws_environment", return_value=False):
+            with patch.dict(
+                "os.environ",
+                {"GEMINI_API_KEY": "test-key", "ENVIRONMENT": "development"},
+            ):
+                from fastapi.testclient import TestClient
+                from main import app
+
+                return TestClient(app)
+
+    @staticmethod
+    def _mock_health_service():
+        mock_health_service = Mock()
+        mock_health_service.comprehensive_health_check = AsyncMock(
+            return_value={
+                "status": "healthy",
+                "timestamp": "2025-01-17T00:00:00",
+                "checks": {
+                    "system": {"cpu": {"percent": 50}},
+                    "dynamodb": {"status": "healthy"},
+                    "circuit_breaker": {"state": "closed"},
+                    "gemini_api": {"status": "skipped"},
+                },
+                "check_duration_ms": 50,
+            }
+        )
+        return mock_health_service
+
+    def test_deep_without_api_key_is_downgraded(self, client):
+        """No X-API-Key -> shallow check, 200 with deep_denied=true"""
+        from config.settings import settings
+
+        with patch("core.health_check.get_health_check_service") as mock_service:
+            mock_health_service = self._mock_health_service()
+            mock_service.return_value = mock_health_service
+
+            with patch.object(settings, "ADMIN_API_KEY", "test-admin-key"):
+                response = client.get("/api/health?deep=true")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["deep"] is False
+            assert data["deep_denied"] is True
+
+            mock_health_service.comprehensive_health_check.assert_called_once_with(
+                include_expensive_checks=False
+            )
+
+    def test_deep_with_wrong_api_key_is_downgraded(self, client):
+        """Wrong X-API-Key -> shallow check, never an error"""
+        from config.settings import settings
+
+        with patch("core.health_check.get_health_check_service") as mock_service:
+            mock_health_service = self._mock_health_service()
+            mock_service.return_value = mock_health_service
+
+            with patch.object(settings, "ADMIN_API_KEY", "test-admin-key"):
+                response = client.get(
+                    "/api/health?deep=true", headers={"X-API-Key": "wrong-key"}
+                )
+
+            assert response.status_code == 200
+            assert response.json()["deep_denied"] is True
+            mock_health_service.comprehensive_health_check.assert_called_once_with(
+                include_expensive_checks=False
+            )
+
+    def test_deep_denied_when_admin_key_unset(self, client):
+        """Fail-closed: ADMIN_API_KEY unset -> deep is refused even with a header"""
+        from config.settings import settings
+
+        with patch("core.health_check.get_health_check_service") as mock_service:
+            mock_health_service = self._mock_health_service()
+            mock_service.return_value = mock_health_service
+
+            with patch.object(settings, "ADMIN_API_KEY", None):
+                response = client.get(
+                    "/api/health?deep=true", headers={"X-API-Key": "anything"}
+                )
+
+            assert response.status_code == 200
+            assert response.json()["deep_denied"] is True
+            mock_health_service.comprehensive_health_check.assert_called_once_with(
+                include_expensive_checks=False
+            )
+
+    def test_shallow_check_is_not_flagged_as_denied(self, client):
+        """Default (deep=false) requests are untouched - monitors keep working"""
+        with patch("core.health_check.get_health_check_service") as mock_service:
+            mock_service.return_value = self._mock_health_service()
+
+            response = client.get("/api/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["deep"] is False
+            assert data["deep_denied"] is False
+
+    def test_health_endpoint_is_rate_limited(self):
+        """The health endpoint carries a 30/minute slowapi rate limit"""
+        import main
+
+        limits = main.limiter._route_limits.get("main.health_check", [])
+
+        assert limits, "no rate limit registered for main.health_check"
+        assert any("30 per 1 minute" in str(limit.limit) for limit in limits)

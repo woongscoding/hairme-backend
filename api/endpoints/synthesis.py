@@ -12,7 +12,7 @@
 """
 
 import time
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
@@ -22,6 +22,11 @@ from slowapi.util import get_remote_address
 from core.logging import logger
 from core.exceptions import InvalidFileFormatException
 from core.jwt_auth import get_optional_user_id
+from core.quota import (
+    QuotaResult,
+    charge_synthesis_quota,
+    client_ip_from_request,
+)
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
     MAX_HAIRSTYLE_NAME_LENGTH,
@@ -30,118 +35,38 @@ from core.upload_validation import (
     validate_image_upload,
 )
 from database.user_repository import get_user_repository
-from services.credit_service import InsufficientCreditsError, get_credit_service
+from services.credit_service import get_credit_service
 from services.hairstyle_synthesis_service import get_synthesis_service
 from services.photo_storage_service import get_photo_storage_service
 from services.product_recommendation_service import (
     get_product_recommendation_service,
 )
 from services.usage_limit_service import get_usage_limit_service
-from config.settings import settings
 
 router = APIRouter()
 
 # Rate limiter - synthesis is expensive, so limit more strictly
 limiter = Limiter(key_func=get_remote_address)
 
-_NOOP_REFUND: Callable[[], None] = lambda: None
-
 
 def _charge_quota(
-    user_id: Optional[str], device_id: Optional[str]
-) -> Tuple[Optional[JSONResponse], Optional[Dict[str, Any]], Callable[[], None]]:
+    user_id: Optional[str],
+    device_id: Optional[str],
+    client_ip: Optional[str] = None,
+) -> QuotaResult:
     """
-    합성 1회분 과금 처리.
+    합성 1회분 과금 처리 (실제 로직은 core.quota).
 
-    입력 검증이 모두 끝난 뒤 호출해야 한다
-    (유효하지 않은 요청으로 크레딧/사용량이 소진되지 않도록).
-
-    Returns:
-        (error_response, quota, refund)
-        - error_response: 과금 불가 시 즉시 반환할 응답 (한도 초과/크레딧 부족)
-        - quota: 과금 정보 {"mode": "credits", "balance"} 또는 {"mode": "device", ...}
-        - refund: 합성 실패 시 호출할 환불 함수 (크레딧 모드만 실제 환불)
+    서비스 팩토리를 호출 시점에 넘겨, 이 모듈을 patch 하는 기존 테스트/호출부가
+    그대로 동작하도록 한다.
     """
-    # ===== 회원: 크레딧 차감 =====
-    if user_id:
-        cost = settings.SYNTHESIS_CREDIT_COST
-        try:
-            balance = get_credit_service().consume(user_id, cost, reason="synthesis")
-        except InsufficientCreditsError as e:
-            return (
-                JSONResponse(
-                    status_code=402,
-                    content={
-                        "error": "insufficient_credits",
-                        "message": "크레딧이 부족합니다. 크레딧을 충전해주세요.",
-                        "balance": e.balance,
-                    },
-                ),
-                None,
-                _NOOP_REFUND,
-            )
-        except ValueError:
-            raise HTTPException(status_code=401, detail="유효하지 않은 사용자입니다.")
-        except Exception as e:
-            logger.error(f"크레딧 차감 실패 (blocking): {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail="크레딧 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-            )
-
-        def refund() -> None:
-            try:
-                get_credit_service().grant(user_id, cost, reason="refund")
-                logger.info(f"합성 실패 크레딧 환불: user_id={user_id}, +{cost}")
-            except Exception as refund_error:
-                logger.error(f"❌ 크레딧 환불 실패: {str(refund_error)}")
-
-        return None, {"mode": "credits", "balance": balance}, refund
-
-    # ===== 비로그인: 레거시 device_id 일일 제한 =====
-    trimmed_device_id = (device_id or "").strip()
-    if not trimmed_device_id:
-        raise HTTPException(
-            status_code=401,
-            detail="로그인이 필요합니다. (구버전 앱은 device_id 필수)",
-        )
-
-    try:
-        usage_result = get_usage_limit_service().check_and_increment_usage(
-            trimmed_device_id
-        )
-    except Exception as e:
-        logger.error(f"Usage limit check failed (blocking): {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        )
-
-    if not usage_result["allowed"]:
-        daily_limit = settings.DAILY_SYNTHESIS_LIMIT
-        return (
-            JSONResponse(
-                status_code=429,
-                content={
-                    "error": "daily_limit_exceeded",
-                    "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
-                    "daily_limit": daily_limit,
-                    "used": usage_result["used"],
-                    "remaining": 0,
-                },
-            ),
-            None,
-            _NOOP_REFUND,
-        )
-
-    quota = {
-        "mode": "device",
-        "daily_limit": usage_result["daily_limit"],
-        "used": usage_result["used"],
-        "remaining": usage_result["remaining"],
-    }
-    # 레거시 흐름은 기존 동작 유지 (합성 실패해도 차감 롤백 없음)
-    return None, quota, _NOOP_REFUND
+    return charge_synthesis_quota(
+        user_id,
+        device_id,
+        client_ip,
+        credit_service_factory=get_credit_service,
+        usage_service_factory=get_usage_limit_service,
+    )
 
 
 def _safe_product_recommendations(
@@ -284,7 +209,9 @@ async def synthesize_hairstyle(
             }
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
-        quota_error, quota, refund = _charge_quota(user_id, device_id)
+        quota_error, quota, refund = _charge_quota(
+            user_id, device_id, client_ip_from_request(request)
+        )
         if quota_error is not None:
             return quota_error
 
@@ -422,7 +349,9 @@ async def synthesize_with_reference(
             }
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
-        quota_error, quota, refund = _charge_quota(user_id, device_id)
+        quota_error, quota, refund = _charge_quota(
+            user_id, device_id, client_ip_from_request(request)
+        )
         if quota_error is not None:
             return quota_error
 

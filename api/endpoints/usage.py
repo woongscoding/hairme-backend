@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from core.logging import logger
-from services.usage_limit_service import get_usage_limit_service
+from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
 
@@ -21,12 +21,14 @@ async def get_usage(
     Returns:
         { "daily_limit": 3, "used": 2, "remaining": 1 }
     """
-    if not device_id or not device_id.strip():
-        raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
+    try:
+        validated_device_id = validate_device_id(device_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     try:
         service = get_usage_limit_service()
-        usage = service.get_usage(device_id.strip())
+        usage = service.get_usage(validated_device_id)
         return usage
 
     except Exception as e:
@@ -52,12 +54,14 @@ async def consume_usage(
     Returns:
         { "daily_limit": 3, "used": 2, "remaining": 1 }
     """
-    if not device_id or not device_id.strip():
-        raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
+    try:
+        validated_device_id = validate_device_id(device_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     try:
         service = get_usage_limit_service()
-        result = service.get_usage(device_id.strip())
+        result = service.get_usage(validated_device_id)
         return result
 
     except Exception as e:

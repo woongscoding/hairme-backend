@@ -15,11 +15,15 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
+from config.settings import settings
 from main import app
 from services.admob_ssv_service import (
     AdMobSSVService,
     InvalidSSVError,
+    REWARD_MAX_AGE_SECONDS,
     SSVUnavailableError,
+    is_reward_timestamp_fresh,
+    parse_ad_unit_allowlist,
 )
 from services.usage_limit_service import UsageLimitService
 
@@ -97,6 +101,50 @@ class TestAdMobSSVService:
         with patch("services.admob_ssv_service.httpx.get", side_effect=ConnectionError):
             with pytest.raises(SSVUnavailableError):
                 svc.verify_callback(_signed_query(SSV_MESSAGE))
+
+    def test_appended_params_after_signature_rejected(self):
+        """서명 뒤에 &user_id=... 를 덧붙여 서명된 값을 덮어쓰는 우회 차단"""
+        svc = _service_with_cached_key()
+        raw = _signed_query(SSV_MESSAGE) + b"&user_id=attacker&transaction_id=tx-evil"
+
+        with pytest.raises(InvalidSSVError):
+            svc.verify_callback(raw)
+
+    def test_signed_values_win_over_appended_params(self):
+        """혹시 통과하더라도 반환값은 서명 구간의 값이어야 한다"""
+        svc = _service_with_cached_key()
+        raw = _signed_query(SSV_MESSAGE)
+
+        params = svc.verify_callback(raw)
+
+        assert params["user_id"] == "reward-user-id"
+        assert "signature" not in params
+        assert "key_id" not in params
+
+    def test_appended_param_before_key_id_rejected(self):
+        """signature와 key_id 사이에 파라미터를 끼워 넣는 경우도 차단"""
+        svc = _service_with_cached_key()
+        raw = _signed_query(SSV_MESSAGE).replace(
+            b"&key_id=", b"&user_id=attacker&key_id="
+        )
+
+        with pytest.raises(InvalidSSVError):
+            svc.verify_callback(raw)
+
+    def test_duplicate_key_in_signed_portion_rejected(self):
+        """서명 구간에 중복 키가 있으면 어떤 값이 서명됐는지 모호 → 거부"""
+        svc = _service_with_cached_key()
+        message = SSV_MESSAGE + "&user_id=attacker"
+
+        with pytest.raises(InvalidSSVError):
+            svc.verify_callback(_signed_query(message))
+
+    def test_duplicate_key_id_after_signature_rejected(self):
+        svc = _service_with_cached_key()
+        raw = _signed_query(SSV_MESSAGE) + f"&key_id={TEST_KEY_ID}".encode("utf-8")
+
+        with pytest.raises(InvalidSSVError):
+            svc.verify_callback(raw)
 
     def test_keys_parsed_from_google_response(self):
         svc = AdMobSSVService()
@@ -280,3 +328,113 @@ class TestIncrementDailyCounter:
         )
 
         assert service.increment_daily_counter("reward_ad#user-1", 5) is False
+
+
+class TestRewardFreshnessHelpers:
+    def test_fresh_timestamp(self):
+        now = 1_720_000_000.0
+        assert is_reward_timestamp_fresh(str(int(now * 1000)), now_seconds=now) is True
+
+    def test_stale_timestamp(self):
+        now = 1_720_000_000.0
+        stale_ms = int((now - REWARD_MAX_AGE_SECONDS - 60) * 1000)
+        assert is_reward_timestamp_fresh(str(stale_ms), now_seconds=now) is False
+
+    def test_far_future_timestamp(self):
+        now = 1_720_000_000.0
+        future_ms = int((now + 3600) * 1000)
+        assert is_reward_timestamp_fresh(str(future_ms), now_seconds=now) is False
+
+    def test_unparsable_timestamp(self):
+        assert is_reward_timestamp_fresh("not-a-number") is False
+
+    def test_allowlist_parsing(self):
+        assert parse_ad_unit_allowlist(" a/1 , b/2 ,, ") == {"a/1", "b/2"}
+        assert parse_ad_unit_allowlist("") == set()
+        assert parse_ad_unit_allowlist(None) == set()
+
+
+class TestAdUnitAllowlist:
+    def test_ad_unit_not_in_allowlist_rejected(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "ca-app-pub-1/999")
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 400
+        mock_credit.try_claim_ref.assert_not_called()
+        mock_credit.grant.assert_not_called()
+
+    def test_ad_unit_in_allowlist_allowed(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(
+            settings, "ADMOB_REWARD_AD_UNIT_IDS", " other/1 , 1234567890 "
+        )
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 200
+        assert response.json()["rewarded"] is True
+
+    def test_empty_allowlist_fails_closed_in_production(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "")
+        monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 503
+        mock_credit.grant.assert_not_called()
+
+    def test_empty_allowlist_allowed_in_development(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "")
+        monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 200
+
+
+class TestCallbackFreshness:
+    def test_stale_timestamp_rejected(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "1234567890")
+        stale_ms = int((time.time() - REWARD_MAX_AGE_SECONDS - 120) * 1000)
+        mock_ssv.verify_callback.return_value = {
+            "user_id": "reward-user-id",
+            "transaction_id": "tx-abc-123",
+            "ad_unit": "1234567890",
+            "timestamp": str(stale_ms),
+        }
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 400
+        mock_credit.grant.assert_not_called()
+
+    def test_fresh_timestamp_accepted(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "1234567890")
+        mock_ssv.verify_callback.return_value = {
+            "user_id": "reward-user-id",
+            "transaction_id": "tx-abc-123",
+            "ad_unit": "1234567890",
+            "timestamp": str(int(time.time() * 1000)),
+        }
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 200
+        assert response.json()["rewarded"] is True
+
+    def test_missing_timestamp_allowed(self, client, mock_ssv, mock_credit, mock_usage):
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 200

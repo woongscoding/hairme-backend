@@ -7,7 +7,8 @@
 4. 자체 JWT (access + refresh) 발급
 """
 
-from typing import Optional
+import asyncio
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -23,7 +24,7 @@ from core.jwt_auth import (
     decode_token,
     get_current_user_id,
 )
-from database.user_repository import get_user_repository
+from database.user_repository import UserAlreadyExistsError, get_user_repository
 from services.credit_service import get_credit_service
 from services.kakao_auth_service import get_kakao_auth_service
 
@@ -48,6 +49,26 @@ class ConsentRequest(BaseModel):
     training_consent: bool = Field(
         ..., description="원본 사진 AI 학습 활용 동의 (선택 동의)"
     )
+
+
+# 동시 가입 경합 후 기존 계정을 찾을 때의 재시도 (GSI는 최종 일관성)
+KAKAO_RACE_RETRY_ATTEMPTS = 3
+KAKAO_RACE_RETRY_DELAY_SECONDS = 0.05
+
+
+async def _resolve_raced_user(user_repo, kakao_id: str) -> Optional[Dict[str, Any]]:
+    """동시 가입으로 create가 거부된 경우 먼저 생성된 계정을 조회
+
+    GSI 조회는 최종 일관성이므로 몇 번 재시도하고, 그래도 없으면
+    유일성 마커를 강한 일관성으로 읽어 실제 user_id를 얻는다.
+    """
+    for attempt in range(KAKAO_RACE_RETRY_ATTEMPTS):
+        user = user_repo.get_by_kakao_id(kakao_id)
+        if user is not None:
+            return user
+        await asyncio.sleep(KAKAO_RACE_RETRY_DELAY_SECONDS * (attempt + 1))
+
+    return user_repo.get_by_kakao_marker(kakao_id)
 
 
 def _public_user(user: dict) -> dict:
@@ -91,12 +112,29 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
 
         is_new_user = user is None
         if is_new_user:
-            user = user_repo.create(
-                kakao_id=profile["kakao_id"],
-                nickname=profile["nickname"],
-                email=profile.get("email"),
-                initial_credits=0,
-            )
+            try:
+                user = user_repo.create(
+                    kakao_id=profile["kakao_id"],
+                    nickname=profile["nickname"],
+                    email=profile.get("email"),
+                    initial_credits=0,
+                )
+            except UserAlreadyExistsError:
+                # 동시 요청이 먼저 가입시킴 - 기존 로그인으로 전환 (보너스 없음)
+                user = await _resolve_raced_user(user_repo, profile["kakao_id"])
+                if user is None:
+                    logger.error(
+                        f"❌ 동시 가입 경합 후 기존 계정 조회 실패: "
+                        f"kakao_id={profile['kakao_id']}"
+                    )
+                    raise HTTPException(
+                        status_code=503,
+                        detail="로그인 처리 중 오류가 발생했습니다. "
+                        "잠시 후 다시 시도해주세요.",
+                    )
+                is_new_user = False
+
+        if is_new_user:
             if settings.SIGNUP_BONUS_CREDITS > 0:
                 balance = get_credit_service().grant(
                     user["user_id"],

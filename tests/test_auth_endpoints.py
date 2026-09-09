@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.jwt_auth import create_access_token, create_refresh_token
+from database.user_repository import UserAlreadyExistsError
 from main import app
 
 KAKAO_PROFILE = {
@@ -87,6 +88,72 @@ class TestKakaoLogin:
         assert data["user"]["credits"] == 5
         credit_service.grant.assert_called_once()
         assert credit_service.grant.call_args.kwargs["reason"] == "signup_bonus"
+
+    def test_signup_race_falls_back_to_existing_user_without_bonus(
+        self, client, mock_kakao
+    ):
+        """동시 가입 경합: create가 거부되면 기존 계정 로그인으로 전환(보너스 없음)"""
+        repo = MagicMock()
+        # 첫 조회는 GSI 지연으로 None, create는 유일성 마커 조건 실패
+        repo.get_by_kakao_id.side_effect = [None, dict(EXISTING_USER)]
+        repo.create.side_effect = UserAlreadyExistsError("12345678")
+
+        credit_service = MagicMock()
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+            "api.endpoints.auth.get_credit_service", return_value=credit_service
+        ):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_new_user"] is False
+        assert data["user"]["user_id"] == "existing-user-id"
+        assert data["user"]["credits"] == 3
+        # 가입 보너스는 지급되지 않아야 한다 (중복 지급 방지)
+        credit_service.grant.assert_not_called()
+        repo.update_last_login.assert_called_once_with("existing-user-id")
+
+    def test_signup_race_falls_back_to_uniqueness_marker(self, client, mock_kakao):
+        """GSI가 계속 비어 있으면 강한 일관성 마커 조회로 기존 계정을 찾는다"""
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = None
+        repo.create.side_effect = UserAlreadyExistsError("12345678")
+        repo.get_by_kakao_marker.return_value = dict(EXISTING_USER)
+
+        credit_service = MagicMock()
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+            "api.endpoints.auth.get_credit_service", return_value=credit_service
+        ):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 200
+        assert response.json()["is_new_user"] is False
+        repo.get_by_kakao_marker.assert_called_once_with("12345678")
+        credit_service.grant.assert_not_called()
+
+    def test_signup_race_unresolvable_returns_503(self, client, mock_kakao):
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = None
+        repo.create.side_effect = UserAlreadyExistsError("12345678")
+        repo.get_by_kakao_marker.return_value = None
+
+        credit_service = MagicMock()
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+            "api.endpoints.auth.get_credit_service", return_value=credit_service
+        ):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 503
+        credit_service.grant.assert_not_called()
 
     def test_login_with_invalid_kakao_token(self, client):
         from fastapi import HTTPException
