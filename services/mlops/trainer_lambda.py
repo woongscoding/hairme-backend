@@ -113,7 +113,8 @@ class ModelTrainer:
                 obj_response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=key)
 
                 buffer = io.BytesIO(obj_response["Body"].read())
-                data = np.load(buffer, allow_pickle=True)
+                # 보안: S3 NPZ는 신뢰할 수 없는 입력이므로 pickle 역직렬화 차단
+                data = np.load(buffer, allow_pickle=False)
 
                 face_list.append(data["face_features"])
                 skin_list.append(data["skin_features"])
@@ -153,8 +154,9 @@ class ModelTrainer:
                     self.s3_bucket, "models/current/model.pt", tmp.name
                 )
 
+                # 보안: S3 체크포인트는 신뢰할 수 없으므로 weights_only=True
                 checkpoint = torch.load(
-                    tmp.name, map_location=self.device, weights_only=False
+                    tmp.name, map_location=self.device, weights_only=True
                 )
 
                 # 모델 클래스 동적 임포트

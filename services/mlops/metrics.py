@@ -587,7 +587,8 @@ def evaluate_from_s3_feedback(
             if key.endswith(".npz"):
                 # NPZ 파일 로드
                 result = s3.get_object(Bucket=s3_bucket, Key=key)
-                data = np.load(result["Body"], allow_pickle=True)
+                # 보안: S3 NPZ는 신뢰할 수 없는 입력이므로 pickle 역직렬화 차단
+                data = np.load(result["Body"], allow_pickle=False)
 
                 # ground_truth를 점수로 사용
                 if "ground_truth" in data:

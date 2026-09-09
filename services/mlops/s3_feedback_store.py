@@ -34,6 +34,8 @@ Date: 2025-12-02
 import os
 import io
 import json
+import uuid
+import hashlib
 import numpy as np
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any, Tuple
@@ -51,6 +53,9 @@ S3_MODELS_PREFIX = "models/"
 
 # 재학습 트리거 임계값
 RETRAIN_THRESHOLD = int(os.getenv("MLOPS_RETRAIN_THRESHOLD", "100"))
+
+# 재학습 트리거 재발동 쿨다운 (초) - 트리거 스톰 방지
+RETRAIN_TRIGGER_COOLDOWN_SECONDS = 2 * 60 * 60
 
 # 로컬 임베딩 경로 (Lambda TASK_ROOT 기반)
 _LAMBDA_TASK_ROOT = os.getenv("LAMBDA_TASK_ROOT", "/var/task")
@@ -317,7 +322,12 @@ class S3FeedbackStore:
 
             # 4. NPZ 데이터 준비
             timestamp = datetime.now(timezone.utc)
-            filename = f"{timestamp.strftime('%Y-%m-%d')}_{analysis_id[:8]}.npz"
+            # 동일 analysis_id + 동일 날짜의 여러 스타일 피드백이 서로를
+            # 덮어쓰지 않도록 style index + uuid 접미사를 포함한다.
+            filename = (
+                f"{timestamp.strftime('%Y-%m-%d')}_{analysis_id[:8]}"
+                f"_s{self._style_token(hairstyle_id)}_{uuid.uuid4().hex[:6]}.npz"
+            )
 
             # 학습에 필요한 모든 데이터 저장
             npz_data = {
@@ -360,12 +370,15 @@ class S3FeedbackStore:
             metadata["total_feedback_count"] = (
                 metadata.get("total_feedback_count", 0) + 1
             )
-            metadata["pending_count"] = metadata.get("pending_count", 0) + 1
+            previous_count = metadata.get("pending_count", 0)
+            metadata["pending_count"] = previous_count + 1
             metadata["last_feedback_at"] = timestamp.isoformat()
-            self._save_metadata(metadata)
 
             pending_count = metadata["pending_count"]
-            should_trigger = pending_count >= RETRAIN_THRESHOLD
+            should_trigger = self._should_trigger_training(
+                metadata, previous_count, pending_count, timestamp
+            )
+            self._save_metadata(metadata)
 
             logger.info(
                 f"✅ S3 피드백 저장 완료: {s3_key} | "
@@ -444,7 +457,8 @@ class S3FeedbackStore:
             # 4. NPZ 데이터
             timestamp = datetime.now(timezone.utc)
             filename = (
-                f"{timestamp.strftime('%Y-%m-%d')}_trending_{analysis_id[:8]}.npz"
+                f"{timestamp.strftime('%Y-%m-%d')}_trending_{analysis_id[:8]}"
+                f"_s{self._style_token(style_name)}_{uuid.uuid4().hex[:6]}.npz"
             )
 
             npz_data = {
@@ -488,12 +502,15 @@ class S3FeedbackStore:
             metadata["total_feedback_count"] = (
                 metadata.get("total_feedback_count", 0) + 1
             )
-            metadata["pending_count"] = metadata.get("pending_count", 0) + 1
+            previous_count = metadata.get("pending_count", 0)
+            metadata["pending_count"] = previous_count + 1
             metadata["last_feedback_at"] = timestamp.isoformat()
-            self._save_metadata(metadata)
 
             pending_count = metadata["pending_count"]
-            should_trigger = pending_count >= RETRAIN_THRESHOLD
+            should_trigger = self._should_trigger_training(
+                metadata, previous_count, pending_count, timestamp
+            )
+            self._save_metadata(metadata)
 
             logger.info(
                 f"트렌드 피드백 S3 저장 완료: {s3_key} | "
@@ -513,6 +530,62 @@ class S3FeedbackStore:
                 "pending_count": 0,
                 "should_trigger_training": False,
             }
+
+    @staticmethod
+    def _style_token(style_ref) -> str:
+        """
+        파일명에 넣을 스타일 식별 토큰
+
+        - hairstyle_id 처럼 정수로 변환 가능하면 그 인덱스를 그대로 사용
+        - 트렌드 스타일명 등 문자열이면 sha256 앞 8자리를 사용
+        """
+        try:
+            return str(int(style_ref))
+        except (TypeError, ValueError):
+            return hashlib.sha256(str(style_ref).encode("utf-8")).hexdigest()[:8]
+
+    def _should_trigger_training(
+        self,
+        metadata: Dict[str, Any],
+        previous_count: int,
+        pending_count: int,
+        now: datetime,
+    ) -> bool:
+        """
+        재학습 트리거 여부 판단 (트리거 스톰 방지)
+
+        - pending_count 가 임계값을 "넘어서는 순간"에만 트리거
+        - 이미 임계값 이상인 상태에서는 training_triggered_at 이 없거나
+          RETRAIN_TRIGGER_COOLDOWN_SECONDS(2시간) 이상 지난 경우에만 재트리거
+
+        트리거 시 metadata["training_triggered_at"] 를 현재 시각으로 갱신한다.
+        (metadata 를 in-place 로 수정하므로 호출부에서 저장해야 한다)
+        """
+        if pending_count < RETRAIN_THRESHOLD:
+            return False
+
+        # 임계값을 막 넘어선 경우
+        should_trigger = previous_count < RETRAIN_THRESHOLD
+
+        if not should_trigger:
+            triggered_at = metadata.get("training_triggered_at")
+            if not triggered_at:
+                should_trigger = True
+            else:
+                try:
+                    last = datetime.fromisoformat(str(triggered_at))
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    elapsed = (now - last).total_seconds()
+                    should_trigger = elapsed >= RETRAIN_TRIGGER_COOLDOWN_SECONDS
+                except ValueError:
+                    logger.warning(f"⚠️ training_triggered_at 파싱 실패: {triggered_at}")
+                    should_trigger = True
+
+        if should_trigger:
+            metadata["training_triggered_at"] = now.isoformat()
+
+        return should_trigger
 
     def _encode_face_shape(self, face_shape: str) -> np.ndarray:
         """얼굴형 라벨 인코딩 (레거시 지원)"""
@@ -581,7 +654,8 @@ class S3FeedbackStore:
                 )
 
                 buffer = io.BytesIO(obj_response["Body"].read())
-                data = np.load(buffer, allow_pickle=True)
+                # 보안: NPZ는 신뢰할 수 없는 입력이므로 pickle 역직렬화를 차단
+                data = np.load(buffer, allow_pickle=False)
 
                 face_list.append(data["face_features"])
                 skin_list.append(data["skin_features"])

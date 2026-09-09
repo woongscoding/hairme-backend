@@ -14,14 +14,16 @@ v1.2.0 변경사항:
 - Sigmoid 출력층 지원
 """
 
+import json
 import os
+import re
 import tempfile
 
 import numpy as np
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional, TYPE_CHECKING
+from typing import List, Dict, Set, Tuple, Optional, TYPE_CHECKING
 import logging
 import sys
 from difflib import SequenceMatcher
@@ -37,6 +39,73 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
+
+# ========== 추천 후보 제외(노이즈 스타일) 설정 ==========
+# style_embeddings.npz의 styles 배열에는 LLM 학습 데이터에서 "피해야 할 스타일" 설명이
+# 스타일명으로 잘못 흡수된 항목이 섞여 있다.
+#   예) "포마드 (과도한 볼륨)", "장발 히피펌: 과도한 볼륨과 컬은 ... 있습니다."
+# 이런 항목은 실제 시술 가능한 스타일이 아니므로 추천 후보에서 제외한다.
+#
+# 주의: npz 배열 자체는 재정렬/삭제하지 않는다.
+#       hairstyle_id = npz 인덱스이며 피드백 데이터(S3/DynamoDB)의 키이므로
+#       제외는 "서빙 시점 후보 필터링"으로만 수행하고 인덱스는 원본 그대로 유지한다.
+EXCLUDED_STYLE_PATTERNS: List[re.Pattern] = [
+    re.compile(r"과도한"),  # "(과도한 볼륨)", "(과도한 컬)" 등 avoid 변형
+    re.compile(r":\s"),  # "가일컷: 앞머리를 ..." 문장 조각 (5:5 / 6:4 비율은 미매칭)
+    re.compile(r"니다"),  # 종결어미(습니다/합니다/입니다/줍니다 등) = 설명 문장
+    re.compile(r"수 있"),  # "~할 수 있습니다", "~보일 수 있음"
+    re.compile(r"\.\s*$"),  # 마침표로 끝나는 문장
+]
+
+EXCLUDED_STYLES_PATH = str(PROJECT_ROOT / "data_source" / "excluded_styles.json")
+
+
+def _load_excluded_styles(path: str = EXCLUDED_STYLES_PATH) -> Set[str]:
+    """
+    명시적 denylist(data_source/excluded_styles.json) 로드
+
+    파일이 없거나 형식이 깨져도 서비스는 계속 동작해야 하므로 빈 set을 반환한다.
+    """
+    try:
+        if not os.path.exists(path):
+            logger.info(f"[EXCLUDE] denylist 파일 없음 - 정규식 필터만 적용: {path}")
+            return set()
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if isinstance(data, dict):
+            names = data.get("excluded_styles", [])
+        elif isinstance(data, list):
+            names = data
+        else:
+            names = []
+
+        return {str(n) for n in names if isinstance(n, str) and n.strip()}
+    except Exception as e:  # pragma: no cover - 방어적 처리
+        logger.error(f"[EXCLUDE] denylist 로드 실패({path}): {e}")
+        return set()
+
+
+def is_excluded_style(style_name: str, explicit: Optional[Set[str]] = None) -> bool:
+    """
+    스타일명이 추천 후보에서 제외되어야 하는지 판정
+
+    Args:
+        style_name: npz styles 배열의 원본 스타일명
+        explicit: 명시적 denylist (None이면 정규식 규칙만 적용)
+
+    Returns:
+        제외 대상이면 True
+    """
+    if not style_name or not style_name.strip():
+        return True
+
+    if explicit and style_name in explicit:
+        return True
+
+    return any(pattern.search(style_name) for pattern in EXCLUDED_STYLE_PATTERNS)
+
 
 # ========== 라벨 정규화 상수 (v5 모델용) ==========
 LABEL_MIN = 10.0  # 원본 점수 최소값
@@ -669,8 +738,10 @@ class MLHairstyleRecommender:
 
         # 체크포인트 형식으로 저장된 경우 처리
         try:
+            # 보안: S3 등 외부 출처 체크포인트는 신뢰할 수 없으므로
+            # weights_only=True로 로드하여 pickle RCE를 차단한다.
             checkpoint = torch.load(
-                model_path, map_location=self.device, weights_only=False
+                model_path, map_location=self.device, weights_only=True
             )
 
             # 모델 버전 및 설정 확인
@@ -759,6 +830,21 @@ class MLHairstyleRecommender:
         except Exception as e:
             logger.error(f"❌ 성별 메타데이터 로드 실패: {str(e)}")
             self.gender_metadata = {}
+
+        # 3-1. 노이즈 스타일 제외 목록 로드 및 허용 후보 인덱스 사전 계산
+        #      인덱스(hairstyle_id)는 npz 원본 인덱스를 그대로 유지한다.
+        self.excluded_styles = _load_excluded_styles()
+        self.allowed_indices: List[int] = [
+            idx
+            for idx, name in enumerate(self.styles)
+            if not is_excluded_style(name, self.excluded_styles)
+        ]
+        excluded_count = len(self.styles) - len(self.allowed_indices)
+        logger.info(
+            f"[EXCLUDE] 노이즈 스타일 제외: {len(self.styles)}개 → "
+            f"{len(self.allowed_indices)}개 (제외: {excluded_count}개, "
+            f"denylist={len(self.excluded_styles)}개)"
+        )
 
         # 4. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
         import os
@@ -963,6 +1049,39 @@ class MLHairstyleRecommender:
 
         return round(score, 2)
 
+    def _build_candidate_indices(self, k: int = 3) -> List[int]:
+        """
+        스코어링 대상 후보 인덱스 목록 반환 (노이즈 스타일 제외 적용)
+
+        Args:
+            k: 필요한 추천 개수
+
+        Returns:
+            npz styles 배열의 **원본 인덱스** 리스트 (hairstyle_id로 그대로 사용)
+
+        안전장치:
+            제외 결과가 k개 미만이면 필터링을 포기하고 전체 후보로 폴백한다.
+        """
+        allowed = getattr(self, "allowed_indices", None)
+
+        if allowed is None:
+            # 구버전 인스턴스(pickle 복원 등) 방어: 즉석 계산
+            excluded = getattr(self, "excluded_styles", set())
+            allowed = [
+                idx
+                for idx, name in enumerate(self.styles)
+                if not is_excluded_style(name, excluded)
+            ]
+
+        if len(allowed) < max(k, 1):
+            logger.warning(
+                f"[EXCLUDE] 제외 후 후보가 부족함 "
+                f"({len(allowed)}개 < k={k}) - 전체 후보로 폴백"
+            )
+            return list(range(len(self.styles)))
+
+        return list(allowed)
+
     def recommend_top_k(
         self,
         face_shape: str = None,
@@ -1030,17 +1149,30 @@ class MLHairstyleRecommender:
         logger.info(f"[ML DEBUG] Face vector: {face_vec.tolist()}")
         logger.info(f"[ML DEBUG] Skin vector: {tone_vec.tolist()}")
 
-        # 모든 헤어스타일에 대해 점수 예측
+        # 스코어링 이전에 노이즈 스타일을 후보에서 제외
+        # (candidate_indices는 npz 원본 인덱스이므로 hairstyle_id가 보존된다)
+        candidate_indices = self._build_candidate_indices(k)
+        excluded_count = len(self.styles) - len(candidate_indices)
+
+        if not getattr(self, "_exclusion_logged", False):
+            logger.info(
+                f"[EXCLUDE] 추천 후보 필터링: 전체 {len(self.styles)}개 중 "
+                f"{excluded_count}개 제외 → 후보 {len(candidate_indices)}개"
+            )
+            self._exclusion_logged = True
+
+        # 후보 헤어스타일에 대해 점수 예측
         all_scores = []
 
         # 배치 처리로 최적화
         batch_size = 64
-        num_styles = len(self.styles)
+        num_styles = len(candidate_indices)
 
         for i in range(0, num_styles, batch_size):
             batch_end = min(i + batch_size, num_styles)
             batch_size_actual = batch_end - i
-            batch_embeddings = self.embeddings[i:batch_end]
+            batch_indices = candidate_indices[i:batch_end]
+            batch_embeddings = self.embeddings[batch_indices]
 
             # 배치 추론 - 3개의 개별 텐서로 전달
             with torch.no_grad():
@@ -1060,7 +1192,10 @@ class MLHairstyleRecommender:
                     logger.info(
                         f"[ML DEBUG] First style embedding std: {batch_embeddings.std():.6f}"
                     )
-                    logger.info(f"[ML DEBUG] First 3 styles: {self.styles[i:i+3]}")
+                    logger.info(
+                        f"[ML DEBUG] First 3 styles: "
+                        f"{[self.styles[idx] for idx in batch_indices[:3]]}"
+                    )
 
                 scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
                 scores = scores_tensor.cpu().numpy().flatten()
@@ -1078,9 +1213,9 @@ class MLHairstyleRecommender:
                             f"[ML DEBUG] 정규화 모델 - 역변환 적용됨 (0~1 → {LABEL_MIN}~{LABEL_MAX})"
                         )
 
-            # 결과 저장
+            # 결과 저장 (style_idx = npz 원본 인덱스 = hairstyle_id)
             for j, score in enumerate(scores):
-                style_idx = i + j
+                style_idx = batch_indices[j]
                 all_scores.append(
                     {
                         "hairstyle_id": style_idx,  # DB ID 추가
@@ -1338,10 +1473,70 @@ def _download_current_model_from_s3() -> Optional[str]:
         logger.info(
             f"✅ S3 재학습 모델 다운로드 완료: s3://{bucket}/models/current/model.pt"
         )
+
+        # 무결성 검증: models/current/metadata.json 의 sha256과 대조
+        if not _verify_model_checksum(s3, bucket, local_path):
+            return None
+
         return local_path
     except Exception as e:
         logger.warning(f"⚠️ S3 재학습 모델 다운로드 실패 - 기본 모델 사용: {e}")
         return None
+
+
+def _sha256_of_file(path: str) -> str:
+    """파일의 SHA-256 해시(hex) 계산"""
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_model_checksum(s3_client, bucket: str, local_path: str) -> bool:
+    """
+    S3 models/current/metadata.json 의 sha256과 다운로드된 모델을 대조
+
+    - metadata.json 이 없거나 sha256 필드가 없으면 경고만 남기고 통과 (True)
+    - sha256 이 있는데 불일치하면 에러 로그 후 False (기본 모델로 폴백)
+    """
+    import json as _json
+
+    metadata_key = "models/current/metadata.json"
+
+    try:
+        response = s3_client.get_object(Bucket=bucket, Key=metadata_key)
+        metadata = _json.loads(response["Body"].read().decode("utf-8"))
+    except Exception as e:
+        logger.warning(
+            f"⚠️ 모델 무결성 메타데이터 없음/조회 실패 - 검증 생략 "
+            f"(s3://{bucket}/{metadata_key}): {e}"
+        )
+        return True
+
+    expected = None
+    if isinstance(metadata, dict):
+        expected = metadata.get("sha256")
+
+    if not expected:
+        logger.warning(
+            f"⚠️ 모델 메타데이터에 sha256 필드 없음 - 검증 생략 "
+            f"(s3://{bucket}/{metadata_key})"
+        )
+        return True
+
+    actual = _sha256_of_file(local_path)
+    if actual.lower() != str(expected).lower():
+        logger.error(
+            f"❌ S3 모델 SHA-256 불일치 - 기본 모델로 폴백 "
+            f"(expected={expected}, actual={actual})"
+        )
+        return False
+
+    logger.info("✅ S3 모델 SHA-256 검증 통과")
+    return True
 
 
 def get_ml_recommender() -> MLHairstyleRecommender:

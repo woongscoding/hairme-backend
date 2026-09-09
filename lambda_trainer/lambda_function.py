@@ -14,6 +14,15 @@ S3에서 피드백 데이터를 가져와 모델을 재학습합니다.
 5. hairme-analyze Lambda 환경변수 업데이트
 6. metadata.json 업데이트
 
+이벤트 플래그:
+- force: MIN_SAMPLES 게이트 우회
+- allow_random_init: 시작점 모델이 없을 때 랜덤 초기화 허용
+- from_base: models/base/model.pt(번들 v6)에서 재학습 (fine-tune 드리프트 누적 차단)
+- include_processed: feedback/processed/ 데이터도 학습에 포함 (전체 재학습)
+
+Fine-tuning 중 BatchNorm running stats 는 항상 고정된다(set_batchnorm_eval).
+소량 피드백으로 running_var 가 0 에 수렴해 서빙 정규화가 폭주하는 것을 막는다.
+
 Author: HairMe ML Team
 Date: 2025-12-02
 """
@@ -21,6 +30,7 @@ Date: 2025-12-02
 import json
 import os
 import io
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, Any
@@ -47,10 +57,156 @@ FINE_TUNE_EPOCHS = int(os.getenv("FINE_TUNE_EPOCHS", "10"))
 FINE_TUNE_LR = float(os.getenv("FINE_TUNE_LR", "0.0001"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
 
+# S3 키 상수
+CURRENT_MODEL_KEY = "models/current/model.pt"
+BASE_MODEL_KEY = "models/base/model.pt"
+PENDING_PREFIX = "feedback/pending/"
+PROCESSED_PREFIX = "feedback/processed/"
+
 # 라벨 정규화 상수
 LABEL_MIN = 10.0
 LABEL_MAX = 95.0
 LABEL_RANGE = LABEL_MAX - LABEL_MIN
+
+# 체크포인트 config 기본값 (번들 v6 체크포인트와 동일한 키 구성)
+DEFAULT_MODEL_CONFIG: Dict[str, Any] = {
+    "version": "v6",
+    "face_feat_dim": 6,
+    "skin_feat_dim": 2,
+    "style_embed_dim": 384,
+    "token_dim": 128,
+    "num_heads": 4,
+    "normalized": True,
+    "label_min": LABEL_MIN,
+    "label_max": LABEL_MAX,
+    "label_range": LABEL_RANGE,
+    "attention_type": "multi_token",
+}
+
+
+# ========== 학습 데이터 특징 통계 (입력 스케일링용) ==========
+# models/ml_recommender.py 의 FACE_FEATURE_STATS / SKIN_FEATURE_STATS 와
+# 반드시 수치적으로 동일하게 유지해야 한다 (train/serve skew 방지).
+# ai_face_1000.npz에서 추출한 통계 (5910 샘플)
+FACE_FEATURE_STATS = {
+    0: {"min": 0.99, "max": 1.51, "mean": 1.20, "std": 0.06},  # face_ratio
+    1: {
+        "min": 301.10,
+        "max": 495.30,
+        "mean": 458.13,
+        "std": 14.31,
+    },  # forehead_width (pixel)
+    2: {
+        "min": 421.40,
+        "max": 641.00,
+        "mean": 561.34,
+        "std": 19.73,
+    },  # cheekbone_width (pixel)
+    3: {
+        "min": 333.90,
+        "max": 524.10,
+        "mean": 447.70,
+        "std": 19.82,
+    },  # jaw_width (pixel)
+    4: {"min": 0.71, "max": 0.89, "mean": 0.82, "std": 0.02},  # forehead_ratio
+    5: {"min": 0.73, "max": 0.86, "mean": 0.80, "std": 0.02},  # jaw_ratio
+}
+
+SKIN_FEATURE_STATS = {
+    0: {"min": 50.53, "max": 89.26, "mean": 79.91, "std": 3.90},  # ITA_value
+    1: {"min": 5.96, "max": 142.39, "mean": 12.09, "std": 10.97},  # hue_value
+}
+
+
+def scale_input_features(
+    face_features: np.ndarray, skin_features: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    입력 특징을 학습 데이터 분포에 맞게 스케일링
+
+    serving(models/ml_recommender.scale_input_features)과 동일한 연산이어야 한다.
+    - 픽셀 기반 특징(1: forehead_width, 2: cheekbone_width, 3: jaw_width)을
+      cheekbone_width 기준으로 학습 데이터 평균 스케일(561.34)로 변환
+    - 비율 기반 특징(0, 4, 5)과 피부 특징은 스케일 불변 -> 클리핑만 수행
+    - cheekbone_width <= 0 이면 scale_factor = 1.0 (안전값)
+    - 이미 스케일링된 값에 다시 적용해도 결과가 동일하다 (idempotent)
+
+    Args:
+        face_features: [face_ratio, forehead_width, cheekbone_width,
+                        jaw_width, forehead_ratio, jaw_ratio]
+        skin_features: [ITA_value, hue_value]
+
+    Returns:
+        (scaled_face_features, scaled_skin_features)
+    """
+    face_scaled = face_features.copy()
+    skin_scaled = skin_features.copy()
+
+    input_cheekbone = face_features[2]
+    train_cheekbone_mean = FACE_FEATURE_STATS[2]["mean"]  # 561.34
+
+    if input_cheekbone > 0:
+        scale_factor = train_cheekbone_mean / input_cheekbone
+    else:
+        scale_factor = 1.0
+
+    # 픽셀 기반 특징만 스케일링 (인덱스 1, 2, 3)
+    face_scaled[1] = face_features[1] * scale_factor  # forehead_width
+    face_scaled[2] = face_features[2] * scale_factor  # cheekbone_width
+    face_scaled[3] = face_features[3] * scale_factor  # jaw_width
+
+    # 스케일링된 값이 학습 데이터 범위 내에 있도록 클리핑
+    for idx in [1, 2, 3]:
+        min_val = FACE_FEATURE_STATS[idx]["min"]
+        max_val = FACE_FEATURE_STATS[idx]["max"]
+        face_scaled[idx] = np.clip(face_scaled[idx], min_val, max_val)
+
+    # 비율 특징도 학습 데이터 범위 내에 있도록 클리핑
+    for idx in [0, 4, 5]:
+        min_val = FACE_FEATURE_STATS[idx]["min"]
+        max_val = FACE_FEATURE_STATS[idx]["max"]
+        face_scaled[idx] = np.clip(face_scaled[idx], min_val, max_val)
+
+    # 피부 특징 클리핑 (이미 스케일 불변)
+    for idx in [0, 1]:
+        min_val = SKIN_FEATURE_STATS[idx]["min"]
+        max_val = SKIN_FEATURE_STATS[idx]["max"]
+        skin_scaled[idx] = np.clip(skin_scaled[idx], min_val, max_val)
+
+    return face_scaled, skin_scaled
+
+
+def scale_feature_batch(
+    face_features: np.ndarray, skin_features: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    (N, 6) / (N, 2) 배치에 scale_input_features를 샘플 단위로 적용
+
+    피드백 NPZ에는 DynamoDB 원본 픽셀값이 그대로 저장되므로,
+    학습/평가 직전에 serving과 동일한 스케일로 맞춘다.
+    레거시 라벨 인코딩(one-hot) 샘플처럼 차원이 다르면 원본을 그대로 반환한다.
+    """
+    face_arr = np.asarray(face_features, dtype=np.float32)
+    skin_arr = np.asarray(skin_features, dtype=np.float32)
+
+    if face_arr.ndim != 2 or face_arr.shape[1] != 6:
+        logger.warning(
+            f"⚠️ 예상치 못한 face_features shape={face_arr.shape} - 스케일링 건너뜀"
+        )
+        return face_arr, skin_arr
+    if skin_arr.ndim != 2 or skin_arr.shape[1] != 2:
+        logger.warning(
+            f"⚠️ 예상치 못한 skin_features shape={skin_arr.shape} - 스케일링 건너뜀"
+        )
+        return face_arr, skin_arr
+
+    face_out = np.empty_like(face_arr)
+    skin_out = np.empty_like(skin_arr)
+
+    for i in range(face_arr.shape[0]):
+        face_out[i], skin_out[i] = scale_input_features(face_arr[i], skin_arr[i])
+
+    return face_out, skin_out
 
 
 # ========== 모델 정의 (RecommendationModelV6 복사) ==========
@@ -219,8 +375,12 @@ class FeedbackDataset(Dataset):
         style_embeddings: np.ndarray,
         ground_truths: np.ndarray,
     ):
-        self.face_features = torch.tensor(face_features, dtype=torch.float32)
-        self.skin_features = torch.tensor(skin_features, dtype=torch.float32)
+        # 입력 스케일링 (serving과 동일한 분포로 정렬 - train/serve skew 방지)
+        # NPZ에는 DynamoDB 원본 픽셀값이 저장되므로 텐서 변환 전에 반드시 적용한다.
+        scaled_face, scaled_skin = scale_feature_batch(face_features, skin_features)
+
+        self.face_features = torch.tensor(scaled_face, dtype=torch.float32)
+        self.skin_features = torch.tensor(scaled_skin, dtype=torch.float32)
         self.style_embeddings = torch.tensor(style_embeddings, dtype=torch.float32)
 
         # 라벨 정규화 (10~95 → 0~1)
@@ -318,11 +478,34 @@ def update_metadata(
         logger.error(f"Failed to update metadata: {e}")
 
 
-def load_pending_feedbacks() -> (
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str]]
-):
+def list_npz_keys(s3, prefix: str) -> List[str]:
     """
-    S3에서 pending 피드백 데이터 로드
+    프리픽스 하위의 .npz 키를 페이지네이터로 전부 나열한다.
+
+    list_objects_v2는 응답당 1000개 제한이 있으므로 반드시 paginator를 사용한다.
+    (feedback/processed/ 는 이미 800개 이상 존재)
+    """
+    keys: List[str] = []
+    paginator = s3.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix):
+        for obj in page.get("Contents", []) or []:
+            key = obj.get("Key", "")
+            if key.endswith(".npz"):
+                keys.append(key)
+
+    return keys
+
+
+def load_pending_feedbacks(
+    include_processed: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str]]:
+    """
+    S3에서 피드백 데이터 로드
+
+    Args:
+        include_processed: True이면 feedback/processed/ 하위 npz도 함께 로드한다
+            (전체 재학습용). 이동 대상은 여전히 pending/ 파일뿐이다.
 
     Returns:
         (face_features, skin_features, style_embeddings, ground_truths, count, file_keys)
@@ -330,9 +513,17 @@ def load_pending_feedbacks() -> (
     s3 = get_s3_client()
 
     try:
-        response = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="feedback/pending/")
+        target_keys = list_npz_keys(s3, PENDING_PREFIX)
+        logger.info(f"📄 pending npz: {len(target_keys)}개")
 
-        if "Contents" not in response:
+        if include_processed:
+            processed_keys = list_npz_keys(s3, PROCESSED_PREFIX)
+            logger.info(
+                f"📄 processed npz: {len(processed_keys)}개 (include_processed)"
+            )
+            target_keys = target_keys + processed_keys
+
+        if not target_keys:
             logger.info("No pending feedbacks found")
             return None, None, None, None, 0, []
 
@@ -342,15 +533,12 @@ def load_pending_feedbacks() -> (
         gt_list = []
         file_keys = []
 
-        for obj in response["Contents"]:
-            key = obj["Key"]
-            if not key.endswith(".npz"):
-                continue
-
+        for key in target_keys:
             try:
                 obj_response = s3.get_object(Bucket=S3_BUCKET, Key=key)
                 buffer = io.BytesIO(obj_response["Body"].read())
-                data = np.load(buffer, allow_pickle=True)
+                # 보안: S3 NPZ는 신뢰할 수 없는 입력이므로 pickle 역직렬화 차단
+                data = np.load(buffer, allow_pickle=False)
 
                 face_list.append(data["face_features"])
                 skin_list.append(data["skin_features"])
@@ -386,60 +574,110 @@ def load_pending_feedbacks() -> (
         return None, None, None, None, 0, []
 
 
-def load_base_model() -> Tuple[Optional[RecommendationModelV6], Dict[str, Any]]:
+def get_source_model_key(from_base: bool = False) -> str:
+    """학습 시작점이 될 모델의 S3 키"""
+    return BASE_MODEL_KEY if from_base else CURRENT_MODEL_KEY
+
+
+def load_base_model(
+    allow_random_init: bool = False,
+    from_base: bool = False,
+) -> Tuple[Optional[RecommendationModelV6], Dict[str, Any]]:
     """
-    S3에서 기존 모델 로드
+    S3에서 학습 시작점 모델 로드
+
+    Args:
+        allow_random_init: True이면 기존 모델이 없을 때 랜덤 초기화 모델을 생성.
+            기본값 False - 랜덤 초기화 모델이 운영 모델로 배포되는 것을 막는다.
+            from_base=True 일 때는 무시된다 (base는 반드시 존재해야 함).
+        from_base: True이면 models/base/model.pt(번들 v6 체크포인트)에서 시작한다.
+            fine-tune 결과 위에 다시 fine-tune 하며 누적되는 드리프트를 끊기 위한 모드.
 
     Returns:
         (model, config)
     """
     s3 = get_s3_client()
+    model_key = get_source_model_key(from_base)
 
     try:
-        # S3에서 현재 모델 다운로드
-        response = s3.get_object(Bucket=S3_BUCKET, Key="models/current/model.pt")
+        # S3에서 시작점 모델 다운로드
+        response = s3.get_object(Bucket=S3_BUCKET, Key=model_key)
 
         buffer = io.BytesIO(response["Body"].read())
 
         # CPU에서 로드
-        checkpoint = torch.load(buffer, map_location="cpu", weights_only=False)
+        # 보안: S3 체크포인트는 신뢰할 수 없으므로 weights_only=True (pickle RCE 차단)
+        checkpoint = torch.load(buffer, map_location="cpu", weights_only=True)
 
         # 설정 추출
-        config = checkpoint.get(
-            "config",
-            {"version": "v6", "token_dim": 128, "num_heads": 4, "normalized": True},
-        )
+        # 번들 v6 체크포인트 레이아웃:
+        #   {epoch, model_state_dict, optimizer_state_dict, best_val_loss, history, config}
+        # config에 없는 키는 기본값으로 채운다 (구형 체크포인트 대비).
+        config = dict(DEFAULT_MODEL_CONFIG)
+        loaded_config = checkpoint.get("config") or {}
+        if isinstance(loaded_config, dict):
+            config.update(loaded_config)
 
         # 모델 생성 및 가중치 로드
         model = RecommendationModelV6(
-            token_dim=config.get("token_dim", 128), num_heads=config.get("num_heads", 4)
+            face_feat_dim=config.get("face_feat_dim", 6),
+            skin_feat_dim=config.get("skin_feat_dim", 2),
+            style_embed_dim=config.get("style_embed_dim", 384),
+            token_dim=config.get("token_dim", 128),
+            num_heads=config.get("num_heads", 4),
         )
         model.load_state_dict(checkpoint["model_state_dict"])
 
         logger.info(
-            f"✅ 기존 모델 로드 완료: version={config.get('version', 'unknown')}"
+            f"✅ 시작점 모델 로드 완료: key={model_key}, "
+            f"version={config.get('version', 'unknown')}"
         )
         return model, config
 
     except s3.exceptions.NoSuchKey:
-        logger.warning("⚠️ 기존 모델이 없음 - 새 모델 생성")
+        if from_base:
+            logger.error(f"❌ base model missing: upload {BASE_MODEL_KEY}")
+            return None, {}
+
+        if not allow_random_init:
+            logger.error(
+                "❌ base model missing: upload models/current/model.pt first "
+                "(랜덤 초기화 모델 배포 방지 - 강제하려면 event에 "
+                '"allow_random_init": true 를 전달)'
+            )
+            return None, {}
+
+        logger.warning("⚠️ 기존 모델이 없음 - 새 모델 생성 (allow_random_init=true)")
         model = RecommendationModelV6()
-        config = {
-            "version": "v6",
-            "token_dim": 128,
-            "num_heads": 4,
-            "normalized": True,
-            "label_min": LABEL_MIN,
-            "label_max": LABEL_MAX,
-            "label_range": LABEL_RANGE,
-            "attention_type": "multi_token",
-        }
-        return model, config
+        return model, dict(DEFAULT_MODEL_CONFIG)
 
     except Exception as e:
         logger.error(f"❌ 모델 로드 실패: {e}")
         traceback.print_exc()
         return None, {}
+
+
+def set_batchnorm_eval(model: nn.Module) -> int:
+    """
+    모든 BatchNorm 모듈을 eval 모드로 고정한다 (fine-tuning 전용).
+
+    이유:
+    - fine-tuning 샘플 수가 적어(수백 건) model.train() 상태로 학습하면
+      running_mean/running_var 가 소수의 실사용자 분포로 덮어써진다.
+      일부 채널의 running_var 가 0에 가까워지면 서빙 시 정규화가 폭주해
+      작은 특징 편차가 크게 증폭된다.
+    - eval 모드에서는 저장된 running stats 로 정규화하고 통계를 갱신하지 않는다.
+      BN 의 affine 파라미터(weight/bias)는 requires_grad 를 그대로 두므로 계속 학습된다.
+
+    Returns:
+        eval 로 고정한 BatchNorm 모듈 수
+    """
+    frozen = 0
+    for module in model.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.eval()
+            frozen += 1
+    return frozen
 
 
 def fine_tune_model(
@@ -461,26 +699,49 @@ def fine_tune_model(
     model = model.to(device)
     model.train()
 
+    # BatchNorm running stats 고정 (드리프트 방지)
+    frozen_bn = set_batchnorm_eval(model)
+    logger.info(f"🧊 BatchNorm {frozen_bn}개 eval 고정 (running stats 갱신 안 함)")
+
     # 데이터셋 및 데이터로더
     dataset = FeedbackDataset(
         face_features, skin_features, style_embeddings, ground_truths
     )
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    # BatchNorm은 batch size 1에서 실패하므로 마지막 배치를 버린다.
+    # (샘플 수가 BATCH_SIZE 이하이면 전부 사용하고, 아래 루프에서 크기 1 배치는 건너뜀)
+    drop_last = len(dataset) > BATCH_SIZE
+    dataloader = DataLoader(
+        dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=drop_last
+    )
 
     # 옵티마이저 및 손실 함수
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     criterion = nn.MSELoss()
 
     # 학습 기록
-    training_stats = {"epochs": epochs, "samples": len(dataset), "losses": []}
+    training_stats = {
+        "epochs": epochs,
+        "samples": len(dataset),
+        "losses": [],
+        "batchnorm_frozen": frozen_bn,
+    }
 
     logger.info(f"🏋️ Fine-tuning 시작: {len(dataset)}개 샘플, {epochs} 에폭")
 
     for epoch in range(epochs):
+        # 에폭마다 train 모드 복구 후 BatchNorm 만 다시 eval 로 고정
+        model.train()
+        set_batchnorm_eval(model)
+
         total_loss = 0.0
         num_batches = 0
 
         for face, skin, style, gt in dataloader:
+            if face.size(0) < 2:
+                # BatchNorm은 배치 크기 1에서 예외가 발생하므로 건너뜀
+                logger.warning("⚠️ 배치 크기 1 - BatchNorm 오류 방지를 위해 건너뜀")
+                continue
+
             face = face.to(device)
             skin = skin.to(device)
             style = style.to(device)
@@ -537,9 +798,12 @@ def evaluate_model(
     model = model.to(device)
     model.eval()
 
+    # 입력 스케일링 (FeedbackDataset / serving과 동일하게 맞춤)
+    scaled_face, scaled_skin = scale_feature_batch(face_features, skin_features)
+
     # 텐서 변환
-    face_tensor = torch.FloatTensor(face_features).to(device)
-    skin_tensor = torch.FloatTensor(skin_features).to(device)
+    face_tensor = torch.FloatTensor(scaled_face).to(device)
+    skin_tensor = torch.FloatTensor(scaled_skin).to(device)
     style_tensor = torch.FloatTensor(style_embeddings).to(device)
     gt_tensor = torch.FloatTensor(ground_truths).reshape(-1, 1).to(device)
 
@@ -759,11 +1023,67 @@ def save_model_to_s3(
         )
         logger.info(f"✅ 현재 모델 교체 완료")
 
+        # 3. 무결성 메타데이터 기록 (서빙 측 SHA-256 검증용)
+        save_current_model_metadata(model_bytes, config, new_version)
+
         return True
 
     except Exception as e:
         logger.error(f"❌ 모델 저장 실패: {e}")
         traceback.print_exc()
+        return False
+
+
+def save_current_model_metadata(
+    model_bytes: bytes, config: Dict[str, Any], new_version: str
+) -> bool:
+    """
+    models/current/metadata.json 갱신 (업로드된 모델의 SHA-256 포함)
+
+    서빙 측(models/ml_recommender.py)이 다운로드한 모델의 무결성을 검증한다.
+    기존 metadata.json 이 있으면 내용을 병합한다.
+    """
+    s3 = get_s3_client()
+    metadata_key = "models/current/metadata.json"
+
+    try:
+        metadata: Dict[str, Any] = {}
+        try:
+            response = s3.get_object(Bucket=S3_BUCKET, Key=metadata_key)
+            existing = json.loads(response["Body"].read().decode("utf-8"))
+            if isinstance(existing, dict):
+                metadata = existing
+        except Exception:
+            metadata = {}
+
+        metadata.update(
+            {
+                "sha256": hashlib.sha256(model_bytes).hexdigest(),
+                "size_bytes": len(model_bytes),
+                "version": new_version,
+                "config": config,
+                # 재학습 출처 추적 (from_base 전체 재학습 여부)
+                "from_base": bool(config.get("from_base", False)),
+                "include_processed": bool(config.get("include_processed", False)),
+                "source_model_key": config.get("source_model_key"),
+                "batchnorm_frozen": bool(config.get("batchnorm_frozen", True)),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=metadata_key,
+            Body=json.dumps(metadata, indent=2, ensure_ascii=False),
+            ContentType="application/json",
+        )
+        logger.info(
+            f"✅ 모델 메타데이터 저장: {metadata_key} (sha256={metadata['sha256'][:12]}...)"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ 모델 메타데이터 저장 실패: {e}")
         return False
 
 
@@ -779,6 +1099,10 @@ def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
     try:
         moved_count = 0
         for old_key in file_keys:
+            # include_processed 모드에서 섞여 들어온 processed/ 키는 이동하지 않는다
+            if not old_key.startswith(PENDING_PREFIX):
+                continue
+
             filename = old_key.split("/")[-1]
             new_key = f"feedback/processed/{batch_name}/{filename}"
 
@@ -872,13 +1196,26 @@ def update_analyze_lambda_envvars(new_version: str, experiment_id: str) -> bool:
         return False
 
 
-def run_training_pipeline() -> Dict[str, Any]:
+def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     전체 학습 파이프라인 실행
+
+    Args:
+        event: Lambda 이벤트
+            - allow_random_init: 기존 모델이 없을 때 랜덤 초기화 허용
+            - force: MIN_SAMPLES 게이트 우회
+            - from_base: models/base/model.pt 에서 시작 (드리프트 누적 차단)
+            - include_processed: feedback/processed/ 데이터도 학습에 포함
 
     Returns:
         결과 딕셔너리
     """
+    event = event or {}
+    allow_random_init = bool(event.get("allow_random_init", False))
+    force_train = bool(event.get("force", False))
+    from_base = bool(event.get("from_base", False))
+    include_processed = bool(event.get("include_processed", False))
+    source_model_key = get_source_model_key(from_base)
     timestamp = datetime.now(timezone.utc)
     date_str = timestamp.strftime("%Y%m%d")
     new_version = f"v6_feedback_{date_str}"
@@ -892,33 +1229,63 @@ def run_training_pipeline() -> Dict[str, Any]:
         "samples_trained": 0,
         "final_loss": None,
         "steps_completed": [],
+        "from_base": from_base,
+        "include_processed": include_processed,
+        "source_model_key": source_model_key,
     }
 
     try:
         # 1. 피드백 데이터 로드
-        logger.info("📥 Step 1: 피드백 데이터 로드")
-        face, skin, style, gt, count, file_keys = load_pending_feedbacks()
+        logger.info(
+            f"📥 Step 1: 피드백 데이터 로드 (include_processed={include_processed})"
+        )
+        face, skin, style, gt, count, file_keys = load_pending_feedbacks(
+            include_processed=include_processed
+        )
 
         if count == 0:
             result["message"] = "No pending feedbacks"
             return result
 
+        # 메타데이터의 pending_count가 아니라 "실제로 로드된 샘플 수"로 검증한다.
+        # (카운터가 드리프트해도 9개 파일로 학습이 시작되지 않도록)
+        # force=True 이벤트는 기존 동작대로 이 검사를 우회한다.
+        if not force_train and count < MIN_SAMPLES:
+            message = f"Insufficient data: {count}/{MIN_SAMPLES} loaded samples"
+            logger.info(f"⏸️ {message}")
+            result["message"] = message
+            result["loaded_count"] = count
+            return result
+
         result["samples_trained"] = count
+        result["loaded_count"] = count
         result["steps_completed"].append("load_feedbacks")
 
-        # 2. 기존 모델 로드
-        logger.info("📥 Step 2: 기존 모델 로드")
-        model, config = load_base_model()
+        # 평가용 정답 라벨 정규화 (10~95 -> 0~1)
+        # 모델 출력이 sigmoid(0~1)이므로 동일 공간에서 비교해야 한다.
+        gt_normalized = (gt - LABEL_MIN) / LABEL_RANGE
+
+        # 2. 시작점 모델 로드 (from_base=True 이면 models/base/model.pt)
+        logger.info(f"📥 Step 2: 시작점 모델 로드 (key={source_model_key})")
+        model, config = load_base_model(
+            allow_random_init=allow_random_init, from_base=from_base
+        )
 
         if model is None:
-            result["message"] = "Failed to load base model"
+            if from_base:
+                message = f"base model missing: upload {BASE_MODEL_KEY}"
+            elif not allow_random_init:
+                message = "base model missing: upload models/current/model.pt first"
+            else:
+                message = "Failed to load base model"
+            result["message"] = message
             return result
 
         result["steps_completed"].append("load_model")
 
         # 2.5. 학습 전 평가
         logger.info("📊 Step 2.5: 학습 전 모델 평가")
-        before_metrics = evaluate_model(model, face, skin, style, gt)
+        before_metrics = evaluate_model(model, face, skin, style, gt_normalized)
         result["before_metrics"] = before_metrics
         result["steps_completed"].append("evaluate_before")
 
@@ -930,7 +1297,7 @@ def run_training_pipeline() -> Dict[str, Any]:
 
         # 3.5. 학습 후 평가
         logger.info("📊 Step 3.5: 학습 후 모델 평가")
-        after_metrics = evaluate_model(model, face, skin, style, gt)
+        after_metrics = evaluate_model(model, face, skin, style, gt_normalized)
         result["after_metrics"] = after_metrics
         result["steps_completed"].append("evaluate_after")
 
@@ -938,6 +1305,11 @@ def run_training_pipeline() -> Dict[str, Any]:
         config["version"] = new_version
         config["fine_tuned_at"] = timestamp.isoformat()
         config["samples_count"] = count
+        config["from_base"] = from_base
+        config["include_processed"] = include_processed
+        config["source_model_key"] = source_model_key
+        # BatchNorm running stats 는 fine-tuning 중 고정된다
+        config["batchnorm_frozen"] = True
 
         # 5. Lambda 환경변수 백업
         logger.info("💾 Step 4: Lambda 설정 백업")
@@ -952,9 +1324,11 @@ def run_training_pipeline() -> Dict[str, Any]:
 
         result["steps_completed"].append("save_model")
 
-        # 7. pending → processed 이동
+        # 7. pending → processed 이동 (processed/ 에서 읽어온 파일은 그대로 둔다)
         logger.info("📦 Step 6: 피드백 파일 이동")
-        move_pending_to_processed(file_keys, batch_name)
+        pending_keys = [k for k in file_keys if k.startswith(PENDING_PREFIX)]
+        result["pending_files_moved"] = len(pending_keys)
+        move_pending_to_processed(pending_keys, batch_name)
         result["steps_completed"].append("move_feedbacks")
 
         # 8. Lambda 환경변수 업데이트
@@ -999,7 +1373,10 @@ def lambda_handler(event, context):
     Args:
         event: {
             "trigger_type": "scheduled" | "data_threshold" | "manual",
-            "force": false,  # true이면 MIN_SAMPLES 무시
+            "force": false,             # true이면 MIN_SAMPLES 무시
+            "from_base": false,         # true이면 models/base/model.pt 에서 재학습
+            "include_processed": false, # true이면 feedback/processed/ 도 학습에 포함
+            "allow_random_init": false,
             "metadata": {...}
         }
 
@@ -1020,13 +1397,17 @@ def lambda_handler(event, context):
 
     trigger_type = event.get("trigger_type", "unknown")
     force_train = event.get("force", False)
+    from_base = bool(event.get("from_base", False))
+    include_processed = bool(event.get("include_processed", False))
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # Pending 피드백 수 확인
     pending_count = get_pending_count()
     logger.info(f"📊 Pending feedback count: {pending_count}")
 
-    # 최소 샘플 수 확인 (force가 아닐 때)
+    # 최소 샘플 수 1차 확인 (force가 아닐 때)
+    # 주의: 여기서 쓰는 pending_count는 metadata.json 카운터이므로 드리프트할 수 있다.
+    # 실제 게이트는 run_training_pipeline에서 "로드된 샘플 수"로 다시 검사한다.
     if not force_train and pending_count < MIN_SAMPLES:
         message = f"Insufficient data: {pending_count}/{MIN_SAMPLES} samples"
         logger.info(f"⏸️ {message}")
@@ -1047,11 +1428,13 @@ def lambda_handler(event, context):
 
     # 실제 학습 파이프라인 실행
     logger.info(
-        f"🏋️ Training triggered with {pending_count} samples (force={force_train})"
+        f"🏋️ Training triggered with {pending_count} samples "
+        f"(force={force_train}, from_base={from_base}, "
+        f"include_processed={include_processed})"
     )
 
     try:
-        training_result = run_training_pipeline()
+        training_result = run_training_pipeline(event)
 
         if training_result["success"]:
             logger.info(f"✅ 학습 완료: {training_result['new_version']}")
@@ -1063,6 +1446,9 @@ def lambda_handler(event, context):
                         "message": "Training completed successfully",
                         "trigger_type": trigger_type,
                         "pending_count": pending_count,
+                        "from_base": from_base,
+                        "include_processed": include_processed,
+                        "source_model_key": training_result.get("source_model_key"),
                         "training_result": training_result,
                         "timestamp": timestamp,
                     }
@@ -1078,6 +1464,9 @@ def lambda_handler(event, context):
                         "message": training_result.get("message", "Training failed"),
                         "trigger_type": trigger_type,
                         "pending_count": pending_count,
+                        "from_base": from_base,
+                        "include_processed": include_processed,
+                        "source_model_key": training_result.get("source_model_key"),
                         "training_result": training_result,
                         "timestamp": timestamp,
                     }
