@@ -92,6 +92,71 @@ class TestHealthCheck:
         assert "circuit_breaker" in data["checks"]
         assert "gemini_api" in data["checks"]
 
+    def test_optional_services_report_lazy_load_state(self, client):
+        """optional_services 는 lazy 싱글톤 상태를 요청 시점에 반영한다"""
+        response = client.get("/api/health")
+        optional = response.json()["startup"]["optional_services"]
+
+        # 죽은 플래그 제거
+        assert "feedback_collector" not in optional
+        assert "retrain_queue" not in optional
+        assert "ml_service" not in optional
+
+        for service in ("mediapipe", "face_detection", "ml_recommender"):
+            assert service in optional
+            assert isinstance(optional[service]["loaded"], bool)
+
+        assert isinstance(optional["mlops_enabled"], bool)
+
+    def test_lazy_services_do_not_make_status_degraded(self, client):
+        """아직 로드되지 않은 lazy 서비스는 degraded 사유가 아니다"""
+        import main
+
+        with patch.dict(main.startup_status, {"gemini": True}), patch(
+            "core.dependencies._mediapipe_analyzer", None
+        ), patch("core.dependencies._face_detection_service", None), patch(
+            "core.dependencies._hybrid_service", None
+        ), patch(
+            "core.health_check.get_health_check_service"
+        ) as mock_svc:
+            mock_svc.return_value.comprehensive_health_check = AsyncMock(
+                return_value={
+                    "status": "healthy",
+                    "timestamp": "2026-09-10T00:00:00",
+                    "checks": {},
+                    "check_duration_ms": 1,
+                }
+            )
+
+            data = client.get("/api/health").json()
+
+        optional = data["startup"]["optional_services"]
+        assert data["status"] == "healthy"
+        assert optional["mediapipe"]["loaded"] is False
+        assert optional["face_detection"]["loaded"] is False
+
+    def test_optional_services_reflect_loaded_singletons(self, client):
+        """lazy 싱글톤이 로드되면 loaded=true 로 보고한다"""
+        with patch("core.dependencies._mediapipe_analyzer", object()), patch(
+            "core.dependencies._face_detection_service", object()
+        ), patch("core.dependencies._hybrid_service", object()):
+            optional = client.get("/api/health").json()["startup"]["optional_services"]
+
+        assert optional["mediapipe"]["loaded"] is True
+        assert optional["face_detection"]["loaded"] is True
+        assert optional["ml_recommender"]["loaded"] is True
+
+    def test_health_does_not_import_ml_recommender(self, client):
+        """헬스 체크가 무거운 models.ml_recommender import 를 유발하면 안 된다"""
+        import sys
+
+        already_imported = "models.ml_recommender" in sys.modules
+
+        client.get("/api/health")
+
+        if not already_imported:
+            assert "models.ml_recommender" not in sys.modules
+
 
 class TestCORS:
     """Test CORS middleware configuration"""

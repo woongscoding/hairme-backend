@@ -256,17 +256,39 @@ async def root():
 
 
 # ========== Health Check Endpoint ==========
+def _mediapipe_loaded() -> bool:
+    """
+    MediaPipe analyzer 가 이미 로드됐는지 "로드를 유발하지 않고" 확인한다.
+
+    PersonalColorService 가 첫 요청 때 lazy 로드하므로 startup 플래그로는 알 수 없다.
+    모듈이 아직 import 되지 않았다면(=미로드) sys.modules 조회만으로 False 를 반환한다.
+    """
+    import sys
+
+    module = sys.modules.get("services.personal_color_service")
+    if module is None:
+        return False
+
+    service = getattr(module, "_personal_color_service", None)
+    return service is not None and getattr(service, "_analyzer", None) is not None
+
+
 @app.get("/api/health")
 async def health_check():
-    """Simple health check for Beauty Lambda"""
+    """
+    Health check for Beauty Lambda.
+
+    필수 서비스(gemini)가 준비되면 healthy 다.
+    MediaPipe 는 첫 요청 때 lazy 로드되므로 아직 로드되지 않아도 degraded 가 아니다.
+    """
     return {
-        "status": "healthy",
+        "status": "healthy" if startup_status["gemini"] else "degraded",
         "version": "1.0.0",
         "lambda_type": LAMBDA_TYPE,
         "environment": settings.ENVIRONMENT,
         "services": {
-            "gemini": startup_status["gemini"],
-            "mediapipe": startup_status["mediapipe"],
+            "required": {"gemini": startup_status["gemini"]},
+            "optional": {"mediapipe": {"loaded": _mediapipe_loaded()}},
         },
     }
 

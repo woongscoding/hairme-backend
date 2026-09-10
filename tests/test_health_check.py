@@ -50,7 +50,7 @@ class TestHealthCheckService:
             result = await health_service.check_dynamodb()
 
             assert result["status"] == "skipped"
-            assert "MySQL" in result["message"]
+            assert "not enabled" in result["message"]
 
     @pytest.mark.asyncio
     async def test_check_dynamodb_error(self, health_service):

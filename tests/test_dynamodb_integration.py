@@ -25,6 +25,7 @@ Prerequisites:
 
 import os
 import sys
+import time
 import uuid
 import pytest
 from typing import Dict, Any
@@ -56,11 +57,7 @@ pytestmark = pytest.mark.skipif(
     reason="DynamoDB table not accessible (skipping DynamoDB integration tests)",
 )
 
-# Set environment variables for testing (only used when tests actually run)
-os.environ["USE_DYNAMODB"] = "true"
-os.environ["AWS_REGION"] = os.getenv("AWS_REGION", "ap-northeast-2")
-os.environ["DYNAMODB_TABLE_NAME"] = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
-
+import database.dynamodb_connection as ddb
 from database.dynamodb_connection import (
     init_dynamodb,
     save_analysis,
@@ -75,11 +72,99 @@ from database.dynamodb_connection import (
 
 @pytest.fixture(scope="module")
 def dynamodb_connection():
-    """Initialize DynamoDB connection for all tests"""
-    success = init_dynamodb()
-    assert success, "Failed to initialize DynamoDB connection"
-    yield
-    # Cleanup is handled automatically
+    """
+    DynamoDB 연결을 이 모듈에서만 활성화한다.
+
+    과거에는 모듈 import 시점에 os.environ["USE_DYNAMODB"]="true" 를 설정했는데,
+    수집(collection) 단계에서 실행되므로 세션 전체 환경을 오염시켜
+    다른 테스트 모듈(TestClient startup -> init_database)까지 DynamoDB 분기를
+    타게 만들었다. 여기서는 fixture 안에서만 환경을 바꾸고, 모듈 전역
+    (dynamodb_resource/table/enabled)도 원래 값으로 되돌린다.
+    """
+    saved_globals = (
+        ddb.dynamodb_resource,
+        ddb.dynamodb_table,
+        ddb.dynamodb_enabled,
+    )
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("USE_DYNAMODB", "true")
+        mp.setenv("AWS_REGION", os.getenv("AWS_REGION", "ap-northeast-2"))
+        mp.setenv(
+            "DYNAMODB_TABLE_NAME", os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
+        )
+
+        success = init_dynamodb()
+        assert success, "Failed to initialize DynamoDB connection"
+        try:
+            yield
+        finally:
+            (
+                ddb.dynamodb_resource,
+                ddb.dynamodb_table,
+                ddb.dynamodb_enabled,
+            ) = saved_globals
+
+
+def _save_analysis_checked(data: Dict[str, Any]) -> str:
+    """save_analysis 실패(None 반환)를 그 자리에서 명확히 드러낸다"""
+    analysis_id = save_analysis(data)
+    assert analysis_id is not None, "save_analysis returned None (write failed)"
+    return analysis_id
+
+
+def _get_analysis_eventually(
+    analysis_id: str, attempts: int = 5, delay: float = 0.3
+) -> Dict[str, Any]:
+    """
+    방금 쓴 항목을 다시 읽는다 (read-after-write).
+
+    get_analysis() 는 ConsistentRead 를 쓰지 않으므로, 쓰기 직후 조회가
+    간헐적으로 None 을 반환할 수 있다. 예전 코드는 그 None 을 그대로
+    result["..."] 로 첨자 접근해서 전체 스위트 실행 시 간헐적인
+    TypeError: 'NoneType' object is not subscriptable 로 터졌다.
+    여기서는 짧게 재조회한 뒤에도 없으면 원인이 드러나는 assert 로 실패시킨다.
+    """
+    result = None
+    for attempt in range(attempts):
+        result = get_analysis(analysis_id)
+        if result is not None:
+            return result
+        time.sleep(delay * (attempt + 1))
+
+    raise AssertionError(
+        f"analysis {analysis_id} not readable after {attempts} attempts "
+        "(eventually consistent read never converged)"
+    )
+
+
+@pytest.fixture(scope="module")
+def shared_analysis_id(dynamodb_connection) -> str:
+    """
+    여러 테스트가 공유하는 분석 레코드.
+
+    과거에는 pytest 모듈 객체에 pytest.shared_analysis_id 를 붙여 테스트 간
+    순서 의존성을 만들었다. fixture 로 바꿔 어떤 테스트를 단독 실행해도
+    동작하게 한다.
+    """
+    data = {
+        "user_id": f"test_user_{uuid.uuid4().hex[:8]}",
+        "image_hash": f"test_hash_{uuid.uuid4().hex}",
+        "face_shape": "계란형",
+        "personal_color": "봄웜",
+        "recommendations": [
+            {"style_name": "레이어드 컷", "reason": "얼굴형에 잘 어울림"},
+        ],
+        "processing_time": 2.5,
+        "detection_method": "mediapipe",
+        "opencv_confidence": 0.87,
+        "mediapipe_face_ratio": 1.28,
+        "mediapipe_ITA_value": 28.5,
+        "mediapipe_features_complete": True,
+    }
+    analysis_id = _save_analysis_checked(data)
+    _get_analysis_eventually(analysis_id)
+    return analysis_id
 
 
 @pytest.fixture
@@ -154,24 +239,17 @@ def test_init_dynamodb(dynamodb_connection):
 
 def test_save_analysis(dynamodb_connection, sample_analysis_data):
     """Test saving analysis record with full data"""
-    analysis_id = save_analysis(sample_analysis_data)
+    analysis_id = _save_analysis_checked(sample_analysis_data)
 
-    assert analysis_id is not None, "save_analysis should return analysis_id"
     assert isinstance(analysis_id, str), "analysis_id should be a string (UUID)"
     assert len(analysis_id) == 36, "analysis_id should be UUID v4 format"
 
-    # Store for later tests
-    pytest.shared_analysis_id = analysis_id
 
-
-def test_get_analysis(dynamodb_connection):
+def test_get_analysis(shared_analysis_id):
     """Test retrieving analysis by ID"""
-    analysis_id = pytest.shared_analysis_id
+    result = _get_analysis_eventually(shared_analysis_id)
 
-    result = get_analysis(analysis_id)
-
-    assert result is not None, "get_analysis should return data"
-    assert result["analysis_id"] == analysis_id
+    assert result["analysis_id"] == shared_analysis_id
     assert result["face_shape"] == "계란형"
     assert result["personal_color"] == "봄웜"
     assert result["detection_method"] == "mediapipe"
@@ -195,9 +273,9 @@ def test_get_analysis_not_found(dynamodb_connection):
     assert result is None, "get_analysis should return None for non-existent ID"
 
 
-def test_save_feedback_style_1(dynamodb_connection):
+def test_save_feedback_style_1(shared_analysis_id):
     """Test saving feedback for style 1"""
-    analysis_id = pytest.shared_analysis_id
+    analysis_id = shared_analysis_id
 
     success = save_feedback(
         analysis_id=analysis_id, style_index=1, feedback="good", naver_clicked=True
@@ -206,15 +284,15 @@ def test_save_feedback_style_1(dynamodb_connection):
     assert success is True, "save_feedback should return True"
 
     # Verify feedback was saved
-    result = get_analysis(analysis_id)
+    result = _get_analysis_eventually(analysis_id)
     assert result["style_1_feedback"] == "good"
     assert result["style_1_naver_clicked"] is True
     assert result["feedback_at"] is not None
 
 
-def test_save_feedback_style_2(dynamodb_connection):
+def test_save_feedback_style_2(shared_analysis_id):
     """Test saving feedback for style 2"""
-    analysis_id = pytest.shared_analysis_id
+    analysis_id = shared_analysis_id
 
     success = save_feedback(
         analysis_id=analysis_id, style_index=2, feedback="bad", naver_clicked=False
@@ -222,14 +300,14 @@ def test_save_feedback_style_2(dynamodb_connection):
 
     assert success is True
 
-    result = get_analysis(analysis_id)
+    result = _get_analysis_eventually(analysis_id)
     assert result["style_2_feedback"] == "bad"
     assert result["style_2_naver_clicked"] is False
 
 
-def test_save_feedback_invalid_style_index(dynamodb_connection):
+def test_save_feedback_invalid_style_index(shared_analysis_id):
     """Test saving feedback with invalid style index"""
-    analysis_id = pytest.shared_analysis_id
+    analysis_id = shared_analysis_id
 
     success = save_feedback(
         analysis_id=analysis_id,
@@ -264,8 +342,11 @@ def test_get_recent_analyses(dynamodb_connection):
         ), "Results should be sorted by created_at descending"
 
 
-def test_get_feedback_stats(dynamodb_connection):
+def test_get_feedback_stats(shared_analysis_id):
     """Test retrieving feedback statistics"""
+    # 순서 의존을 없애기 위해 통계에 잡힐 피드백을 이 테스트가 직접 만든다
+    assert save_feedback(shared_analysis_id, 1, "good", True) is True
+
     stats = get_feedback_stats()
 
     assert stats["success"] is True
@@ -296,10 +377,10 @@ def test_get_feedback_stats(dynamodb_connection):
 def test_float_decimal_conversion(dynamodb_connection, sample_analysis_data):
     """Test that floats are properly converted to/from Decimal"""
     # Save with float values
-    analysis_id = save_analysis(sample_analysis_data)
+    analysis_id = _save_analysis_checked(sample_analysis_data)
 
-    # Retrieve and verify types
-    result = get_analysis(analysis_id)
+    # Retrieve and verify types (read-after-write 는 즉시 보이지 않을 수 있다)
+    result = _get_analysis_eventually(analysis_id)
 
     # Should be converted back to float
     assert isinstance(result["mediapipe_face_ratio"], float)
@@ -320,10 +401,9 @@ def test_null_values_handling(dynamodb_connection):
         # No MediaPipe or OpenCV data
     }
 
-    analysis_id = save_analysis(minimal_data)
-    assert analysis_id is not None
+    analysis_id = _save_analysis_checked(minimal_data)
 
-    result = get_analysis(analysis_id)
+    result = _get_analysis_eventually(analysis_id)
     assert result["face_shape"] == "둥근형"
     assert (
         result.get("mediapipe_face_ratio") is None
@@ -361,9 +441,7 @@ def test_batch_save_performance(dynamodb_connection, sample_analysis_data):
     for i in range(5):
         data = sample_analysis_data.copy()
         data["image_hash"] = f"batch_test_{i}_{uuid.uuid4().hex}"
-        analysis_id = save_analysis(data)
-        assert analysis_id is not None
-        analysis_ids.append(analysis_id)
+        analysis_ids.append(_save_analysis_checked(data))
 
     elapsed = time.time() - start_time
 
@@ -379,12 +457,10 @@ def test_batch_save_performance(dynamodb_connection, sample_analysis_data):
 def test_full_analysis_workflow(dynamodb_connection, sample_analysis_data):
     """Test complete analysis workflow: create -> retrieve -> feedback -> stats"""
     # 1. Create analysis
-    analysis_id = save_analysis(sample_analysis_data)
-    assert analysis_id is not None
+    analysis_id = _save_analysis_checked(sample_analysis_data)
 
     # 2. Retrieve analysis
-    result = get_analysis(analysis_id)
-    assert result is not None
+    result = _get_analysis_eventually(analysis_id)
     assert result["analysis_id"] == analysis_id
 
     # 3. Add feedback for all 3 styles
@@ -394,7 +470,7 @@ def test_full_analysis_workflow(dynamodb_connection, sample_analysis_data):
         assert success is True
 
     # 4. Verify feedback was saved
-    result = get_analysis(analysis_id)
+    result = _get_analysis_eventually(analysis_id)
     assert result["style_1_feedback"] == "good"
     assert result["style_2_feedback"] == "bad"
     assert result["style_3_feedback"] == "good"
@@ -410,20 +486,17 @@ def test_full_analysis_workflow(dynamodb_connection, sample_analysis_data):
 # ==================== Cleanup ====================
 
 
-def test_cleanup_test_data(dynamodb_connection):
+def test_cleanup_test_data(shared_analysis_id):
     """
     Note: DynamoDB doesn't require explicit cleanup in tests.
     Test data will remain in the table for verification.
     To clean up manually, use AWS Console or CLI.
     """
-    # Get test analysis ID
-    if hasattr(pytest, "shared_analysis_id"):
-        analysis_id = pytest.shared_analysis_id
-        result = get_analysis(analysis_id)
-        assert result is not None, "Test data should still exist"
+    result = _get_analysis_eventually(shared_analysis_id)
+    assert result is not None, "Test data should still exist"
 
-        print(f"\nTest data preserved: {analysis_id}")
-        print("To clean up test data, use AWS Console or delete-item CLI command")
+    print(f"\nTest data preserved: {shared_analysis_id}")
+    print("To clean up test data, use AWS Console or delete-item CLI command")
 
 
 # ==================== Main ====================

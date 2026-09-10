@@ -89,14 +89,32 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Create backup tag of current Lambda version
+        id: backup
         run: |
+          # 롤백 대상은 반드시 digest 로 고정한다.
+          # (:latest 태그는 이번 배포가 덮어쓰므로 태그로 롤백하면 깨진 이미지로 되돌아간다)
           CURRENT_IMAGE=$(aws lambda get-function \
             --function-name $LAMBDA_FUNCTION_NAME \
             --region $AWS_REGION \
-            --query 'Code.ImageUri' \
-            --output text || echo "none")
+            --query 'Code.ResolvedImageUri' \
+            --output text 2>/dev/null || echo "")
 
-          if [ "$CURRENT_IMAGE" != "none" ] && [ "$CURRENT_IMAGE" != "None" ]; then
+          if [ -z "$CURRENT_IMAGE" ] || [ "$CURRENT_IMAGE" = "None" ]; then
+            CURRENT_IMAGE=$(aws lambda get-function \
+              --function-name $LAMBDA_FUNCTION_NAME \
+              --region $AWS_REGION \
+              --query 'Code.ImageUri' \
+              --output text 2>/dev/null || echo "")
+          fi
+
+          if [ "$CURRENT_IMAGE" = "None" ] || [ "$CURRENT_IMAGE" = "none" ]; then
+            CURRENT_IMAGE=""
+          fi
+
+          echo "Current (pre-deploy) image: ${CURRENT_IMAGE:-<none>}"
+          echo "previous_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+
+          if [ -n "$CURRENT_IMAGE" ]; then
             CURRENT_DIGEST=$(echo "$CURRENT_IMAGE" | grep -o 'sha256:[a-f0-9]*' || echo "")
             if [ -n "$CURRENT_DIGEST" ]; then
               BACKUP_TAG="backup-$(date +%Y%m%d-%H%M%S)"
@@ -112,6 +130,8 @@ jobs:
                 --repository-name $ECR_REPOSITORY \
                 --image-tag $BACKUP_TAG \
                 --image-manifest "$MANIFEST" || true
+
+              echo "backup_tag=$BACKUP_TAG" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -223,28 +243,74 @@ jobs:
 
           echo "Lambda function updated successfully!"
 
-      - name: Test deployed Lambda function
+      # 헬스 체크는 배포 게이트다. 실패하면 다음 스텝(롤백)이 이전 이미지로 되돌린다.
+      # (과거에는 실패해도 "deployment is complete" 만 출력해서 502 상태로 초록불이 났다)
+      - name: Health check deployed Lambda function
+        id: health
         run: |
-          echo "Testing Lambda function..."
+          echo "Invoking $LAMBDA_FUNCTION_NAME /api/health ..."
 
-          RESPONSE=$(aws lambda invoke \
+          INVOKE_RESULT=$(aws lambda invoke \
             --function-name $LAMBDA_FUNCTION_NAME \
             --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1","protocol":"HTTP/1.1","userAgent":"deploy-check"}},"rawPath":"/api/health","headers":{}}' \
             --cli-binary-format raw-in-base64-out \
             --region $AWS_REGION \
             response.json)
 
-          echo "Lambda invocation response:"
-          echo "$RESPONSE"
-
+          echo "Lambda invocation result: $INVOKE_RESULT"
           echo "Lambda function output:"
           cat response.json
+          echo ""
 
-          if grep -q "healthy" response.json; then
-            echo "Health check passed"
-          else
-            echo "Health check failed - but deployment is complete"
+          # 1) 함수 실행 자체가 실패한 경우 (Runtime.ImportModuleError 등)
+          FUNCTION_ERROR=$(echo "$INVOKE_RESULT" | jq -r '.FunctionError // empty' || echo "")
+          ERROR_TYPE=$(jq -r 'try (.errorType // empty) catch empty' response.json || echo "")
+
+          if [ -n "$FUNCTION_ERROR" ] || [ -n "$ERROR_TYPE" ]; then
+            echo "::error::Lambda invocation failed (FunctionError='$FUNCTION_ERROR' errorType='$ERROR_TYPE')"
+            exit 1
           fi
+
+          # 2) HTTP 응답 검증: statusCode == 200 && body.status == "healthy"
+          STATUS_CODE=$(jq -r 'try (.statusCode // empty) catch empty' response.json || echo "")
+          BODY_STATUS=$(jq -r 'try (.body | fromjson | .status) catch empty' response.json || echo "")
+
+          echo "statusCode=$STATUS_CODE body.status=$BODY_STATUS"
+
+          if [ "$STATUS_CODE" != "200" ] || [ "$BODY_STATUS" != "healthy" ]; then
+            echo "::error::Health check failed (statusCode='$STATUS_CODE' status='$BODY_STATUS')"
+            echo "Response body:"
+            jq -r 'try (.body) catch .' response.json || cat response.json
+            exit 1
+          fi
+
+          echo "Health check passed (statusCode=200, status=healthy)"
+
+      - name: Roll back Lambda after failed health check
+        if: always() && steps.health.outcome == 'failure'
+        env:
+          PREVIOUS_IMAGE: ${{ steps.backup.outputs.previous_image }}
+          BACKUP_TAG: ${{ steps.backup.outputs.backup_tag }}
+        run: |
+          if [ -z "$PREVIOUS_IMAGE" ]; then
+            echo "::error::No previous image recorded - automatic rollback impossible (manual action required)"
+            exit 1
+          fi
+
+          echo "Rolling back $LAMBDA_FUNCTION_NAME to $PREVIOUS_IMAGE (backup tag: ${BACKUP_TAG:-<none>})"
+
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --image-uri "$PREVIOUS_IMAGE" \
+            --region $AWS_REGION \
+            --output json > /dev/null
+
+          aws lambda wait function-updated \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION
+
+          echo "::error::Deployment failed health check and was rolled back to the previous image"
+          exit 1
 
       - name: Get Lambda function URL
         id: get-url
@@ -306,6 +372,54 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      # hairme-analyze 와 동일한 백업 규칙 (헬스 체크 실패 시 롤백 대상)
+      - name: Create backup tag of current Beauty Lambda version
+        id: backup
+        run: |
+          CURRENT_IMAGE=$(aws lambda get-function \
+            --function-name hairme-beauty \
+            --region ap-northeast-2 \
+            --query 'Code.ResolvedImageUri' \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$CURRENT_IMAGE" ] || [ "$CURRENT_IMAGE" = "None" ]; then
+            CURRENT_IMAGE=$(aws lambda get-function \
+              --function-name hairme-beauty \
+              --region ap-northeast-2 \
+              --query 'Code.ImageUri' \
+              --output text 2>/dev/null || echo "")
+          fi
+
+          if [ "$CURRENT_IMAGE" = "None" ] || [ "$CURRENT_IMAGE" = "none" ]; then
+            CURRENT_IMAGE=""
+          fi
+
+          echo "Current (pre-deploy) image: ${CURRENT_IMAGE:-<none>}"
+          echo "previous_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+
+          if [ -n "$CURRENT_IMAGE" ]; then
+            CURRENT_DIGEST=$(echo "$CURRENT_IMAGE" | grep -o 'sha256:[a-f0-9]*' || echo "")
+            if [ -n "$CURRENT_DIGEST" ]; then
+              BACKUP_TAG="backup-$(date +%Y%m%d-%H%M%S)"
+              echo "Creating backup tag: $BACKUP_TAG (digest: $CURRENT_DIGEST)"
+
+              MANIFEST=$(aws ecr batch-get-image \
+                --repository-name hairme-beauty \
+                --image-ids imageDigest=$CURRENT_DIGEST \
+                --region ap-northeast-2 \
+                --query 'images[0].imageManifest' \
+                --output text)
+
+              aws ecr put-image \
+                --repository-name hairme-beauty \
+                --image-tag $BACKUP_TAG \
+                --region ap-northeast-2 \
+                --image-manifest "$MANIFEST" || true
+
+              echo "backup_tag=$BACKUP_TAG" >> $GITHUB_OUTPUT
+            fi
+          fi
 
       - name: Build, tag, and push Beauty image to ECR
         id: build-image
@@ -390,14 +504,70 @@ jobs:
 
           echo "Beauty Lambda updated successfully!"
 
-      - name: Test Beauty Lambda
+      # 헬스 체크는 배포 게이트다 (Runtime.ImportModuleError 로 502 인 채 초록불 나던 문제 수정)
+      - name: Health check Beauty Lambda
+        id: health
         run: |
-          RESPONSE=$(aws lambda invoke \
+          echo "Invoking hairme-beauty /api/health ..."
+
+          INVOKE_RESULT=$(aws lambda invoke \
             --function-name hairme-beauty \
             --payload '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1","protocol":"HTTP/1.1","userAgent":"deploy-check"}},"rawPath":"/api/health","headers":{}}' \
             --cli-binary-format raw-in-base64-out \
             --region ap-northeast-2 \
             response.json)
 
-          echo "Beauty Lambda response:"
+          echo "Lambda invocation result: $INVOKE_RESULT"
+          echo "Beauty Lambda output:"
           cat response.json
+          echo ""
+
+          # 1) 함수 실행 자체가 실패한 경우 (Runtime.ImportModuleError 등)
+          FUNCTION_ERROR=$(echo "$INVOKE_RESULT" | jq -r '.FunctionError // empty' || echo "")
+          ERROR_TYPE=$(jq -r 'try (.errorType // empty) catch empty' response.json || echo "")
+
+          if [ -n "$FUNCTION_ERROR" ] || [ -n "$ERROR_TYPE" ]; then
+            echo "::error::Beauty Lambda invocation failed (FunctionError='$FUNCTION_ERROR' errorType='$ERROR_TYPE')"
+            exit 1
+          fi
+
+          # 2) HTTP 응답 검증: statusCode == 200 && body.status == "healthy"
+          STATUS_CODE=$(jq -r 'try (.statusCode // empty) catch empty' response.json || echo "")
+          BODY_STATUS=$(jq -r 'try (.body | fromjson | .status) catch empty' response.json || echo "")
+
+          echo "statusCode=$STATUS_CODE body.status=$BODY_STATUS"
+
+          if [ "$STATUS_CODE" != "200" ] || [ "$BODY_STATUS" != "healthy" ]; then
+            echo "::error::Beauty health check failed (statusCode='$STATUS_CODE' status='$BODY_STATUS')"
+            echo "Response body:"
+            jq -r 'try (.body) catch .' response.json || cat response.json
+            exit 1
+          fi
+
+          echo "Beauty health check passed (statusCode=200, status=healthy)"
+
+      - name: Roll back Beauty Lambda after failed health check
+        if: always() && steps.health.outcome == 'failure'
+        env:
+          PREVIOUS_IMAGE: ${{ steps.backup.outputs.previous_image }}
+          BACKUP_TAG: ${{ steps.backup.outputs.backup_tag }}
+        run: |
+          if [ -z "$PREVIOUS_IMAGE" ]; then
+            echo "::error::No previous image recorded - automatic rollback impossible (manual action required)"
+            exit 1
+          fi
+
+          echo "Rolling back hairme-beauty to $PREVIOUS_IMAGE (backup tag: ${BACKUP_TAG:-<none>})"
+
+          aws lambda update-function-code \
+            --function-name hairme-beauty \
+            --image-uri "$PREVIOUS_IMAGE" \
+            --region ap-northeast-2 \
+            --output json > /dev/null
+
+          aws lambda wait function-updated \
+            --function-name hairme-beauty \
+            --region ap-northeast-2
+
+          echo "::error::Beauty deployment failed health check and was rolled back to the previous image"
+          exit 1

@@ -159,9 +159,15 @@ class TestStartupEvent:
         assert isinstance(startup_status, dict)
         assert "mediapipe" in startup_status
         assert "gemini" in startup_status
+        # core/dependencies.py 가 lazy 로드 성공 시 갱신하는 플래그
         assert "ml_service" in startup_status
-        assert "feedback_collector" in startup_status
-        assert "retrain_queue" in startup_status
+
+    def test_dead_startup_flags_removed(self):
+        """아무도 True 로 만들지 않던 죽은 플래그는 제거되어야 한다"""
+        from main import startup_status
+
+        assert "feedback_collector" not in startup_status
+        assert "retrain_queue" not in startup_status
 
 
 class TestRateLimiter:

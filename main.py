@@ -20,7 +20,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from config.settings import settings
-from core.logging import logger, log_structured
+from core.logging import logger
 from core.monitoring import init_sentry
 
 # Lambda 환경 감지 - 무거운 import를 지연 로딩
@@ -44,8 +44,6 @@ from api.endpoints.products import router as products_router
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
 MediaPipeFaceAnalyzer = None
-get_feedback_collector = None
-get_retrain_queue = None
 
 # Lambda initialization flag
 _lambda_initialized = False
@@ -63,12 +61,15 @@ else:
 limiter = Limiter(key_func=get_remote_address)
 
 # ========== Service Startup Status Tracking ==========
+# 필수 서비스(gemini)만 startup 시점에 기록한다.
+# mediapipe/ml_service 는 lazy 로딩이라 startup 플래그로는 실제 상태를 알 수 없고,
+# core/dependencies.py 가 로드 성공 시 True 로 갱신하는 용도로만 남겨둔다.
+# 헬스 응답의 optional 서비스 상태는 _optional_services_status() 가
+# 요청 시점에 lazy 싱글톤을 직접 조회해 만든다.
 startup_status = {
     "mediapipe": False,
     "gemini": False,
     "ml_service": False,
-    "feedback_collector": False,
-    "retrain_queue": False,
 }
 
 
@@ -239,17 +240,10 @@ def _init_core_services(strict_db: bool = False) -> None:
 
     # ========== 2. Database & Cache ==========
     try:
-        from database import init_database  # USE_DYNAMODB 에 따라 DynamoDB/MySQL
+        from database import init_database  # DynamoDB 전용 (MySQL 경로 제거됨)
         from core.cache import init_redis
 
-        db_initialized = init_database()
-        if db_initialized:
-            use_dynamodb = os.environ.get("USE_DYNAMODB", "false").lower() == "true"
-            if not use_dynamodb:
-                from database.migration import migrate_database_schema
-
-                migrate_database_schema()
-
+        init_database()
         init_redis()
         logger.info("✅ Database and cache initialized")
     except Exception as e:
@@ -373,6 +367,38 @@ def _is_admin_request(request: Request) -> bool:
     return hmac.compare_digest(api_key, settings.ADMIN_API_KEY)
 
 
+def _optional_services_status() -> dict:
+    """
+    선택(optional) 서비스의 현재 로드 상태를 요청 시점에 계산한다.
+
+    MediaPipe / ML 추천기는 lazy 로딩이므로 startup 플래그로는 상태를 알 수 없다.
+    여기서는 lazy 싱글톤을 "로드를 유발하지 않고" 들여다보기만 한다:
+      - core.dependencies 의 모듈 전역 (_mediapipe_analyzer 등)
+      - models.ml_recommender 는 import 자체가 무거우므로(torch) sys.modules 에
+        이미 올라와 있을 때만 싱글톤을 확인한다.
+
+    아직 로드되지 않았다는 사실은 정상이며 degraded 사유가 아니다.
+    """
+    import sys
+
+    from core import dependencies as deps
+
+    ml_module = sys.modules.get("models.ml_recommender")
+    ml_loaded = (
+        ml_module is not None
+        and getattr(ml_module, "_recommender_instance", None) is not None
+    )
+
+    return {
+        "mediapipe": {"loaded": deps._mediapipe_analyzer is not None},
+        "face_detection": {"loaded": deps._face_detection_service is not None},
+        "ml_recommender": {
+            "loaded": ml_loaded or deps._hybrid_service is not None,
+        },
+        "mlops_enabled": settings.MLOPS_ENABLED,
+    }
+
+
 @app.get("/api/health")
 @limiter.limit("30/minute")
 async def health_check(request: Request, deep: bool = False):
@@ -413,12 +439,9 @@ async def health_check(request: Request, deep: bool = False):
         "deep_denied": deep_denied,
         "startup": {
             "required_services": {"gemini": startup_status["gemini"]},
-            "optional_services": {
-                "mediapipe": startup_status["mediapipe"],
-                "ml_service": startup_status["ml_service"],
-                "feedback_collector": startup_status["feedback_collector"],
-                "retrain_queue": startup_status["retrain_queue"],
-            },
+            # lazy 로딩 서비스는 요청 시점에 실제 인스턴스를 조회한다.
+            # 아직 로드되지 않아도 degraded 로 치지 않는다.
+            "optional_services": _optional_services_status(),
         },
     }
 

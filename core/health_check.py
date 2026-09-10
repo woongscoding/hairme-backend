@@ -37,7 +37,7 @@ class HealthCheckService:
         if not settings.USE_DYNAMODB:
             return {
                 "status": "skipped",
-                "message": "DynamoDB not enabled (using MySQL)",
+                "message": "DynamoDB not enabled (USE_DYNAMODB=false)",
                 "latency_ms": 0,
             }
 
