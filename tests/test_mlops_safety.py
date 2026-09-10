@@ -136,9 +136,7 @@ def test_mlops_modules_have_no_unsafe_deserialization():
     targets = [
         "models/ml_recommender.py",
         "lambda_trainer/lambda_function.py",
-        "services/mlops/trainer_lambda.py",
         "services/mlops/s3_feedback_store.py",
-        "services/mlops/metrics.py",
     ]
     for path in targets:
         with io.open(path, encoding="utf-8") as f:

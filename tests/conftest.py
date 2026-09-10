@@ -5,7 +5,6 @@ import sys
 
 # Set environment variables BEFORE importing main
 os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("REDIS_ENABLED", "false")
 os.environ.setdefault("ML_MODEL_PATH", "models/test_model.pt")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
@@ -16,36 +15,9 @@ import io
 from unittest.mock import Mock, patch, MagicMock
 from PIL import Image
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from main import app
-from database.models import Base
 from config.settings import settings
-
-
-# ========== Test Database Setup ==========
-@pytest.fixture(scope="function")
-def test_db():
-    """Create a test database session"""
-    # Use in-memory SQLite for testing
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-    # Create tables
-    Base.metadata.create_all(bind=engine)
-
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-        Base.metadata.drop_all(bind=engine)
 
 
 # ========== Test Client Setup ==========
@@ -191,14 +163,6 @@ def mock_redis():
         mock.get.return_value = None
         mock.setex.return_value = True
         mock.ping.return_value = True
-        yield mock
-
-
-@pytest.fixture
-def mock_ml_model():
-    """Mock ML model predictions"""
-    with patch("core.ml_loader.predict_ml_score") as mock:
-        mock.return_value = (8.5, 0.92)  # (score, confidence)
         yield mock
 
 

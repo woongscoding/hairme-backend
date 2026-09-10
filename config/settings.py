@@ -18,11 +18,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None  # LangGraph 챗봇 (임베딩 + LLM)
     TAVILY_API_KEY: Optional[str] = None  # 챗봇 web_search 노드
 
-    # Database Configuration
+    # Database Configuration (legacy MySQL - 더 이상 사용되지 않음, 하위 호환용 필드)
     DATABASE_URL: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
 
     # DynamoDB Configuration
+    # USE_DYNAMODB: 배포 호환용 플래그. DynamoDB가 유일한 백엔드이므로
+    # 더 이상 백엔드를 선택하지 않는다 (dynamodb_connection.init_dynamodb 게이트에만 사용).
     USE_DYNAMODB: bool = False
     AWS_REGION: str = "ap-northeast-2"
     DYNAMODB_TABLE_NAME: str = "hairme-analysis"
@@ -244,36 +246,6 @@ class Settings(BaseSettings):
                     logger.info("✅ JWT_SECRET_KEY loaded from Secrets Manager")
             except Exception as e:
                 logger.warning(f"⚠️ Failed to load JWT_SECRET_KEY: {str(e)}")
-
-            # Fetch DB_PASSWORD from Secrets Manager (if using MySQL)
-            if not self.USE_DYNAMODB:
-                try:
-                    db_password = get_secret_or_env(
-                        secret_name="hairme-db-password",
-                        env_var_name="DB_PASSWORD",
-                        region_name=self.AWS_REGION,
-                        required=False,
-                    )
-                    if db_password:
-                        self.DB_PASSWORD = db_password
-                        logger.info("✅ DB_PASSWORD loaded from Secrets Manager")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to load DB_PASSWORD: {str(e)}")
-
-            # Fetch DATABASE_URL from Secrets Manager (if using MySQL)
-            if not self.USE_DYNAMODB and not self.DATABASE_URL:
-                try:
-                    database_url = get_secret_or_env(
-                        secret_name="hairme-database-url",
-                        env_var_name="DATABASE_URL",
-                        region_name=self.AWS_REGION,
-                        required=False,
-                    )
-                    if database_url:
-                        self.DATABASE_URL = database_url
-                        logger.info("✅ DATABASE_URL loaded from Secrets Manager")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to load DATABASE_URL: {str(e)}")
 
         else:
             logger.info(

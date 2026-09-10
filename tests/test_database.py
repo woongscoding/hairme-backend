@@ -1,110 +1,70 @@
-"""Tests for database functionality"""
+"""Tests for the database package (DynamoDB-only)"""
 
-import pytest
-from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 
-class TestDatabaseConnection:
-    """Test database connection"""
+class TestDatabaseInit:
+    """database.init_database() must initialise DynamoDB only"""
 
-    @patch("database.connection.create_engine")
-    def test_database_initialization(self, mock_create_engine):
-        """Test database initialization"""
-        from database.connection import init_database
+    @patch("database.dynamodb_connection.init_dynamodb")
+    def test_init_database_delegates_to_dynamodb(self, mock_init):
+        from database import init_database
 
-        mock_engine = Mock()
-        mock_create_engine.return_value = mock_engine
+        mock_init.return_value = True
 
         result = init_database()
 
-        # Should initialize successfully or return False
-        assert isinstance(result, bool)
+        assert result is True
+        mock_init.assert_called_once_with()
 
-    @patch("database.connection.SessionLocal")
-    def test_get_db_session(self, mock_session):
-        """Test getting database session"""
-        from database.connection import get_db_session
+    @patch("database.dynamodb_connection.init_dynamodb")
+    def test_init_database_returns_bool_on_failure(self, mock_init):
+        from database import init_database
 
-        mock_db = Mock()
-        mock_session.return_value = mock_db
+        mock_init.return_value = False
 
-        session = get_db_session()
+        assert init_database() is False
 
-        # Should return a session
-        assert session is not None
+    def test_no_mysql_modules_remain(self):
+        """MySQL/SQLAlchemy 경로가 다시 들어오면 실패한다"""
+        import importlib
 
-
-class TestAnalysisHistoryModel:
-    """Test AnalysisHistory model"""
-
-    def test_create_analysis_history(self, test_db):
-        """Test creating analysis history record"""
-        from database.models import AnalysisHistory
-
-        record = AnalysisHistory(
-            user_id="test_user",
-            image_hash="abc123",
-            face_shape="계란형",
-            personal_color="봄웜",
-            recommendations=[{"name": "레이어드 컷"}],
-            processing_time=0.5,
-        )
-
-        test_db.add(record)
-        test_db.commit()
-        test_db.refresh(record)
-
-        assert record.id is not None
-        assert record.face_shape == "계란형"
-        assert record.personal_color == "봄웜"
-
-    def test_query_analysis_history(self, test_db):
-        """Test querying analysis history"""
-        from database.models import AnalysisHistory
-
-        # Create test records
-        record1 = AnalysisHistory(
-            user_id="user1",
-            image_hash="hash1",
-            face_shape="계란형",
-            personal_color="봄웜",
-            processing_time=0.5,
-        )
-
-        record2 = AnalysisHistory(
-            user_id="user1",
-            image_hash="hash2",
-            face_shape="둥근형",
-            personal_color="가을웜",
-            processing_time=0.6,
-        )
-
-        test_db.add(record1)
-        test_db.add(record2)
-        test_db.commit()
-
-        # Query records
-        records = test_db.query(AnalysisHistory).filter_by(user_id="user1").all()
-
-        assert len(records) == 2
-        assert records[0].user_id == "user1"
+        for name in (
+            "database.connection",
+            "database.models",
+            "database.mysql_repository",
+        ):
+            try:
+                importlib.import_module(name)
+            except ImportError:
+                continue
+            raise AssertionError(f"{name} should have been removed")
 
 
-class TestDatabaseMigration:
-    """Test database migration"""
+class TestRepositoryFactory:
+    """database.repository.get_repository() must always return DynamoDB"""
 
-    @patch("database.migration.SessionLocal")
-    def test_migrate_database_schema(self, mock_session):
-        """Test database schema migration"""
+    def test_get_repository_returns_dynamodb_repository(self):
+        from database.repository import get_repository
+        from database.dynamodb_repository import DynamoDBAnalysisRepository
+
+        assert isinstance(get_repository(), DynamoDBAnalysisRepository)
+
+    def test_get_repository_ignores_use_dynamodb_flag(self, monkeypatch):
+        from database.repository import get_repository
+        from database.dynamodb_repository import DynamoDBAnalysisRepository
+
+        monkeypatch.setenv("USE_DYNAMODB", "false")
+
+        assert isinstance(get_repository(), DynamoDBAnalysisRepository)
+
+
+class TestMigrationShim:
+    """migrate_database_schema() 는 하위 호환용 no-op 이어야 한다"""
+
+    def test_migrate_database_schema_is_noop(self):
         from database.migration import migrate_database_schema
 
-        mock_db = Mock()
-        mock_session.return_value = mock_db
-
-        # Should run without errors
-        try:
-            migrate_database_schema()
-        except Exception as e:
-            # Migration might fail if tables don't exist yet
-            pass
+        with patch("database.migration.logger") as mock_logger:
+            assert migrate_database_schema() is True
+            assert mock_logger.warning.called

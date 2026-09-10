@@ -6,10 +6,8 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.20
 
-# Database
-sqlalchemy==2.0.25
-pymysql==1.1.1
-cryptography==43.0.3
+# Database / 보안
+cryptography==43.0.3  # admob_ssv_service 서명 검증
 boto3==1.35.0
 
 # Redis Caching

@@ -4,10 +4,8 @@ fastapi==0.115.14
 uvicorn[standard]==0.27.0
 python-multipart==0.0.20
 
-# 데이터베이스
-sqlalchemy==2.0.25
-pymysql==1.1.1
-cryptography==43.0.3
+# 데이터베이스 / 보안
+cryptography==43.0.3  # admob_ssv_service 서명 검증
 boto3==1.35.0  # AWS SDK for DynamoDB migration
 
 # Redis 캐싱

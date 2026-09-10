@@ -20,7 +20,7 @@ class FeedbackRequest(BaseModel):
     """Feedback submission request"""
 
     analysis_id: Union[int, str] = Field(
-        ..., description="분석 결과 ID (int for MySQL, UUID string for DynamoDB)"
+        ..., description="분석 결과 ID (DynamoDB UUID 문자열)"
     )
     style_index: int = Field(
         ..., ge=1, le=5, description="스타일 인덱스 (1-5, 4-5는 트렌드 스타일)"
@@ -36,7 +36,7 @@ class FeedbackResponse(BaseModel):
 
     success: bool
     message: str
-    analysis_id: Union[int, str]  # Support both MySQL (int) and DynamoDB (str UUID)
+    analysis_id: Union[int, str]  # DynamoDB UUID 문자열 (레거시 int 응답 호환 유지)
     style_index: int
 
 

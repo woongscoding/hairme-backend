@@ -1,6 +1,5 @@
 """Face analysis and hairstyle recommendation endpoints (ML-only mode)"""
 
-import os
 import time
 import urllib.parse
 from typing import Optional, Dict, Any, Union, TYPE_CHECKING
@@ -49,7 +48,7 @@ def save_to_database(
     """
     Save analysis result to database using Repository pattern
 
-    Automatically routes to MySQL or DynamoDB based on USE_DYNAMODB env variable.
+    DynamoDB is the only backend.
 
     Args:
         image_hash: SHA256 hash of the image
@@ -59,7 +58,7 @@ def save_to_database(
         mp_features: MediaPipe features (optional)
 
     Returns:
-        Record ID if successful (int for MySQL, str for DynamoDB), None otherwise
+        Analysis ID (UUID string) if successful, None otherwise
     """
     from database.repository import get_repository
 
@@ -75,11 +74,6 @@ def save_to_database(
 
         # Log the result
         if analysis_id:
-            backend = (
-                "dynamodb"
-                if os.getenv("USE_DYNAMODB", "false").lower() == "true"
-                else "mysql"
-            )
             recommendations = analysis_result.get("recommendations", [])
 
             # ML-only 모드에서는 항상 MediaPipe 결과를 사용하므로 agreement는 항상 True
@@ -88,7 +82,7 @@ def save_to_database(
             log_structured(
                 "database_saved",
                 {
-                    "backend": backend,
+                    "backend": "dynamodb",
                     "analysis_id": analysis_id,
                     "mediapipe_enabled": mp_features is not None,
                     "mediapipe_agreement": mediapipe_agreement,

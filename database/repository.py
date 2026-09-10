@@ -1,16 +1,15 @@
 """Abstract repository interface for analysis data storage"""
 
-import os
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 
 
 class AnalysisRepository(ABC):
     """
     Abstract base class for analysis data repositories
 
-    This interface allows seamless switching between MySQL and DynamoDB
-    without changing business logic code.
+    DynamoDB is the only implementation; the interface is kept so business
+    logic stays decoupled from the storage layer.
     """
 
     @abstractmethod
@@ -21,7 +20,7 @@ class AnalysisRepository(ABC):
         processing_time: float,
         detection_method: str,
         mp_features: Optional[Any] = None,
-    ) -> Optional[Union[int, str]]:
+    ) -> Optional[str]:
         """
         Save analysis result to database
 
@@ -33,12 +32,12 @@ class AnalysisRepository(ABC):
             mp_features: MediaPipe features (optional)
 
         Returns:
-            Record ID if successful (int for MySQL, str for DynamoDB), None otherwise
+            Analysis ID (UUID string) if successful, None otherwise
         """
         pass
 
     @abstractmethod
-    def get_analysis(self, analysis_id: Union[int, str]) -> Optional[Dict[str, Any]]:
+    def get_analysis(self, analysis_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve analysis result by ID
 
@@ -53,7 +52,7 @@ class AnalysisRepository(ABC):
     @abstractmethod
     def save_feedback(
         self,
-        analysis_id: Union[int, str],
+        analysis_id: str,
         style_index: int,
         feedback: str,
         naver_clicked: bool,
@@ -85,23 +84,15 @@ class AnalysisRepository(ABC):
 
 def get_repository() -> AnalysisRepository:
     """
-    Factory function to get the appropriate repository implementation
-    based on environment configuration
+    Factory function returning the DynamoDB repository implementation.
 
     Returns:
-        AnalysisRepository: DynamoDB or MySQL repository instance
+        AnalysisRepository: DynamoDB repository instance
 
     Example:
         >>> repo = get_repository()
         >>> analysis_id = repo.save_analysis(...)
     """
-    use_dynamodb = os.getenv("USE_DYNAMODB", "false").lower() == "true"
+    from database.dynamodb_repository import DynamoDBAnalysisRepository
 
-    if use_dynamodb:
-        from database.dynamodb_repository import DynamoDBAnalysisRepository
-
-        return DynamoDBAnalysisRepository()
-    else:
-        from database.mysql_repository import MySQLAnalysisRepository
-
-        return MySQLAnalysisRepository()
+    return DynamoDBAnalysisRepository()
