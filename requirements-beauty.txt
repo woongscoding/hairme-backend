@@ -31,6 +31,10 @@ jaxlib==0.4.30
 ml_dtypes==0.4.1
 scipy==1.11.4
 
+# 회원 인증 (hair-color 합성이 core.quota → core.jwt_auth 를 import함, 2026-09-10 502 장애 원인)
+PyJWT==2.10.1
+httpx>=0.27.0
+
 # Lambda Handler
 mangum==0.17.0
 
