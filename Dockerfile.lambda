@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch
 
 # Copy requirements and install Python dependencies
 COPY requirements-lambda.txt ${LAMBDA_TASK_ROOT}/requirements.txt
-RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
+RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt && pip install --no-cache-dir --no-deps mediapipe==0.10.14
 
 # Copy application code
 COPY . ${LAMBDA_TASK_ROOT}/

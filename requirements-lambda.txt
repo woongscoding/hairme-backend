@@ -24,20 +24,15 @@ google-genai>=1.52.0
 pillow==10.4.0
 opencv-python-headless==4.9.0.80
 numpy==1.26.3
-mediapipe==0.10.14
-
-# mediapipe의 jax 의존성 고정 (Lambda AMI의 GCC 7.3과 호환되는 버전)
-# jax 0.7+ → ml_dtypes>=0.5 → numpy 2.x 빌드 필요 → GCC 9.3+ 필요하므로 구버전 고정
-jax==0.4.30
-jaxlib==0.4.30
-ml_dtypes==0.4.1
-
-# ML/데이터 분석
-scipy==1.11.4
-scikit-learn==1.3.0
-pandas==2.1.4
+# mediapipe는 Dockerfile.lambda에서 --no-deps로 설치한다.
+# 선언된 의존성(jax/jaxlib/opencv-contrib-python/matplotlib)은 FaceMesh 런타임에
+# matplotlib·cv2만 실제로 import되며(2026-09-10 이미지 내부 확인), jax/jaxlib(307MB)와
+# opencv-contrib(cv2 중복 180MB)는 콜드스타트 시간만 늘린다. 아래는 mediapipe의 실제 런타임 의존성.
+absl-py>=1.4.0
+attrs>=19.1.0
+flatbuffers>=2.0
+protobuf>=4.25.3,<5
 matplotlib==3.8.2
-seaborn==0.13.1
 
 # MLOps
 pyyaml==6.0.1
