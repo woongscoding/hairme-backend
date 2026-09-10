@@ -14,7 +14,7 @@ import logging
 
 import pytest
 
-from core.logging import LOG_FORMAT, NOISY_LOGGERS, log_structured, setup_logging
+from core.logging import NOISY_LOGGERS, log_structured, setup_logging
 
 
 class _CountingHandler(logging.Handler):
@@ -80,6 +80,10 @@ def test_sets_root_level_with_preinstalled_handler(clean_root_logger):
     """Lambda 시뮬레이션: 핸들러가 이미 있어도 root 레벨이 INFO 가 되어야 한다"""
     lambda_handler = _CountingHandler()
     lambda_handler.setLevel(logging.WARNING)  # 기본값보다 보수적인 상황
+    # Lambda 런타임 핸들러는 자체 포맷터("[LEVEL] 시각 요청ID 메시지" + 줄바꿈 처리)를
+    # 가진다. 이걸 교체하면 CloudWatch 에서 줄이 붙어 나오므로 보존되어야 한다.
+    runtime_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+    lambda_handler.setFormatter(runtime_formatter)
     clean_root_logger.addHandler(lambda_handler)
     clean_root_logger.setLevel(logging.WARNING)
 
@@ -91,8 +95,8 @@ def test_sets_root_level_with_preinstalled_handler(clean_root_logger):
 
     assert clean_root_logger.level == logging.INFO
     assert lambda_handler.level <= logging.INFO
-    assert lambda_handler.formatter is not None
-    assert lambda_handler.formatter._fmt == LOG_FORMAT
+    # 런타임 포맷터는 그대로여야 한다
+    assert lambda_handler.formatter is runtime_formatter
 
 
 def test_info_record_emitted_exactly_once(clean_root_logger):

@@ -41,8 +41,8 @@ def setup_logging() -> logging.Logger:
 
     그래서 여기서는 root 로거를 직접 설정한다:
       - root 레벨을 settings.LOG_LEVEL 로 지정 (Lambda 에서도 INFO 반영)
-      - 핸들러가 이미 있으면(=Lambda) 포맷터만 교체하고 새로 추가하지 않는다
-        (추가하면 같은 줄이 두 번 출력된다)
+      - 핸들러가 이미 있으면(=Lambda) 레벨만 맞추고 포맷터/핸들러는 건드리지 않는다
+        (추가하면 같은 줄이 두 번 출력되고, 포맷터를 바꾸면 줄바꿈·요청ID가 깨진다)
       - 핸들러가 없으면(=로컬/uvicorn) StreamHandler 를 하나 추가한다
 
     여러 번 호출해도 핸들러가 늘어나지 않는다(idempotent).
@@ -54,10 +54,12 @@ def setup_logging() -> logging.Logger:
     root_logger.setLevel(level)
 
     if root_logger.handlers:
-        # Lambda(또는 이미 로깅이 구성된 환경): 중복 출력 방지를 위해 재사용
+        # Lambda(또는 이미 로깅이 구성된 환경): 핸들러를 추가하지 않는다(중복 출력 방지).
+        # 포맷터도 건드리지 않는다 - Lambda 런타임 핸들러의 포맷터는
+        # "[LEVEL]	시각	요청ID	메시지" 형식과 줄바꿈 처리를 담당하므로,
+        # 교체하면 CloudWatch 에서 줄이 붙어 나오고 요청 ID 가 사라진다(2026-09-10 확인).
         for handler in root_logger.handlers:
-            handler.setFormatter(formatter)
-            # 핸들러가 root 보다 엄격하면 레벨을 완화한다.
+            # 핸들러가 root 보다 엄격하면 레벨만 완화한다.
             # (반대로 더 관대한 핸들러의 레벨을 올리지는 않는다 - pytest caplog 등)
             if handler.level > level:
                 handler.setLevel(level)
