@@ -278,10 +278,11 @@ class HairColorService:
             for attempt in range(MAX_RETRIES):
                 try:
                     response = self.gemini_client.models.generate_content(
-                        model="gemini-2.5-flash-image",
+                        model=settings.GEMINI_IMAGE_MODEL,
                         contents=[prompt, original_image],
                         config=types.GenerateContentConfig(
-                            response_modalities=["IMAGE", "TEXT"],
+                            # IMAGE 단독 요청 (지연시간 단축 + 텍스트 응답 실패 모드 제거)
+                            response_modalities=["IMAGE"],
                         ),
                     )
 

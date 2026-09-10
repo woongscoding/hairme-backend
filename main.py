@@ -213,20 +213,16 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-# ========== Lambda Initialization Helper ==========
-def ensure_lambda_initialization():
-    """Ensure essential services are initialized for Lambda"""
-    global _lambda_initialized
+# ========== Core Service Initialization (shared) ==========
+def _init_core_services(strict_db: bool = False) -> None:
+    """
+    Gemini / Database / Cache 초기화 (로컬 uvicorn startup 과 Lambda 공용).
 
-    if _lambda_initialized:
-        return
-
-    if not IS_LAMBDA:
-        return
-
-    logger.info("🔧 Lambda cold start - initializing essential services...")
-
-    # Initialize Gemini API (essential)
+    Args:
+        strict_db: True 면 DB/캐시 초기화 실패를 그대로 전파한다 (로컬 개발용).
+                   False 면 WARNING 만 남기고 계속 진행한다 (Lambda 가용성 우선).
+    """
+    # ========== 1. Gemini API 키 검증 (필수) ==========
     if not settings.GEMINI_API_KEY:
         logger.error("❌ GEMINI_API_KEY is not set!")
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
@@ -236,14 +232,14 @@ def ensure_lambda_initialization():
 
         genai.configure(api_key=settings.GEMINI_API_KEY)
         startup_status["gemini"] = True
-        logger.info("✅ Gemini API configured for Lambda")
+        logger.info("✅ Gemini API 설정 완료")
     except Exception as e:
-        logger.error(f"❌ Gemini API setup failed: {str(e)}")
+        logger.error(f"❌ Gemini API 설정 실패: {str(e)}")
         raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
 
-    # Initialize Database & Cache
+    # ========== 2. Database & Cache ==========
     try:
-        from database import init_database
+        from database import init_database  # USE_DYNAMODB 에 따라 DynamoDB/MySQL
         from core.cache import init_redis
 
         db_initialized = init_database()
@@ -255,9 +251,32 @@ def ensure_lambda_initialization():
                 migrate_database_schema()
 
         init_redis()
-        logger.info("✅ Database and cache initialized for Lambda")
+        logger.info("✅ Database and cache initialized")
     except Exception as e:
+        if strict_db:
+            raise
         logger.warning(f"⚠️ Database/cache initialization failed: {str(e)}")
+
+
+# ========== Lambda Initialization Helper ==========
+def ensure_lambda_initialization():
+    """
+    Lambda 컨테이너당 1회만 핵심 서비스를 초기화한다.
+
+    Mangum(lifespan="off") 이므로 FastAPI startup 이벤트는 Lambda 에서 실행되지
+    않으며, 이 함수가 유일한 초기화 경로다.
+    """
+    global _lambda_initialized
+
+    if _lambda_initialized:
+        return
+
+    if not IS_LAMBDA:
+        return
+
+    logger.info("🔧 Lambda cold start - initializing essential services...")
+
+    _init_core_services(strict_db=False)
 
     _lambda_initialized = True
     logger.info("✅ Lambda initialization complete")
@@ -291,37 +310,15 @@ app.include_router(products_router, prefix="/api", tags=["products"])
 # ========== Startup Event ==========
 @app.on_event("startup")
 async def startup_event():
-    """Initialize essential services on server startup"""
+    """
+    로컬 uvicorn 실행 시 핵심 서비스를 초기화한다.
+
+    Lambda 에서는 Mangum(lifespan="off") 때문에 호출되지 않으며,
+    동일한 초기화를 ensure_lambda_initialization() 이 수행한다.
+    """
     logger.info("🚀 서버 시작 중 (Lazy Loading 적용됨)...")
 
-    # ========== 1. Gemini API 키 검증 (필수) ==========
-    if not settings.GEMINI_API_KEY:
-        logger.error("❌ GEMINI_API_KEY is not set!")
-        raise RuntimeError("GEMINI_API_KEY environment variable is required")
-
-    try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        startup_status["gemini"] = True
-        logger.info("✅ Gemini API 설정 완료")
-    except Exception as e:
-        logger.error(f"❌ Gemini API 설정 실패: {str(e)}")
-        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
-
-    # ========== 2. Database & Cache ==========
-    from database import init_database  # Uses DynamoDB or MySQL based on USE_DYNAMODB
-    from core.cache import init_redis
-
-    db_initialized = init_database()
-    if db_initialized:
-        use_dynamodb = os.environ.get("USE_DYNAMODB", "false").lower() == "true"
-        if not use_dynamodb:
-            from database.migration import migrate_database_schema
-
-            migrate_database_schema()
-
-    init_redis()
+    _init_core_services(strict_db=True)
 
     logger.info("✅ 기본 서비스 초기화 완료 (AI 모델은 첫 요청 시 로드됩니다)")
 
@@ -447,18 +444,85 @@ async def health_check(request: Request, deep: bool = False):
     return base_status
 
 
+# ========== Warm-up ==========
+def warm_up() -> dict:
+    """
+    무거운 lazy loader 들을 미리 로드해 첫 요청 지연(콜드 스타트 후 8초)을 줄인다.
+
+    - ensure_lambda_initialization(): Gemini/DB/캐시 (컨테이너당 1회)
+    - get_face_detection_service(): MediaPipe 로드
+    - get_hybrid_service(): torch 모델 + S3 모델 다운로드
+
+    각 단계는 실패해도 warm-up 전체를 중단시키지 않는다.
+    이미 로드된 컨테이너에서는 lru_cache/싱글톤 덕분에 즉시 반환된다.
+    """
+    import time as _time
+
+    started = _time.perf_counter()
+    loaded = []
+    failed = []
+
+    try:
+        ensure_lambda_initialization()
+    except Exception as e:  # pragma: no cover - 방어 코드
+        logger.warning(f"⚠️ warm-up: 기본 서비스 초기화 실패: {str(e)}")
+        failed.append("core")
+
+    from core.dependencies import get_face_detection_service, get_hybrid_service
+
+    for name, loader in (
+        ("face_detection", get_face_detection_service),
+        ("hybrid_recommender", get_hybrid_service),
+    ):
+        try:
+            loader()
+            loaded.append(name)
+        except Exception as e:
+            logger.warning(f"⚠️ warm-up: {name} 로드 실패: {str(e)}")
+            failed.append(name)
+
+    elapsed_ms = (_time.perf_counter() - started) * 1000
+    logger.info(
+        f"🔥 warm-up 완료: {elapsed_ms:.0f}ms (loaded={loaded}, failed={failed})"
+    )
+
+    return {"elapsed_ms": elapsed_ms, "loaded": loaded, "failed": failed}
+
+
 # ========== Lambda Handler ==========
 # For AWS Lambda deployment using Mangum
+#
+# lifespan="off": Mangum 은 invocation 마다 LifespanCycle 을 새로 만들기 때문에
+# lifespan="on" 이면 startup 이벤트(init_database + genai.configure + init_redis)가
+# 매 요청마다 재실행된다. Lambda 초기화는 ensure_lambda_initialization() 이
+# lambda_init_middleware 에서 컨테이너당 1회만 수행한다.
+MANGUM_LIFESPAN = "off"
+
 try:
     from mangum import Mangum
 
-    # lifespan="on" 으로 설정하면 첫 요청 시 startup 이벤트가 실행됨
-    # Lambda init 단계에서는 import만 하고, 무거운 작업은 첫 요청 시 수행
-    handler = Mangum(app, lifespan="on")
-    logger.info("✅ Lambda handler initialized (lifespan=on)")
+    _mangum_handler = Mangum(app, lifespan=MANGUM_LIFESPAN)
+    logger.info(f"✅ Lambda handler initialized (lifespan={MANGUM_LIFESPAN})")
 except ImportError:
     logger.warning("⚠️ Mangum not installed - Lambda handler not available")
-    handler = None
+    _mangum_handler = None
+
+
+def handler(event, context=None):
+    """
+    Lambda 엔트리포인트.
+
+    {"warmup": true} 이벤트(EventBridge 등)는 HTTP 계층을 거치지 않고
+    warm_up() 만 수행한다. 그 외에는 Mangum 으로 위임한다.
+    """
+    if isinstance(event, dict) and event.get("warmup") is True:
+        warm_up()
+        return {"statusCode": 200, "body": "warm"}
+
+    if _mangum_handler is None:
+        raise RuntimeError("Mangum is not installed - Lambda handler unavailable")
+
+    return _mangum_handler(event, context)
 
 
 # ========== Main Entry Point ==========

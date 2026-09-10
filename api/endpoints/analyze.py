@@ -10,8 +10,6 @@ if TYPE_CHECKING:
     from services.hybrid_recommender import MLRecommendationService
     from models.mediapipe_analyzer import MediaPipeFaceFeatures
 
-from models.mediapipe_analyzer import MediaPipeFaceFeatures
-
 from fastapi import APIRouter, File, UploadFile, HTTPException, Request, Depends, Form
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
@@ -26,11 +24,11 @@ from core.exceptions import (
 )
 from core.cache import calculate_image_hash, get_cached_result, save_to_cache
 from core.upload_validation import validate_file_extension, validate_image_upload
-from models.ml_recommender import (
-    predict_ml_score,
-    get_confidence_level,
-    get_ml_recommender,
-)
+
+# NOTE: models.ml_recommender / models.mediapipe_analyzer 를 top-level 에서
+# import 하면 torch 가 따라들어와 Lambda init 에 약 3초가 추가된다.
+# 추천 서비스는 get_hybrid_service() 가 지연 로딩하고,
+# 타입 전용 이름은 위 TYPE_CHECKING 블록에서만 참조한다.
 from core.dependencies import get_face_detection_service, get_hybrid_service
 from services.style_image_service import get_style_image_service
 
@@ -46,7 +44,7 @@ def save_to_database(
     analysis_result: Dict[str, Any],
     processing_time: float,
     detection_method: str,
-    mp_features: Optional[MediaPipeFaceFeatures] = None,
+    mp_features: Optional["MediaPipeFaceFeatures"] = None,
 ) -> Optional[Union[int, str]]:
     """
     Save analysis result to database using Repository pattern

@@ -152,20 +152,9 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-# ========== Lambda Initialization Helper ==========
-def ensure_lambda_initialization():
-    """Ensure essential services are initialized for Lambda"""
-    global _lambda_initialized
-
-    if _lambda_initialized:
-        return
-
-    if not IS_LAMBDA:
-        return
-
-    logger.info("Lambda cold start - initializing beauty services...")
-
-    # Initialize Gemini API (essential)
+# ========== Core Service Initialization (shared) ==========
+def _init_core_services(strict_db: bool = False) -> None:
+    """Gemini / Database / Cache 초기화 (로컬 uvicorn startup 과 Lambda 공용)"""
     if not settings.GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not set!")
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
@@ -180,7 +169,6 @@ def ensure_lambda_initialization():
         logger.error(f"Gemini API setup failed: {str(e)}")
         raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
 
-    # Initialize Database & Cache (optional)
     try:
         from database import init_database
         from core.cache import init_redis
@@ -189,7 +177,25 @@ def ensure_lambda_initialization():
         init_redis()
         logger.info("Database and cache initialized")
     except Exception as e:
+        if strict_db:
+            raise
         logger.warning(f"Database/cache initialization failed: {str(e)}")
+
+
+# ========== Lambda Initialization Helper ==========
+def ensure_lambda_initialization():
+    """Lambda 컨테이너당 1회만 핵심 서비스를 초기화한다 (lifespan="off")"""
+    global _lambda_initialized
+
+    if _lambda_initialized:
+        return
+
+    if not IS_LAMBDA:
+        return
+
+    logger.info("Lambda cold start - initializing beauty services...")
+
+    _init_core_services(strict_db=False)
 
     _lambda_initialized = True
     logger.info("Beauty Lambda initialization complete")
@@ -214,30 +220,10 @@ app.include_router(usage_router, prefix="/api", tags=["usage"])
 # ========== Startup Event ==========
 @app.on_event("startup")
 async def startup_event():
-    """Initialize essential services on server startup"""
+    """로컬 uvicorn 실행 시 핵심 서비스를 초기화한다 (Lambda 는 lifespan="off")"""
     logger.info("Beauty Lambda starting...")
 
-    # Gemini API key validation
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY is not set!")
-        raise RuntimeError("GEMINI_API_KEY environment variable is required")
-
-    try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        startup_status["gemini"] = True
-        logger.info("Gemini API configured")
-    except Exception as e:
-        logger.error(f"Gemini API setup failed: {str(e)}")
-        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
-
-    # Database & Cache
-    from database import init_database
-    from core.cache import init_redis
-
-    init_database()
-    init_redis()
+    _init_core_services(strict_db=True)
 
     logger.info("Beauty Lambda startup complete")
 
@@ -286,11 +272,16 @@ async def health_check():
 
 
 # ========== Lambda Handler ==========
+# lifespan="off": Mangum 은 invocation 마다 LifespanCycle 을 생성하므로
+# lifespan="on" 이면 startup 이벤트가 매 요청마다 재실행된다.
+# Lambda 초기화는 lambda_init_middleware → ensure_lambda_initialization() 담당.
+MANGUM_LIFESPAN = "off"
+
 try:
     from mangum import Mangum
 
-    handler = Mangum(app, lifespan="on")
-    logger.info("Beauty Lambda handler initialized")
+    handler = Mangum(app, lifespan=MANGUM_LIFESPAN)
+    logger.info(f"Beauty Lambda handler initialized (lifespan={MANGUM_LIFESPAN})")
 except ImportError:
     logger.warning("Mangum not installed - Lambda handler not available")
     handler = None

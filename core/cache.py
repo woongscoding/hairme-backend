@@ -11,6 +11,9 @@ from core.logging import logger, log_structured
 # Global Redis client
 redis_client: Optional[redis.Redis] = None
 
+# "REDIS_URL 미설정" 안내를 프로세스당 1회만 로깅하기 위한 플래그
+_redis_url_missing_logged = False
+
 
 def init_redis() -> bool:
     """
@@ -22,7 +25,11 @@ def init_redis() -> bool:
     global redis_client
 
     if not settings.REDIS_URL:
-        logger.warning("⚠️ REDIS_URL 환경변수가 설정되지 않았습니다.")
+        # Lambda 컨테이너당 1회만 남긴다 (매 invocation 마다 WARNING 이 쌓이던 문제)
+        global _redis_url_missing_logged
+        if not _redis_url_missing_logged:
+            _redis_url_missing_logged = True
+            logger.info("ℹ️ REDIS_URL 환경변수가 설정되지 않았습니다 (캐시 비활성화).")
         return False
 
     try:

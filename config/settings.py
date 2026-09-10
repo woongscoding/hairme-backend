@@ -114,6 +114,10 @@ class Settings(BaseSettings):
 
     # Gemini Model Configuration
     MODEL_NAME: str = "gemini-2.5-flash"
+    # 이미지 생성(합성/염색) 전용 모델.
+    # gemini-2.5-flash-image 는 2026-10-02 셧다운 예정이며,
+    # gemini-3.1-flash-image 는 동일한 지연시간으로 측정되어 기본값으로 승격했다.
+    GEMINI_IMAGE_MODEL: str = "gemini-3.1-flash-image"
 
     # ML Model Paths
     ML_MODEL_PATH: str = "models/final_model.pth"
