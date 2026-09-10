@@ -21,7 +21,6 @@ try:
     import boto3
     from botocore.exceptions import ClientError
     from botocore.config import Config
-    from boto3.dynamodb.types import TypeSerializer
 
     BOTO3_AVAILABLE = True
 except ImportError:
@@ -145,25 +144,25 @@ class UserRepository:
         }
 
         try:
-            serializer = TypeSerializer()
             table_name = self.table.name
+            # 주의: DynamoDB *리소스*의 내부 클라이언트(table.meta.client)는 파이썬 값을
+            # 자동으로 AttributeValue로 변환한다. 여기서 TypeSerializer로 먼저 직렬화하면
+            # {"S": ...}가 다시 Map(M)으로 감싸져 "Type mismatch for key user_id
+            # expected: S actual: M" ValidationError가 난다 (2026-09-09 프로덕션 가입 장애).
+            # 따라서 평문 파이썬 값을 그대로 넘긴다.
             self.table.meta.client.transact_write_items(
                 TransactItems=[
                     {
                         "Put": {
                             "TableName": table_name,
-                            "Item": {
-                                k: serializer.serialize(v) for k, v in marker.items()
-                            },
+                            "Item": marker,
                             "ConditionExpression": "attribute_not_exists(user_id)",
                         }
                     },
                     {
                         "Put": {
                             "TableName": table_name,
-                            "Item": {
-                                k: serializer.serialize(v) for k, v in item.items()
-                            },
+                            "Item": item,
                             "ConditionExpression": "attribute_not_exists(user_id)",
                         }
                     },
@@ -180,7 +179,11 @@ class UserRepository:
                         f"동시 가입 감지 - 기존 계정으로 전환: kakao_id={kakao_id}"
                     )
                     raise UserAlreadyExistsError(kakao_id)
-            logger.error(f"사용자 생성 실패: {e.response['Error']['Message']}")
+            logger.error(
+                "사용자 생성 실패: %s | reasons=%s",
+                e.response["Error"]["Message"],
+                e.response.get("CancellationReasons"),
+            )
             raise
 
         logger.info(f"✅ 신규 회원 가입: user_id={item['user_id']}")

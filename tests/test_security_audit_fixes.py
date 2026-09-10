@@ -273,10 +273,17 @@ class TestUserCreateUniqueness:
         items = table.meta.client.transact_write_items.call_args.kwargs["TransactItems"]
         assert len(items) == 2
         marker_put, user_put = items[0]["Put"], items[1]["Put"]
-        assert marker_put["Item"]["user_id"]["S"] == kakao_marker_id("12345678")
-        assert marker_put["Item"]["ref_user_id"]["S"] == user["user_id"]
+        # 리소스 클라이언트(table.meta.client)는 파이썬 값을 자동 직렬화하므로
+        # Item 은 평문 값이어야 한다. {"S": ...} 로 미리 감싸면 Map(M)으로 이중
+        # 직렬화되어 "Type mismatch for key user_id expected: S actual: M" 가 난다
+        # (2026-09-09 프로덕션 신규 가입 전면 실패 회귀).
+        assert marker_put["Item"]["user_id"] == kakao_marker_id("12345678")
+        assert isinstance(marker_put["Item"]["user_id"], str)
+        assert marker_put["Item"]["ref_user_id"] == user["user_id"]
         assert marker_put["ConditionExpression"] == "attribute_not_exists(user_id)"
-        assert user_put["Item"]["user_id"]["S"] == user["user_id"]
+        assert user_put["Item"]["user_id"] == user["user_id"]
+        assert isinstance(user_put["Item"]["user_id"], str)
+        assert user_put["Item"]["kakao_id"] == "12345678"
         assert user_put["ConditionExpression"] == "attribute_not_exists(user_id)"
         # 마커에는 kakao_id 속성이 없어야 GSI에 색인되지 않는다
         assert "kakao_id" not in marker_put["Item"]
