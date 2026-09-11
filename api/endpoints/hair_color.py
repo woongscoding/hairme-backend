@@ -285,7 +285,10 @@ async def synthesize_hair_color(
 
         # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
         quota_error, quota, refund = charge_synthesis_quota(
-            user_id, device_id, client_ip_from_request(request)
+            user_id,
+            device_id,
+            client_ip_from_request(request),
+            endpoint="hair-color/synthesize",
         )
         if quota_error is not None:
             return quota_error
@@ -436,7 +439,10 @@ async def synthesize_recommended_color(
 
         # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
         quota_error, quota, refund = charge_synthesis_quota(
-            user_id, device_id, client_ip_from_request(request)
+            user_id,
+            device_id,
+            client_ip_from_request(request),
+            endpoint="hair-color/synthesize-by-personal-color",
         )
         if quota_error is not None:
             return quota_error

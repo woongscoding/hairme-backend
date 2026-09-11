@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from config.settings import settings
 from core.jwt_auth import (
+    DEFAULT_TOKEN_VERSION,
     TOKEN_TYPE_ACCESS,
     TOKEN_TYPE_REFRESH,
     _create_token,
@@ -22,6 +23,8 @@ from core.jwt_auth import (
     decode_token,
     get_current_user_id,
     get_optional_user_id,
+    normalize_token_version,
+    token_version_of,
 )
 
 
@@ -47,6 +50,31 @@ class TestTokenCreation:
         p1 = decode_token(t1)
         p2 = decode_token(t2)
         assert p1["jti"] != p2["jti"]
+
+
+class TestTokenVersionClaim:
+    """tv(token_version) 클레임 - 리프레시 토큰 무효화(강제 로그아웃/정지)용"""
+
+    def test_access_and_refresh_tokens_carry_tv(self):
+        access = decode_token(create_access_token("user-1", 7), TOKEN_TYPE_ACCESS)
+        refresh = decode_token(create_refresh_token("user-1", 7), TOKEN_TYPE_REFRESH)
+
+        assert access["tv"] == 7
+        assert refresh["tv"] == 7
+
+    def test_default_token_version_is_one(self):
+        payload = decode_token(create_access_token("user-1"))
+        assert payload["tv"] == DEFAULT_TOKEN_VERSION == 1
+
+    def test_token_version_of_missing_claim_is_one(self):
+        """tv 클레임이 없는 과거 토큰은 1로 간주 (기존 세션 유지)"""
+        assert token_version_of({"sub": "user-1"}) == 1
+
+    def test_normalize_token_version(self):
+        assert normalize_token_version(None) == 1
+        assert normalize_token_version("3") == 3
+        assert normalize_token_version(5) == 5
+        assert normalize_token_version("bogus") == 1
 
 
 class TestTokenValidation:

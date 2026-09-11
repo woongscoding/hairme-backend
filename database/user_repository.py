@@ -4,7 +4,7 @@
 - Partition Key: user_id (String, UUID)
 - GSI: kakao_id-index (Partition Key: kakao_id)
 - Attributes: nickname, email, credits(N), training_consent(BOOL),
-  created_at, last_login_at, status
+  created_at, last_login_at, status, token_version(N)
 
 같은 테이블에 kakao_id 유일성 마커 아이템도 저장한다.
 - user_id = "kakao#<kakao_id>", ref_user_id = 실제 user_id
@@ -50,11 +50,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# 사용자 계정 상태
+STATUS_ACTIVE = "active"
+STATUS_SUSPENDED = "suspended"
+
+# token_version 기본값 (속성이 없는 기존 회원도 1로 취급한다)
+DEFAULT_TOKEN_VERSION = 1
+
+
 def _to_plain(item: Dict[str, Any]) -> Dict[str, Any]:
     """DynamoDB Decimal 등을 JSON 직렬화 가능한 타입으로 변환"""
     plain = dict(item)
     if "credits" in plain:
         plain["credits"] = int(plain["credits"])
+    if "token_version" in plain:
+        try:
+            plain["token_version"] = int(plain["token_version"])
+        except (TypeError, ValueError):
+            plain["token_version"] = DEFAULT_TOKEN_VERSION
     return plain
 
 
@@ -96,6 +109,25 @@ class UserRepository:
         item = response.get("Item")
         return _to_plain(item) if item else None
 
+    def get_by_id_consistent(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """user_id로 사용자 조회 (강한 일관성)
+
+        리프레시 토큰 검증처럼 "방금 바뀐 token_version/status"를 반드시 봐야
+        하는 경로에서 사용한다 (기본 get_item은 최종 일관성).
+        """
+        try:
+            response = self.table.get_item(
+                Key={"user_id": user_id}, ConsistentRead=True
+            )
+        except ClientError as e:
+            logger.error(
+                f"사용자 조회 실패(강한 일관성): {e.response['Error']['Message']}"
+            )
+            raise
+
+        item = response.get("Item")
+        return _to_plain(item) if item else None
+
     def get_by_kakao_id(self, kakao_id: str) -> Optional[Dict[str, Any]]:
         """카카오 회원번호로 사용자 조회 (GSI)"""
         try:
@@ -127,7 +159,8 @@ class UserRepository:
             "nickname": nickname,
             "credits": initial_credits,
             "training_consent": False,  # AI 학습 활용 동의는 별도 opt-in
-            "status": "active",
+            "status": STATUS_ACTIVE,
+            "token_version": DEFAULT_TOKEN_VERSION,
             "created_at": now,
             "last_login_at": now,
         }
@@ -238,6 +271,71 @@ class UserRepository:
             raise
 
         logger.info(f"사용자 학습 동의 변경: user_id={user_id}, consent={consent}")
+
+    def bump_token_version(self, user_id: str) -> int:
+        """token_version 증가 (= 발급된 모든 리프레시 토큰 무효화)
+
+        속성이 없는 기존 회원은 1로 간주하므로 첫 증가는 2가 된다.
+        (tv 클레임이 없는 과거 토큰도 1로 취급되어 함께 무효화된다)
+
+        Returns:
+            증가 후 token_version
+
+        Raises:
+            ValueError: 존재하지 않는 사용자
+        """
+        try:
+            response = self.table.update_item(
+                Key={"user_id": user_id},
+                UpdateExpression=(
+                    "SET token_version = if_not_exists(token_version, :base) + :inc, "
+                    "token_version_updated_at = :now"
+                ),
+                ConditionExpression="attribute_exists(user_id)",
+                ExpressionAttributeValues={
+                    ":base": DEFAULT_TOKEN_VERSION,
+                    ":inc": 1,
+                    ":now": _now_iso(),
+                },
+                ReturnValues="UPDATED_NEW",
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise ValueError("존재하지 않는 사용자입니다")
+            logger.error(f"token_version 증가 실패: {e.response['Error']['Message']}")
+            raise
+
+        new_version = (response.get("Attributes") or {}).get("token_version")
+        try:
+            new_version = int(new_version)
+        except (TypeError, ValueError):
+            new_version = DEFAULT_TOKEN_VERSION + 1
+
+        logger.info(f"🔐 token_version 증가: user_id={user_id} -> {new_version}")
+        return new_version
+
+    def set_status(self, user_id: str, status: str) -> None:
+        """계정 상태 변경 (active / suspended)
+
+        Raises:
+            ValueError: 존재하지 않는 사용자
+        """
+        try:
+            # status 는 DynamoDB 예약어라 ExpressionAttributeNames 필요
+            self.table.update_item(
+                Key={"user_id": user_id},
+                UpdateExpression="SET #s = :s, status_updated_at = :now",
+                ConditionExpression="attribute_exists(user_id)",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues={":s": status, ":now": _now_iso()},
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise ValueError("존재하지 않는 사용자입니다")
+            logger.error(f"계정 상태 변경 실패: {e.response['Error']['Message']}")
+            raise
+
+        logger.info(f"🔐 계정 상태 변경: user_id={user_id}, status={status}")
 
 
 # Singleton

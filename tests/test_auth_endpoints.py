@@ -5,12 +5,21 @@ import os
 os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import jwt as pyjwt
 import pytest
 from fastapi.testclient import TestClient
 
-from core.jwt_auth import create_access_token, create_refresh_token
+from config.settings import settings
+from core.jwt_auth import (
+    TOKEN_TYPE_REFRESH,
+    _create_token,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+)
 from database.user_repository import UserAlreadyExistsError
 from main import app
 
@@ -28,8 +37,17 @@ EXISTING_USER = {
     "credits": 3,
     "training_consent": False,
     "status": "active",
+    "token_version": 1,
     "created_at": "2026-07-01T00:00:00+00:00",
 }
+
+
+def _repo_with_user(user: dict) -> MagicMock:
+    """get_by_id / get_by_id_consistent 가 같은 사용자를 돌려주는 리포지토리 목"""
+    repo = MagicMock()
+    repo.get_by_id.return_value = dict(user)
+    repo.get_by_id_consistent.return_value = dict(user)
+    return repo
 
 
 @pytest.fixture
@@ -155,6 +173,34 @@ class TestKakaoLogin:
         assert response.status_code == 503
         credit_service.grant.assert_not_called()
 
+    def test_login_suspended_user_rejected(self, client, mock_kakao):
+        """정지 계정은 토큰을 발급받지 못한다 (403)"""
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = dict(EXISTING_USER, status="suspended")
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 403
+        assert "정지" in response.json()["detail"]
+        repo.update_last_login.assert_not_called()
+
+    def test_login_issues_tokens_with_user_token_version(self, client, mock_kakao):
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = dict(EXISTING_USER, token_version=4)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert decode_token(data["access_token"])["tv"] == 4
+        assert decode_token(data["refresh_token"], TOKEN_TYPE_REFRESH)["tv"] == 4
+
     def test_login_with_invalid_kakao_token(self, client):
         from fastapi import HTTPException
 
@@ -176,18 +222,161 @@ class TestKakaoLogin:
 
 
 class TestRefresh:
-    def test_refresh_returns_new_access_token(self, client):
-        refresh = create_refresh_token("user-123")
-        response = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+    def test_refresh_returns_new_token_pair(self, client):
+        repo = _repo_with_user(dict(EXISTING_USER, user_id="user-123"))
+        refresh = create_refresh_token("user-123", 1)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post("/api/auth/refresh", json={"refresh_token": refresh})
 
         assert response.status_code == 200
-        assert response.json()["access_token"]
+        data = response.json()
+        assert data["access_token"]
+        assert data["refresh_token"]
+        # 강한 일관성 조회로 token_version/status 확인
+        repo.get_by_id_consistent.assert_called_once_with("user-123")
 
     def test_access_token_rejected_for_refresh(self, client):
         """액세스 토큰으로는 재발급 불가"""
         access = create_access_token("user-123")
         response = client.post("/api/auth/refresh", json={"refresh_token": access})
         assert response.status_code == 401
+
+    def test_refresh_rejected_when_token_version_mismatch(self, client):
+        """logout-all 등으로 token_version 이 올라간 뒤의 옛 리프레시 토큰 → 401"""
+        repo = _repo_with_user(dict(EXISTING_USER, user_id="user-123", token_version=2))
+        stale = create_refresh_token("user-123", 1)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post("/api/auth/refresh", json={"refresh_token": stale})
+
+        assert response.status_code == 401
+        assert "다시 로그인" in response.json()["detail"]
+
+    def test_refresh_rejected_for_suspended_user(self, client):
+        repo = _repo_with_user(dict(EXISTING_USER, status="suspended"))
+        refresh = create_refresh_token(EXISTING_USER["user_id"], 1)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+
+        assert response.status_code == 401
+        assert "정지" in response.json()["detail"]
+
+    def test_refresh_rejected_when_user_missing(self, client):
+        repo = MagicMock()
+        repo.get_by_id_consistent.return_value = None
+        refresh = create_refresh_token("deleted-user", 1)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post("/api/auth/refresh", json={"refresh_token": refresh})
+
+        assert response.status_code == 401
+
+    def test_legacy_token_without_tv_still_refreshes(self, client):
+        """tv 클레임이 없는 과거 토큰은 tv=1 로 간주 (기존 세션 유지)"""
+        issued = _create_token(
+            EXISTING_USER["user_id"], TOKEN_TYPE_REFRESH, timedelta(days=30)
+        )
+        claims = pyjwt.decode(
+            issued, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        claims.pop("tv")
+        legacy = pyjwt.encode(
+            claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+        )
+
+        # token_version 속성이 아예 없는 기존 회원도 1로 취급된다
+        user = dict(EXISTING_USER)
+        user.pop("token_version")
+        repo = _repo_with_user(user)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post("/api/auth/refresh", json={"refresh_token": legacy})
+
+        assert response.status_code == 200
+        assert response.json()["access_token"]
+
+
+class TestLogoutAll:
+    def test_logout_all_requires_auth(self, client):
+        assert client.post("/api/auth/logout-all").status_code == 401
+
+    def test_logout_all_bumps_token_version_and_kills_old_refresh(self, client):
+        repo = _repo_with_user(EXISTING_USER)
+        repo.bump_token_version.return_value = 2
+        access = create_access_token(EXISTING_USER["user_id"], 1)
+        old_refresh = create_refresh_token(EXISTING_USER["user_id"], 1)
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo):
+            response = client.post(
+                "/api/auth/logout-all",
+                headers={"Authorization": f"Bearer {access}"},
+            )
+
+            assert response.status_code == 200
+            assert response.json()["token_version"] == 2
+            repo.bump_token_version.assert_called_once_with(EXISTING_USER["user_id"])
+
+            # 증가된 버전을 반영한 뒤 옛 리프레시 토큰을 시도하면 거부된다
+            repo.get_by_id_consistent.return_value = dict(
+                EXISTING_USER, token_version=2
+            )
+            refresh_response = client.post(
+                "/api/auth/refresh", json={"refresh_token": old_refresh}
+            )
+
+        assert refresh_response.status_code == 401
+
+
+class TestAdminUserStatus:
+    HEADERS = {"X-API-Key": "test-admin-key"}
+
+    @pytest.fixture(autouse=True)
+    def admin_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key")
+
+    def test_suspend_requires_admin_key(self, client):
+        response = client.post("/api/admin/users/u1/suspend")
+        assert response.status_code == 403
+
+    def test_suspend_sets_status_and_bumps_version(self, client):
+        repo = MagicMock()
+        repo.bump_token_version.return_value = 3
+
+        with patch("database.user_repository.get_user_repository", return_value=repo):
+            response = client.post("/api/admin/users/u1/suspend", headers=self.HEADERS)
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "suspended"
+        assert response.json()["token_version"] == 3
+        repo.set_status.assert_called_once_with("u1", "suspended")
+        repo.bump_token_version.assert_called_once_with("u1")
+
+    def test_suspend_unknown_user_returns_404(self, client):
+        repo = MagicMock()
+        repo.set_status.side_effect = ValueError("존재하지 않는 사용자입니다")
+
+        with patch("database.user_repository.get_user_repository", return_value=repo):
+            response = client.post(
+                "/api/admin/users/nope/suspend", headers=self.HEADERS
+            )
+
+        assert response.status_code == 404
+
+    def test_reactivate_sets_status_active(self, client):
+        repo = MagicMock()
+
+        with patch("database.user_repository.get_user_repository", return_value=repo):
+            response = client.post(
+                "/api/admin/users/u1/reactivate", headers=self.HEADERS
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "active"
+        repo.set_status.assert_called_once_with("u1", "active")
+        # 정지 해제로 token_version 을 되돌리지는 않는다
+        repo.bump_token_version.assert_not_called()
 
 
 class TestMe:

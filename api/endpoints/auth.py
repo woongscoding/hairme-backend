@@ -23,8 +23,14 @@ from core.jwt_auth import (
     create_refresh_token,
     decode_token,
     get_current_user_id,
+    normalize_token_version,
+    token_version_of,
 )
-from database.user_repository import UserAlreadyExistsError, get_user_repository
+from database.user_repository import (
+    STATUS_ACTIVE,
+    UserAlreadyExistsError,
+    get_user_repository,
+)
 from services.credit_service import get_credit_service
 from services.kakao_auth_service import get_kakao_auth_service
 
@@ -69,6 +75,26 @@ async def _resolve_raced_user(user_repo, kakao_id: str) -> Optional[Dict[str, An
         await asyncio.sleep(KAKAO_RACE_RETRY_DELAY_SECONDS * (attempt + 1))
 
     return user_repo.get_by_kakao_marker(kakao_id)
+
+
+def _user_token_version(user: dict) -> int:
+    """사용자 아이템의 token_version (없으면 1 - 기존 회원 호환)"""
+    return normalize_token_version(user.get("token_version"))
+
+
+def _is_suspended(user: dict) -> bool:
+    """계정 정지 여부 (status 속성이 없는 기존 회원은 정상 계정으로 취급)"""
+    status_value = user.get("status")
+    return status_value is not None and status_value != STATUS_ACTIVE
+
+
+def _issue_tokens(user_id: str, token_version: int) -> dict:
+    """액세스 + 리프레시 토큰 쌍 발급 (둘 다 tv 클레임 포함)"""
+    return {
+        "access_token": create_access_token(user_id, token_version),
+        "refresh_token": create_refresh_token(user_id, token_version),
+        "token_type": "bearer",
+    }
 
 
 def _public_user(user: dict) -> dict:
@@ -134,6 +160,13 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
                     )
                 is_new_user = False
 
+        if _is_suspended(user):
+            logger.warning(f"⛔ 정지 계정 로그인 시도: user_id={user['user_id']}")
+            raise HTTPException(
+                status_code=403,
+                detail="이용이 정지된 계정입니다. 고객센터에 문의해주세요.",
+            )
+
         if is_new_user:
             if settings.SIGNUP_BONUS_CREDITS > 0:
                 balance = get_credit_service().grant(
@@ -155,9 +188,7 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
         )
 
     return {
-        "access_token": create_access_token(user["user_id"]),
-        "refresh_token": create_refresh_token(user["user_id"]),
-        "token_type": "bearer",
+        **_issue_tokens(user["user_id"], _user_token_version(user)),
         "is_new_user": is_new_user,
         "user": _public_user(user),
     }
@@ -166,13 +197,73 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
 @router.post("/auth/refresh")
 @limiter.limit("20/minute")
 async def refresh_token(request: Request, body: RefreshRequest):
-    """리프레시 토큰으로 액세스 토큰 재발급"""
+    """리프레시 토큰으로 액세스/리프레시 토큰 재발급
+
+    액세스 토큰 검증과 달리 여기서는 반드시 사용자 아이템을 강한 일관성으로
+    읽어 (1) 계정 존재 (2) status == active (3) tv 클레임 == 사용자의
+    token_version 을 확인한다. 강제 로그아웃(logout-all)/계정 정지는 이 경로에서
+    즉시 반영된다 (이미 발급된 액세스 토큰은 만료까지 최대 60분 유효).
+    """
     payload = decode_token(body.refresh_token, TOKEN_TYPE_REFRESH)
     user_id = payload["sub"]
+    claimed_version = token_version_of(payload)
 
+    try:
+        user = get_user_repository().get_by_id_consistent(user_id)
+    except Exception as e:
+        logger.error(f"❌ 리프레시 사용자 조회 실패: {str(e)}")
+        raise HTTPException(
+            status_code=503,
+            detail="로그인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="유효하지 않은 토큰입니다. 다시 로그인해주세요.",
+        )
+
+    if _is_suspended(user):
+        logger.warning(f"⛔ 정지 계정 리프레시 시도: user_id={user_id}")
+        raise HTTPException(
+            status_code=401,
+            detail="이용이 정지된 계정입니다. 고객센터에 문의해주세요.",
+        )
+
+    current_version = _user_token_version(user)
+    if claimed_version != current_version:
+        logger.warning(
+            f"⛔ 무효화된 리프레시 토큰: user_id={user_id}, "
+            f"tv={claimed_version} != {current_version}"
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="만료된 세션입니다. 다시 로그인해주세요.",
+        )
+
+    return _issue_tokens(user_id, current_version)
+
+
+@router.post("/auth/logout-all")
+@limiter.limit("10/minute")
+async def logout_all(request: Request, user_id: str = Depends(get_current_user_id)):
+    """모든 기기에서 로그아웃 (token_version 증가 → 리프레시 토큰 전부 무효화)
+
+    이미 발급된 액세스 토큰은 만료(기본 60분)까지 유효하다.
+    """
+    try:
+        new_version = get_user_repository().bump_token_version(user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"❌ 전체 로그아웃 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="로그아웃 처리에 실패했습니다.")
+
+    logger.info(f"🔐 전체 로그아웃: user_id={user_id}, token_version={new_version}")
     return {
-        "access_token": create_access_token(user_id),
-        "token_type": "bearer",
+        "success": True,
+        "token_version": new_version,
+        "message": "모든 기기에서 로그아웃되었습니다. 다시 로그인해주세요.",
     }
 
 

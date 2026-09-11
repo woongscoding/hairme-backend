@@ -53,6 +53,8 @@ def _charge_quota(
     user_id: Optional[str],
     device_id: Optional[str],
     client_ip: Optional[str] = None,
+    *,
+    endpoint: str = "synthesize",
 ) -> QuotaResult:
     """
     합성 1회분 과금 처리 (실제 로직은 core.quota).
@@ -64,6 +66,7 @@ def _charge_quota(
         user_id,
         device_id,
         client_ip,
+        endpoint=endpoint,
         credit_service_factory=get_credit_service,
         usage_service_factory=get_usage_limit_service,
     )
@@ -210,7 +213,10 @@ async def synthesize_hairstyle(
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
-            user_id, device_id, client_ip_from_request(request)
+            user_id,
+            device_id,
+            client_ip_from_request(request),
+            endpoint="synthesize",
         )
         if quota_error is not None:
             return quota_error
@@ -350,7 +356,10 @@ async def synthesize_with_reference(
 
         # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
-            user_id, device_id, client_ip_from_request(request)
+            user_id,
+            device_id,
+            client_ip_from_request(request),
+            endpoint="synthesize-with-reference",
         )
         if quota_error is not None:
             return quota_error

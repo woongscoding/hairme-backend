@@ -2,10 +2,24 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
+from config.settings import settings
 from core.logging import logger
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
+
+LEGACY_DISABLED_MESSAGE = (
+    "비로그인 무료 합성은 더 이상 제공되지 않습니다. 로그인 후 이용해주세요."
+)
+
+
+def _reject_if_legacy_flow_disabled() -> None:
+    """레거시 device_id 흐름 킬 스위치 (settings.LEGACY_DEVICE_FLOW_ENABLED)
+
+    410 Gone: 엔드포인트 자체가 폐지되었음을 알려 앱이 재시도하지 않도록 한다.
+    """
+    if not settings.LEGACY_DEVICE_FLOW_ENABLED:
+        raise HTTPException(status_code=410, detail=LEGACY_DISABLED_MESSAGE)
 
 
 @router.get("/usage")
@@ -21,6 +35,8 @@ async def get_usage(
     Returns:
         { "daily_limit": 3, "used": 2, "remaining": 1 }
     """
+    _reject_if_legacy_flow_disabled()
+
     try:
         validated_device_id = validate_device_id(device_id)
     except ValueError as e:
@@ -54,6 +70,8 @@ async def consume_usage(
     Returns:
         { "daily_limit": 3, "used": 2, "remaining": 1 }
     """
+    _reject_if_legacy_flow_disabled()
+
     try:
         validated_device_id = validate_device_id(device_id)
     except ValueError as e:

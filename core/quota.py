@@ -14,13 +14,15 @@
   (services.usage_limit_service.validate_device_id)
 """
 
+import hashlib
+import ipaddress
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from core.logging import logger
+from core.logging import log_structured, logger
 from services.credit_service import InsufficientCreditsError, get_credit_service
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
@@ -29,6 +31,31 @@ NOOP_REFUND: Callable[[], None] = lambda: None
 QuotaResult = Tuple[
     Optional[JSONResponse], Optional[Dict[str, Any]], Callable[[], None]
 ]
+
+
+def mask_device_id(device_id: Optional[str]) -> str:
+    """device_id 마스킹: 앞 4자 + sha256 앞 8자
+
+    로그에 원본 식별자를 남기지 않으면서도 같은 기기를 셀 수 있게 한다.
+    """
+    if not device_id:
+        return "unknown"
+    digest = hashlib.sha256(device_id.encode("utf-8")).hexdigest()[:8]
+    return f"{device_id[:4]}~{digest}"
+
+
+def mask_ip(client_ip: Optional[str]) -> str:
+    """IP 마스킹: IPv4는 마지막 옥텟을 0으로, IPv6는 /48 로 절단"""
+    if not client_ip:
+        return "unknown"
+    try:
+        address = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return "invalid"
+    if address.version == 4:
+        octets = client_ip.split(".")
+        return ".".join(octets[:3] + ["0"])
+    return str(ipaddress.ip_network(f"{address}/48", strict=False).network_address)
 
 
 def client_ip_from_request(request: Optional[Request]) -> Optional[str]:
@@ -70,6 +97,7 @@ def charge_synthesis_quota(
     device_id: Optional[str],
     client_ip: Optional[str] = None,
     *,
+    endpoint: str = "unknown",
     credit_service_factory: Optional[Callable[[], Any]] = None,
     usage_service_factory: Optional[Callable[[], Any]] = None,
 ) -> QuotaResult:
@@ -83,6 +111,7 @@ def charge_synthesis_quota(
         user_id: 로그인 사용자 ID (JWT). None이면 비로그인 흐름
         device_id: 비로그인 흐름의 디바이스 ID
         client_ip: 비로그인 IP 일일 상한용 (None이면 IP 상한 생략)
+        endpoint: 레거시 흐름 계측 로그에 남길 호출 엔드포인트 이름
         credit_service_factory / usage_service_factory:
             테스트/호출부에서 서비스 팩토리를 주입하기 위한 훅 (기본은 모듈 전역)
 
@@ -132,6 +161,13 @@ def charge_synthesis_quota(
         return None, {"mode": "credits", "balance": balance}, refund_credits
 
     # ===== 비로그인: 레거시 device_id 일일 제한 =====
+    # 킬 스위치: 레거시 흐름을 닫으면 카운터를 건드리기 전에 401 로 끊는다.
+    if not settings.LEGACY_DEVICE_FLOW_ENABLED:
+        raise HTTPException(
+            status_code=401,
+            detail="로그인이 필요합니다. 앱을 최신 버전으로 업데이트한 뒤 로그인해주세요.",
+        )
+
     trimmed_device_id = (device_id or "").strip()
     if not trimmed_device_id:
         raise HTTPException(
@@ -143,6 +179,18 @@ def charge_synthesis_quota(
         trimmed_device_id = validate_device_id(trimmed_device_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # 레거시(비로그인) 과금 1건당 구조화 로그 1줄.
+    # CloudWatch Logs Insights 로 플래그를 내리기 전 잔존 사용량을 측정한다.
+    # 원본 device_id / IP 는 절대 남기지 않는다 (마스킹 필수).
+    log_structured(
+        "legacy_device_flow",
+        {
+            "endpoint": endpoint,
+            "device_id": mask_device_id(trimmed_device_id),
+            "ip": mask_ip(client_ip),
+        },
+    )
 
     usage_service = usage_factory()
 

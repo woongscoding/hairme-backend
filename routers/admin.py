@@ -540,3 +540,72 @@ async def grant_credits(
         "granted": body.amount,
         "balance": balance,
     }
+
+
+# ========== 계정 관리 (관리자) ==========
+
+
+@router.post("/admin/users/{user_id}/suspend")
+@limiter.limit("10/minute")
+async def suspend_user(
+    request: Request,
+    user_id: str,
+    api_key: str = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """계정 정지 (status=suspended + token_version 증가)
+
+    - 리프레시 토큰이 전부 무효화되어 재로그인/토큰 갱신이 막힌다 (401)
+    - 카카오 로그인도 403 으로 거부된다
+    - 이미 발급된 액세스 토큰은 만료(기본 60분)까지 유효하다
+    """
+    from database.user_repository import STATUS_SUSPENDED, get_user_repository
+
+    repo = get_user_repository()
+    try:
+        repo.set_status(user_id, STATUS_SUSPENDED)
+        new_version = repo.bump_token_version(user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"❌ 계정 정지 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+    logger.warning(f"⛔ [ADMIN] 계정 정지: user_id={user_id}")
+    return {
+        "success": True,
+        "user_id": user_id,
+        "status": STATUS_SUSPENDED,
+        "token_version": new_version,
+    }
+
+
+@router.post("/admin/users/{user_id}/reactivate")
+@limiter.limit("10/minute")
+async def reactivate_user(
+    request: Request,
+    user_id: str,
+    api_key: str = Depends(verify_admin_api_key),
+) -> Dict[str, Any]:
+    """계정 정지 해제 (status=active)
+
+    token_version 은 되돌리지 않는다 (정지 중 무효화된 세션은 그대로 유지).
+    사용자는 다시 카카오 로그인해야 한다.
+    """
+    from database.user_repository import STATUS_ACTIVE, get_user_repository
+
+    try:
+        get_user_repository().set_status(user_id, STATUS_ACTIVE)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"❌ 계정 정지 해제 실패: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+        )
+
+    logger.warning(f"✅ [ADMIN] 계정 정지 해제: user_id={user_id}")
+    return {"success": True, "user_id": user_id, "status": STATUS_ACTIVE}

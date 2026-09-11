@@ -17,6 +17,10 @@ bearer_scheme = HTTPBearer(auto_error=False)
 TOKEN_TYPE_ACCESS = "access"
 TOKEN_TYPE_REFRESH = "refresh"
 
+# tv(token_version) 클레임이 없는 토큰(이 기능 도입 전 발급분)은 1로 간주한다.
+# 사용자 아이템에 token_version 속성이 없는 기존 회원도 동일하게 1이다.
+DEFAULT_TOKEN_VERSION = 1
+
 
 def _require_secret() -> str:
     """JWT 시크릿 키 확인 (미설정 시 인증 기능 비활성화 상태)"""
@@ -29,11 +33,27 @@ def _require_secret() -> str:
     return settings.JWT_SECRET_KEY
 
 
-def _create_token(user_id: str, token_type: str, expires_delta: timedelta) -> str:
+def normalize_token_version(value: Any) -> int:
+    """token_version 값을 정수로 정규화 (없거나 이상하면 DEFAULT_TOKEN_VERSION)"""
+    if value is None:
+        return DEFAULT_TOKEN_VERSION
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_TOKEN_VERSION
+
+
+def _create_token(
+    user_id: str,
+    token_type: str,
+    expires_delta: timedelta,
+    token_version: int = DEFAULT_TOKEN_VERSION,
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
         "type": token_type,
+        "tv": normalize_token_version(token_version),
         "jti": uuid.uuid4().hex,
         "iat": int(now.timestamp()),
         "exp": int((now + expires_delta).timestamp()),
@@ -41,22 +61,33 @@ def _create_token(user_id: str, token_type: str, expires_delta: timedelta) -> st
     return jwt.encode(payload, _require_secret(), algorithm=settings.JWT_ALGORITHM)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(
+    user_id: str, token_version: int = DEFAULT_TOKEN_VERSION
+) -> str:
     """액세스 토큰 발급 (기본 1시간)"""
     return _create_token(
         user_id,
         TOKEN_TYPE_ACCESS,
         timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
+        token_version=token_version,
     )
 
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(
+    user_id: str, token_version: int = DEFAULT_TOKEN_VERSION
+) -> str:
     """리프레시 토큰 발급 (기본 30일)"""
     return _create_token(
         user_id,
         TOKEN_TYPE_REFRESH,
         timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
+        token_version=token_version,
     )
+
+
+def token_version_of(payload: Dict[str, Any]) -> int:
+    """토큰 페이로드의 tv 클레임 (없으면 DEFAULT_TOKEN_VERSION)"""
+    return normalize_token_version(payload.get("tv"))
 
 
 def decode_token(token: str, expected_type: str = TOKEN_TYPE_ACCESS) -> Dict[str, Any]:
@@ -95,7 +126,12 @@ def decode_token(token: str, expected_type: str = TOKEN_TYPE_ACCESS) -> Dict[str
 async def get_current_user_id(
     credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
 ) -> str:
-    """로그인 필수 엔드포인트용 의존성 - user_id 반환"""
+    """로그인 필수 엔드포인트용 의존성 - user_id 반환
+
+    액세스 토큰 검증은 의도적으로 stateless 다 (DB 조회 없음).
+    token_version 대조는 리프레시(POST /api/auth/refresh)에서만 수행하므로,
+    강제 로그아웃/정지는 액세스 토큰 만료(기본 60분) 후 완전히 적용된다.
+    """
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     DYNAMODB_USERS_TABLE_NAME: str = "hairme-users"
     DYNAMODB_CREDIT_LEDGER_TABLE_NAME: str = "hairme-credit-ledger"
 
+    # ===== 레거시 비로그인(device_id) 합성 흐름 =====
+    # False 로 내리면 비로그인 합성은 401(로그인 필요)로 거부한다. 구버전 앱 사용 비율을
+    # 로그(event_type=legacy_device_flow)로 확인한 뒤 내릴 것.
+    LEGACY_DEVICE_FLOW_ENABLED: bool = True
+
     # ===== 크레딧 정책 =====
     SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
     SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
@@ -72,6 +77,12 @@ class Settings(BaseSettings):
         "credits_30": 30,
         "credits_100": 100,
     }
+
+    # ===== Google Play 환불/취소 회수 (voidedpurchases 폴링) =====
+    PLAY_VOID_RECLAIM_ENABLED: bool = (
+        True  # 잡 이벤트 {"job":"reclaim_voided_purchases"} 처리 여부
+    )
+    PLAY_VOID_LOOKBACK_DAYS: int = 30  # 폴링 시 조회할 과거 기간 (Play 최대 30일)
 
     # ===== AdMob 리워드 광고 (SSV) =====
     REWARD_AD_DAILY_LIMIT: int = 5  # 유저당 하루 보상 횟수 상한
