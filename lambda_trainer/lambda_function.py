@@ -16,8 +16,7 @@ S3에서 피드백 데이터를 가져와 모델을 재학습합니다.
    거부 시 models/rejected/{version}.pt 에만 저장하고 현재 모델은 유지
 6. 통과 시에만 pending/*.npz → processed/로 이동
    (거부 시 pending 은 그대로 두어 다음 학습에 재포함)
-7. hairme-analyze Lambda 환경변수 업데이트
-8. metadata.json 업데이트
+7. metadata.json 업데이트
 
 이벤트 플래그:
 - force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않음)
@@ -54,7 +53,6 @@ logger.setLevel(logging.INFO)
 # Configuration
 S3_BUCKET = os.getenv("MLOPS_S3_BUCKET", "hairme-mlops")
 MIN_SAMPLES = int(os.getenv("MLOPS_MIN_SAMPLES", "50"))
-ANALYZE_LAMBDA_NAME = os.getenv("ANALYZE_LAMBDA_NAME", "hairme-analyze")
 # AWS_REGION은 Lambda 내장 환경변수 사용 (AWS_DEFAULT_REGION)
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", os.getenv("AWS_REGION", "ap-northeast-2"))
 
@@ -498,13 +496,6 @@ def get_s3_client():
     import boto3
 
     return boto3.client("s3", region_name=AWS_REGION)
-
-
-def get_lambda_client():
-    """Lambda 클라이언트"""
-    import boto3
-
-    return boto3.client("lambda", region_name=AWS_REGION)
 
 
 def get_pending_count() -> int:
@@ -1489,79 +1480,6 @@ def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
         return False
 
 
-def backup_lambda_config() -> Optional[Dict[str, Any]]:
-    """
-    hairme-analyze Lambda의 현재 환경변수 백업
-
-    Returns:
-        현재 환경변수 또는 None
-    """
-    lambda_client = get_lambda_client()
-
-    try:
-        response = lambda_client.get_function_configuration(
-            FunctionName=ANALYZE_LAMBDA_NAME
-        )
-        env_vars = response.get("Environment", {}).get("Variables", {})
-
-        # S3에 백업
-        s3 = get_s3_client()
-        backup_key = f'config_backups/{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.json'
-        s3.put_object(
-            Bucket=S3_BUCKET,
-            Key=backup_key,
-            Body=json.dumps(env_vars, indent=2),
-            ContentType="application/json",
-        )
-        logger.info(f"✅ Lambda 환경변수 백업: {backup_key}")
-
-        return env_vars
-
-    except Exception as e:
-        logger.error(f"❌ Lambda 설정 백업 실패: {e}")
-        return None
-
-
-def update_analyze_lambda_envvars(new_version: str, experiment_id: str) -> bool:
-    """
-    hairme-analyze Lambda 환경변수 업데이트
-
-    - ABTEST_CHALLENGER_VERSION: 새 모델 버전
-    - ABTEST_EXPERIMENT_ID: 새 실험 ID
-
-    Returns:
-        성공 여부
-    """
-    lambda_client = get_lambda_client()
-
-    try:
-        # 현재 설정 조회
-        response = lambda_client.get_function_configuration(
-            FunctionName=ANALYZE_LAMBDA_NAME
-        )
-        current_env = response.get("Environment", {}).get("Variables", {})
-
-        # 환경변수 업데이트
-        current_env["ABTEST_CHALLENGER_VERSION"] = new_version
-        current_env["ABTEST_EXPERIMENT_ID"] = experiment_id
-
-        # Lambda 업데이트
-        lambda_client.update_function_configuration(
-            FunctionName=ANALYZE_LAMBDA_NAME, Environment={"Variables": current_env}
-        )
-
-        logger.info(
-            f"✅ Lambda 환경변수 업데이트 완료: "
-            f"CHALLENGER={new_version}, EXPERIMENT_ID={experiment_id}"
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Lambda 환경변수 업데이트 실패: {e}")
-        traceback.print_exc()
-        return False
-
-
 def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     전체 학습 파이프라인 실행
@@ -1588,13 +1506,11 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     timestamp = datetime.now(timezone.utc)
     date_str = timestamp.strftime("%Y%m%d")
     new_version = f"v6_feedback_{date_str}"
-    experiment_id = f'exp_{timestamp.strftime("%Y_%m_%d")}'
     batch_name = f'batch_{timestamp.strftime("%Y%m%d_%H%M%S")}'
 
     result = {
         "success": False,
         "new_version": new_version,
-        "experiment_id": experiment_id,
         "samples_trained": 0,
         "final_loss": None,
         "steps_completed": [],
@@ -1777,13 +1693,8 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             result["message"] = f"Quality gate rejected: {gate['reason']}"
             return result
 
-        # 5. Lambda 환경변수 백업
-        logger.info("💾 Step 5: Lambda 설정 백업")
-        backup_lambda_config()
-        result["steps_completed"].append("backup_config")
-
-        # 6. 모델 저장 (게이트 통과분만 models/current 교체)
-        logger.info("💾 Step 6: 모델 저장")
+        # 5. 모델 저장 (게이트 통과분만 models/current 교체)
+        logger.info("💾 Step 5: 모델 저장")
         if not save_model_to_s3(model, config, new_version):
             result["message"] = "Failed to save model"
             return result
@@ -1791,31 +1702,20 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         result["model_promoted"] = True
         result["steps_completed"].append("save_model")
 
-        # 7. pending → processed 이동 (processed/ 에서 읽어온 파일은 그대로 둔다)
-        logger.info("📦 Step 7: 피드백 파일 이동")
+        # 6. pending → processed 이동 (processed/ 에서 읽어온 파일은 그대로 둔다)
+        logger.info("📦 Step 6: 피드백 파일 이동")
         pending_keys = [k for k in file_keys if k.startswith(PENDING_PREFIX)]
         result["pending_files_moved"] = len(pending_keys)
         move_pending_to_processed(pending_keys, batch_name)
         result["steps_completed"].append("move_feedbacks")
 
-        # 8. Lambda 환경변수 업데이트
-        logger.info("🔧 Step 8: Lambda 환경변수 업데이트")
-        if not update_analyze_lambda_envvars(new_version, experiment_id):
-            result["message"] = "Model saved but Lambda update failed"
-            # 모델은 저장되었으므로 부분 성공으로 처리
-            result["success"] = True
-            result["steps_completed"].append("lambda_update_failed")
-            return result
-
-        result["steps_completed"].append("update_lambda")
-
-        # 9. 메타데이터 업데이트
-        logger.info("📝 Step 9: 메타데이터 업데이트")
+        # 7. 메타데이터 업데이트
+        logger.info("📝 Step 7: 메타데이터 업데이트")
         update_metadata(training_triggered=True, new_model_version=new_version)
         result["steps_completed"].append("update_metadata")
 
-        # 10. 평가 리포트 저장
-        logger.info("📊 Step 10: 평가 리포트 저장")
+        # 8. 평가 리포트 저장
+        logger.info("📊 Step 8: 평가 리포트 저장")
         save_evaluation_report(
             before_metrics, after_metrics, stats, new_version, gate=gate
         )

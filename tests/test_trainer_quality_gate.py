@@ -366,8 +366,6 @@ def _run_pipeline(fake_s3, before, after, event=None, count=200):
         patch.object(lf, "load_base_model", return_value=(model, {"version": "v6"})),
         patch.object(lf, "evaluate_holdout", side_effect=eval_spy),
         patch.object(lf, "fine_tune_model", return_value=(model, {"final_loss": 0.12})),
-        patch.object(lf, "backup_lambda_config", return_value={}),
-        patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
     ]
 
     for p in patches:
@@ -567,8 +565,6 @@ def test_pipeline_trains_only_on_train_split():
         patch.object(lf, "load_base_model", return_value=(model, {"version": "v6"})),
         patch.object(lf, "evaluate_holdout", side_effect=lambda *a: metrics.pop(0)),
         patch.object(lf, "fine_tune_model", side_effect=fake_fine_tune),
-        patch.object(lf, "backup_lambda_config", return_value={}),
-        patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
     ]
     for p in patches:
         p.start()

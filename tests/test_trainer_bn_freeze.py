@@ -390,11 +390,9 @@ def _patched_pipeline(pending_count, processed_count=0, saved=None):
             return_value={"mse": 0.1, "ranking_accuracy": 0.8, "num_pairs": 10},
         ),
         patch.object(lf, "fine_tune_model", return_value=(model, {"final_loss": 0.1})),
-        patch.object(lf, "backup_lambda_config", return_value={}),
         patch.object(lf, "save_model_to_s3", side_effect=_save),
         patch.object(lf, "save_rejected_model", return_value=True),
         patch.object(lf, "move_pending_to_processed", return_value=True),
-        patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
         patch.object(lf, "save_evaluation_report", return_value=True),
     ]

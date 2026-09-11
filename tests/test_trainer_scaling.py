@@ -194,11 +194,9 @@ def _patched_pipeline(count, evaluate_spy):
         patch.object(lf, "load_base_model", return_value=(model, {"version": "v6"})),
         patch.object(lf, "evaluate_holdout", side_effect=evaluate_spy),
         patch.object(lf, "fine_tune_model", return_value=(model, {"final_loss": 0.12})),
-        patch.object(lf, "backup_lambda_config", return_value={}),
         patch.object(lf, "save_model_to_s3", return_value=True),
         patch.object(lf, "save_rejected_model", return_value=True),
         patch.object(lf, "move_pending_to_processed", return_value=True),
-        patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
         patch.object(lf, "save_evaluation_report", return_value=True),
     ]
