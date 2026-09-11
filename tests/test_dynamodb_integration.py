@@ -1,26 +1,30 @@
 """
 Pytest test suite for DynamoDB integration
 
-Tests the DynamoDB connection functions and API endpoints to ensure
-compatibility with the existing MySQL-based interface.
+이 스위트는 실제 DynamoDB 테이블에 **쓰기**를 수행한다. 따라서 기본적으로
+항상 skip 되며, 아래 두 가지를 모두 명시적으로 지정했을 때만 실행된다.
+
+    RUN_DYNAMODB_INTEGRATION=1
+    DYNAMODB_TEST_TABLE_NAME=hairme-analysis-test
+
+과거에는 "자격증명이 있으면" 실행되었고 테이블 이름이 기본값
+hairme-analysis(운영) 로 해석되어, 로컬이나 CI 에서 전체 스위트를 돌리는
+것만으로 운영 테이블에 테스트 레코드가 쌓였다. 지금은 운영 테이블 이름이
+지정되면 실행 자체를 거부한다.
 
 Usage:
-    # Set environment variables
-    export USE_DYNAMODB=true
-    export AWS_REGION=ap-northeast-2
-    export DYNAMODB_TABLE_NAME=hairme-analysis
+    # 테스트 전용 테이블 생성 (1회)
+    ./scripts/create_test_table.sh
 
-    # Run all tests
+    # 실행
+    RUN_DYNAMODB_INTEGRATION=1 \
+    DYNAMODB_TEST_TABLE_NAME=hairme-analysis-test \
     pytest tests/test_dynamodb_integration.py -v
 
-    # Run specific test
-    pytest tests/test_dynamodb_integration.py::test_save_analysis -v
-
 Prerequisites:
-    - DynamoDB table created: ./scripts/create_dynamodb_table.sh
+    - 테스트 테이블 생성: ./scripts/create_test_table.sh
     - AWS credentials configured: aws configure
     - boto3 installed: pip install boto3
-    - pytest installed: pip install pytest pytest-asyncio
 """
 
 import os
@@ -33,29 +37,57 @@ from typing import Dict, Any
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# 운영 테이블 - 이 스위트가 절대 건드리면 안 되는 이름
+PRODUCTION_TABLE_NAME = "hairme-analysis"
 
-def _dynamodb_accessible() -> bool:
-    """Check if AWS credentials are configured and DynamoDB table is accessible."""
+# 명시적 옵트인 플래그
+RUN_INTEGRATION_ENV = "RUN_DYNAMODB_INTEGRATION"
+TEST_TABLE_ENV = "DYNAMODB_TEST_TABLE_NAME"
+
+
+def _test_table_name() -> str:
+    return os.getenv(TEST_TABLE_ENV, "").strip()
+
+
+def _integration_skip_reason() -> str:
+    """
+    실행 조건을 만족하지 못한 이유를 반환한다 (조건 충족 시 빈 문자열).
+
+    자격증명 유무는 실행 조건이 아니다. 반드시 두 환경변수를 명시해야 하고,
+    지정된 테이블이 운영 테이블이면 그 자리에서 거부한다.
+    """
+    if os.getenv(RUN_INTEGRATION_ENV) != "1":
+        return (
+            f"{RUN_INTEGRATION_ENV}=1 이 아니므로 skip "
+            "(실제 DynamoDB 테이블에 쓰는 통합 테스트)"
+        )
+
+    table_name = _test_table_name()
+    if not table_name:
+        return f"{TEST_TABLE_ENV} 이 설정되지 않아 skip (전용 테스트 테이블 필요)"
+
+    if table_name == PRODUCTION_TABLE_NAME:
+        return (
+            f"{TEST_TABLE_ENV}={table_name} 은 운영 테이블이므로 거부 "
+            "(예: hairme-analysis-test 를 사용)"
+        )
+
     try:
         import boto3
-        from botocore.exceptions import NoCredentialsError, ClientError
 
         region = os.getenv("AWS_REGION", "ap-northeast-2")
-        table_name = os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
-
         dynamodb = boto3.resource("dynamodb", region_name=region)
-        table = dynamodb.Table(table_name)
-        table.load()  # Verifies the table exists and is accessible
-        return True
-    except (ImportError, Exception):
-        return False
+        dynamodb.Table(table_name).load()
+    except Exception as e:
+        return f"테스트 테이블 {table_name} 에 접근할 수 없어 skip: {e}"
+
+    return ""
 
 
-# Skip the entire module if DynamoDB table is not accessible
-pytestmark = pytest.mark.skipif(
-    not _dynamodb_accessible(),
-    reason="DynamoDB table not accessible (skipping DynamoDB integration tests)",
-)
+_SKIP_REASON = _integration_skip_reason()
+
+# 조건을 전부 만족할 때만 실행한다
+pytestmark = pytest.mark.skipif(bool(_SKIP_REASON), reason=_SKIP_REASON)
 
 import database.dynamodb_connection as ddb
 from database.dynamodb_connection import (
@@ -80,6 +112,9 @@ def dynamodb_connection():
     다른 테스트 모듈(TestClient startup -> init_database)까지 DynamoDB 분기를
     타게 만들었다. 여기서는 fixture 안에서만 환경을 바꾸고, 모듈 전역
     (dynamodb_resource/table/enabled)도 원래 값으로 되돌린다.
+
+    테이블 이름은 DYNAMODB_TEST_TABLE_NAME 에서만 온다. 기본값으로
+    운영 테이블로 흘러갈 여지를 남기지 않는다.
     """
     saved_globals = (
         ddb.dynamodb_resource,
@@ -88,11 +123,14 @@ def dynamodb_connection():
     )
 
     with pytest.MonkeyPatch.context() as mp:
+        table_name = _test_table_name()
+        assert (
+            table_name and table_name != PRODUCTION_TABLE_NAME
+        ), f"통합 테스트는 전용 테스트 테이블에서만 실행된다 (got {table_name!r})"
+
         mp.setenv("USE_DYNAMODB", "true")
         mp.setenv("AWS_REGION", os.getenv("AWS_REGION", "ap-northeast-2"))
-        mp.setenv(
-            "DYNAMODB_TABLE_NAME", os.getenv("DYNAMODB_TABLE_NAME", "hairme-analysis")
-        )
+        mp.setenv("DYNAMODB_TABLE_NAME", table_name)
 
         success = init_dynamodb()
         assert success, "Failed to initialize DynamoDB connection"
