@@ -10,6 +10,7 @@ Features:
 """
 
 import hmac
+import json
 import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -531,16 +532,59 @@ except ImportError:
     _mangum_handler = None
 
 
+# ========== 배치 잡 (EventBridge 스케줄) ==========
+def _job_reclaim_voided_purchases(event):
+    """Google Play 환불/취소 구매의 크레딧 회수 (일 1회)"""
+    if not settings.PLAY_VOID_RECLAIM_ENABLED:
+        logger.warning("⚠️ PLAY_VOID_RECLAIM_ENABLED=false - 환불 회수 잡 비활성화")
+        return {"statusCode": 200, "body": "disabled"}
+
+    from services.play_void_reclaim_service import get_play_void_reclaim_service
+
+    summary = get_play_void_reclaim_service().run()
+    return {"statusCode": 200, "body": json.dumps(summary, ensure_ascii=False)}
+
+
+# 잡 이름 → 핸들러 (신규 잡은 여기에 추가)
+JOB_HANDLERS = {
+    "reclaim_voided_purchases": _job_reclaim_voided_purchases,
+}
+
+
+def run_job(job, event):
+    """잡 이벤트 디스패치 - 예외는 로깅 후 500 형태로 반환 (재시도 폭주 방지)"""
+    job_handler = JOB_HANDLERS.get(job)
+    if job_handler is None:
+        logger.error(f"❌ 알 수 없는 잡 이벤트: job={job}")
+        return {
+            "statusCode": 400,
+            "body": json.dumps({"error": "unknown job", "job": job}),
+        }
+
+    try:
+        return job_handler(event)
+    except Exception as e:
+        logger.error(f"❌ 잡 실행 실패: job={job}, error={str(e)}", exc_info=True)
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "job failed", "job": job}),
+        }
+
+
 def handler(event, context=None):
     """
     Lambda 엔트리포인트.
 
     {"warmup": true} 이벤트(EventBridge 등)는 HTTP 계층을 거치지 않고
-    warm_up() 만 수행한다. 그 외에는 Mangum 으로 위임한다.
+    warm_up() 만 수행한다. {"job": "<name>"} 이벤트는 JOB_HANDLERS 로
+    디스패치한다. 그 외에는 Mangum 으로 위임한다.
     """
     if isinstance(event, dict) and event.get("warmup") is True:
         warm_up()
         return {"statusCode": 200, "body": "warm"}
+
+    if isinstance(event, dict) and event.get("job"):
+        return run_job(event["job"], event)
 
     if _mangum_handler is None:
         raise RuntimeError("Mangum is not installed - Lambda handler unavailable")

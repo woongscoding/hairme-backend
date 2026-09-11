@@ -46,6 +46,7 @@ class CreditService:
     """크레딧 차감/지급/조회"""
 
     # 원장 reason 값: signup_bonus | synthesis | refund | purchase | admin_grant
+    #               | reward_ad | void_reclaim
     def __init__(self):
         self._users_table = None
         self._ledger_table = None
@@ -131,6 +132,51 @@ class CreditService:
         self._write_ledger(user_id, -amount, reason, balance_after, ref_id)
         logger.info(
             f"크레딧 차감: user_id={user_id}, -{amount} ({reason}), 잔액={balance_after}"
+        )
+        return balance_after
+
+    def consume_for_reclaim(
+        self,
+        user_id: str,
+        amount: int,
+        ref_id: Optional[str] = None,
+    ) -> int:
+        """
+        환불/취소된 구매의 크레딧 회수 (잔액이 음수가 되는 것을 허용)
+
+        일반 consume 과 달리 `credits >= :amt` 조건을 걸지 않는다.
+        이미 크레딧을 다 써버린 뒤 환불한 사용자는 잔액이 음수가 되고,
+        consume 의 조건식(credits >= :amt)에 막혀 다시 구매하기 전까지
+        합성을 사용할 수 없다 (= 환불 악용 차단).
+
+        Returns:
+            회수 후 잔액 (음수 가능)
+
+        Raises:
+            ValueError: 존재하지 않는 사용자 (탈퇴 등)
+        """
+        if amount <= 0:
+            raise ValueError("회수 금액은 1 이상이어야 합니다")
+
+        try:
+            response = self.users_table.update_item(
+                Key={"user_id": user_id},
+                UpdateExpression="SET credits = if_not_exists(credits, :zero) - :amt",
+                ConditionExpression="attribute_exists(user_id)",
+                ExpressionAttributeValues={":amt": amount, ":zero": 0},
+                ReturnValues="UPDATED_NEW",
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise ValueError("존재하지 않는 사용자입니다")
+            logger.error(f"크레딧 회수 실패: {e.response['Error']['Message']}")
+            raise
+
+        balance_after = int(response["Attributes"]["credits"])
+        self._write_ledger(user_id, -amount, "void_reclaim", balance_after, ref_id)
+        logger.warning(
+            f"⚠️ 환불 크레딧 회수: user_id={user_id}, -{amount} (void_reclaim), "
+            f"잔액={balance_after}"
         )
         return balance_after
 
@@ -238,6 +284,59 @@ class CreditService:
                 return False
             logger.error(f"트랜잭션 클레임 기록 실패: {e.response['Error']['Message']}")
             raise
+
+    def get_claim(self, ref_key: str) -> Optional[Dict[str, Any]]:
+        """
+        클레임 마커 조회 (구매 토큰 → 지급 대상 사용자/상품 역추적)
+
+        try_claim_ref 가 기록한 아이템(user_id=ref_key, sk="claim")을 읽는다.
+        원장에는 ref_id 기준 인덱스(GSI)가 없어, 토큰만 아는 상황에서
+        사용자를 찾을 수 있는 유일한 경로다.
+
+        Returns:
+            마커 아이템 ({"claimed_by": user_id, "detail": {...}}) 또는 None
+        """
+        try:
+            response = self.ledger_table.get_item(
+                Key={"user_id": ref_key, "sk": "claim"}
+            )
+        except ClientError as e:
+            logger.error(f"클레임 마커 조회 실패: {e.response['Error']['Message']}")
+            raise
+        return response.get("Item")
+
+    def find_ledger_entry(
+        self,
+        user_id: str,
+        ref_id: str,
+        reason: str,
+        limit: int = 200,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        특정 사용자의 원장에서 ref_id/reason이 일치하는 최신 항목 탐색
+
+        ref_id 기준 GSI가 없으므로 해당 사용자의 원장을 최신순으로
+        스캔(쿼리+필터)한다. user_id 를 이미 아는 경우에만 사용 가능.
+        """
+        try:
+            response = self.ledger_table.query(
+                KeyConditionExpression="user_id = :uid",
+                FilterExpression="#ref = :ref AND #reason = :reason",
+                ExpressionAttributeNames={"#ref": "ref_id", "#reason": "reason"},
+                ExpressionAttributeValues={
+                    ":uid": user_id,
+                    ":ref": ref_id,
+                    ":reason": reason,
+                },
+                ScanIndexForward=False,
+                Limit=limit,
+            )
+        except ClientError as e:
+            logger.error(f"원장 항목 조회 실패: {e.response['Error']['Message']}")
+            raise
+
+        items = response.get("Items", [])
+        return items[0] if items else None
 
     def release_ref(self, ref_key: str) -> None:
         """지급 실패 시 클레임 마커 회수 - 클라이언트 재시도 허용 (best effort)"""

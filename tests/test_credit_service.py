@@ -173,3 +173,89 @@ class TestBalanceAndHistory:
         # 최신순 조회인지 확인
         call_kwargs = service._ledger_table.query.call_args.kwargs
         assert call_kwargs["ScanIndexForward"] is False
+
+
+class TestConsumeForReclaim:
+    """환불 회수 차감 - 잔액이 음수가 되는 것을 허용"""
+
+    def test_allows_negative_balance(self, service):
+        service._users_table.update_item.return_value = {
+            "Attributes": {"credits": Decimal("-7")}
+        }
+
+        balance = service.consume_for_reclaim("user-1", 10, ref_id="tok-1")
+
+        assert balance == -7
+        call_kwargs = service._users_table.update_item.call_args.kwargs
+        # 잔액 조건이 없어야 한다 (일반 consume 과의 차이)
+        assert "credits >=" not in call_kwargs["ConditionExpression"]
+        assert "attribute_exists(user_id)" in call_kwargs["ConditionExpression"]
+
+        ledger_item = service._ledger_table.put_item.call_args.kwargs["Item"]
+        assert ledger_item["amount"] == -10
+        assert ledger_item["reason"] == "void_reclaim"
+        assert ledger_item["balance_after"] == -7
+        assert ledger_item["ref_id"] == "tok-1"
+
+    def test_negative_balance_blocks_further_consume(self, service):
+        """회수로 음수가 된 뒤에는 조건식(credits >= :amt)에 막혀 합성 불가"""
+        service._users_table.update_item.side_effect = _conditional_check_failed()
+        service._users_table.get_item.return_value = {
+            "Item": {"credits": Decimal("-7")}
+        }
+
+        with pytest.raises(InsufficientCreditsError) as exc_info:
+            service.consume("user-1", 1)
+
+        assert exc_info.value.balance == -7
+
+    def test_missing_user_raises_value_error(self, service):
+        service._users_table.update_item.side_effect = _conditional_check_failed()
+
+        with pytest.raises(ValueError):
+            service.consume_for_reclaim("user-1", 10)
+
+        service._ledger_table.put_item.assert_not_called()
+
+    def test_invalid_amount(self, service):
+        with pytest.raises(ValueError):
+            service.consume_for_reclaim("user-1", 0)
+
+
+class TestClaimLookup:
+    """구매 토큰 → 사용자/금액 역추적 (환불 회수용)"""
+
+    def test_get_claim_returns_marker(self, service):
+        service._ledger_table.get_item.return_value = {
+            "Item": {"claimed_by": "user-1", "detail": {"product_id": "credits_10"}}
+        }
+
+        marker = service.get_claim("purchase#tok-1")
+
+        assert marker["claimed_by"] == "user-1"
+        key = service._ledger_table.get_item.call_args.kwargs["Key"]
+        assert key == {"user_id": "purchase#tok-1", "sk": "claim"}
+
+    def test_get_claim_returns_none_when_missing(self, service):
+        service._ledger_table.get_item.return_value = {}
+
+        assert service.get_claim("purchase#unknown") is None
+
+    def test_find_ledger_entry_filters_by_ref_and_reason(self, service):
+        service._ledger_table.query.return_value = {
+            "Items": [{"amount": Decimal("10"), "ref_id": "tok-1"}]
+        }
+
+        entry = service.find_ledger_entry("user-1", "tok-1", reason="purchase")
+
+        assert entry["amount"] == Decimal("10")
+        call_kwargs = service._ledger_table.query.call_args.kwargs
+        assert call_kwargs["ExpressionAttributeValues"][":ref"] == "tok-1"
+        assert call_kwargs["ExpressionAttributeValues"][":reason"] == "purchase"
+        # 예약어 충돌 방지를 위해 이름 치환 사용
+        assert call_kwargs["ExpressionAttributeNames"]["#reason"] == "reason"
+
+    def test_find_ledger_entry_returns_none_when_empty(self, service):
+        service._ledger_table.query.return_value = {"Items": []}
+
+        assert service.find_ledger_entry("user-1", "tok-x", reason="purchase") is None

@@ -32,6 +32,13 @@ PLAY_PRODUCTS_GET_URL = (
     "/applications/{package_name}/purchases/products/{product_id}/tokens/{token}"
 )
 PLAY_PRODUCTS_ACK_URL = PLAY_PRODUCTS_GET_URL + ":acknowledge"
+PLAY_VOIDED_PURCHASES_URL = (
+    "https://androidpublisher.googleapis.com/androidpublisher/v3"
+    "/applications/{package_name}/purchases/voidedpurchases"
+)
+
+# voidedpurchases 의 type 파라미터: 0=인앱 상품(일회성), 1=구독 포함
+VOIDED_TYPE_ONE_TIME = 0
 
 # purchases.products.get 응답의 purchaseState 값
 PURCHASE_STATE_PURCHASED = 0
@@ -207,6 +214,59 @@ class PlayBillingService:
 
         logger.error(f"❌ Play acknowledge 오류: status={response.status_code}")
         raise PlayBillingUnavailableError("play acknowledge error")
+
+    def list_voided_purchases(
+        self,
+        start_time_millis: int,
+        page_token: Optional[str] = None,
+        voided_type: int = VOIDED_TYPE_ONE_TIME,
+    ) -> Dict[str, Any]:
+        """
+        환불/취소/차지백된 구매 목록 1페이지 조회 (purchases.voidedpurchases.list)
+
+        페이지네이션은 호출자가 응답의 tokenPagination.nextPageToken 을
+        page_token 으로 넘겨 반복한다.
+
+        Args:
+            start_time_millis: 조회 시작 시각 (epoch ms, Play 는 최대 30일 과거까지)
+            page_token: 다음 페이지 토큰 (첫 페이지는 None)
+            voided_type: 0=인앱 상품만, 1=구독 포함
+
+        Returns:
+            Play API 원본 JSON ({"voidedPurchases": [...], "tokenPagination": {...}})
+
+        Raises:
+            PlayBillingUnavailableError: 설정 누락 또는 Google API 장애
+        """
+        if not self.package_name:
+            logger.error("❌ PLAY_PACKAGE_NAME이 설정되지 않음 (환불 조회 불가)")
+            raise PlayBillingUnavailableError("package name not configured")
+
+        url = PLAY_VOIDED_PURCHASES_URL.format(
+            package_name=quote(self.package_name, safe=""),
+        )
+        params: Dict[str, Any] = {
+            "startTime": str(int(start_time_millis)),
+            "type": int(voided_type),
+        }
+        if page_token:
+            params["token"] = page_token
+
+        try:
+            response = self.session.get(url, params=params, timeout=15)
+        except PlayBillingError:
+            raise
+        except Exception:
+            logger.error("❌ voidedpurchases 호출 실패 (네트워크)", exc_info=True)
+            raise PlayBillingUnavailableError("voidedpurchases request failed")
+
+        if response.status_code != 200:
+            logger.error(f"❌ voidedpurchases API 오류: status={response.status_code}")
+            raise PlayBillingUnavailableError(
+                f"voidedpurchases api error: {response.status_code}"
+            )
+
+        return response.json() or {}
 
 
 # Singleton

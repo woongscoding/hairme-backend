@@ -148,3 +148,57 @@ class TestAcknowledgeProductPurchase:
 
         with pytest.raises(PlayBillingUnavailableError):
             service.acknowledge_product_purchase("credits_10", "token-abc")
+
+
+class TestListVoidedPurchases:
+    """환불/취소 구매 목록 조회 (purchases.voidedpurchases.list)"""
+
+    def test_request_params(self, service):
+        service._session.get.return_value = _response(
+            200,
+            {
+                "voidedPurchases": [{"purchaseToken": "tok-1"}],
+                "tokenPagination": {"nextPageToken": "page-2"},
+            },
+        )
+
+        data = service.list_voided_purchases(1720000000000)
+
+        assert data["voidedPurchases"][0]["purchaseToken"] == "tok-1"
+        url = service._session.get.call_args.args[0]
+        params = service._session.get.call_args.kwargs["params"]
+        assert "com.hairme.app" in url and url.endswith("voidedpurchases")
+        assert params["startTime"] == "1720000000000"
+        assert params["type"] == 0  # 인앱 상품(일회성)만
+        assert "token" not in params  # 첫 페이지
+
+    def test_page_token_is_sent(self, service):
+        service._session.get.return_value = _response(200, {})
+
+        service.list_voided_purchases(1720000000000, page_token="page-2")
+
+        assert service._session.get.call_args.kwargs["params"]["token"] == "page-2"
+
+    @pytest.mark.parametrize("status", [401, 403, 500])
+    def test_api_error_raises_unavailable(self, service, status):
+        service._session.get.return_value = _response(status)
+
+        with pytest.raises(PlayBillingUnavailableError):
+            service.list_voided_purchases(1720000000000)
+
+    def test_network_error_raises_unavailable(self, service):
+        service._session.get.side_effect = ConnectionError("boom")
+
+        with pytest.raises(PlayBillingUnavailableError):
+            service.list_voided_purchases(1720000000000)
+
+    def test_missing_package_name_raises_unavailable(self, monkeypatch):
+        monkeypatch.setenv("PLAY_PACKAGE_NAME", "")
+        monkeypatch.setattr(
+            "services.play_billing_service.settings.PLAY_PACKAGE_NAME", ""
+        )
+        svc = PlayBillingService()
+        svc._session = MagicMock()
+
+        with pytest.raises(PlayBillingUnavailableError):
+            svc.list_voided_purchases(1720000000000)
