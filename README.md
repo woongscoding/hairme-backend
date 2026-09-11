@@ -90,7 +90,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 │  │  FaceDetection  │ GeminiAnalysis │ PersonalColor│   │
 │  │  HairColor │ HairstyleSynthesis │ BeautyConsult│   │
 │  │  HybridRecommender │ UsageLimit │ TrendingStyle│   │
-│  │  CircuitBreaker │ MLOps │ A/B Testing          │   │
+│  │  CircuitBreaker │ MLOps │ CreditService        │   │
 │  └─────────────────────────────────────────────────┘   │
 └──────────┬─────────┬──────────┬──────────┬─────────────┘
            │         │          │          │
@@ -127,7 +127,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 - **뷰티 컨설팅** - 종합 분석 리포트 + AI 챗봇 상담
 - **피드백 시스템** - 좋아요/싫어요 추적 + MLOps 재학습 파이프라인
 - **사용량 관리** - 디바이스별 일일 합성 횟수 제한
-- **A/B 테스팅** - Champion/Challenger 모델 실험
+- **재학습 품질 게이트** - 홀드아웃 평가를 통과한 모델만 자동 승격
 - **Circuit Breaker** - Gemini API 장애 시 자동 폴백
 
 ---
@@ -206,12 +206,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 | `GET` | `/api/admin/feedback-stats` | DynamoDB 기반 피드백 통계 |
 | `GET` | `/api/admin/circuit-breaker-status` | Circuit Breaker 상태 |
 | `POST` | `/api/admin/circuit-breaker-reset` | Circuit Breaker 수동 리셋 |
-| `GET` | `/api/admin/abtest/status` | A/B 테스트 현재 상태 |
-| `GET` | `/api/admin/abtest/metrics/{experiment_id}` | A/B 테스트 메트릭 |
-| `GET` | `/api/admin/abtest/summary/{experiment_id}` | A/B 테스트 요약 |
-| `POST` | `/api/admin/abtest/start` | A/B 테스트 시작 |
-| `POST` | `/api/admin/abtest/stop` | A/B 테스트 중지 |
-| `POST` | `/api/admin/abtest/promote/{experiment_id}` | Challenger 모델 승격 |
 
 ---
 
@@ -244,7 +238,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 | **Sentence Transformer** | 스타일 임베딩 생성 | 경고 로그 - 임베딩 없이 진행 |
 | **ReasonGenerator** | 템플릿 기반 추천 이유 생성 | 경고 로그 - 기본 설명 사용 |
 | **Feedback Collector** | 사용자 피드백 저장 + S3 적재 | 경고 로그 - 피드백 비활성화 |
-| **A/B Test Manager** | Champion/Challenger 실험 관리 | 경고 로그 - Champion 모델만 사용 |
 
 **Circuit Breaker 보호:**
 - Gemini API 호출은 Circuit Breaker 패턴으로 보호 (pybreaker)
@@ -546,15 +539,18 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow
 | `MLOPS_RETRAIN_THRESHOLD` | 재학습 트리거 피드백 수 | `100` |
 | `MLOPS_TRAINER_LAMBDA` | Trainer Lambda 함수명 | `hairme-model-trainer` |
 
-### A/B 테스트
+### 재학습 품질 게이트 (Trainer Lambda 전용)
+
+재학습된 모델은 홀드아웃 평가를 통과해야만 `models/current/model.pt` 를 교체한다.
+거부되면 `models/rejected/{version}.pt` 에만 저장되고 pending 피드백은 그대로 남아
+다음 학습에 다시 포함된다.
 
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
-| `ABTEST_ENABLED` | A/B 테스트 활성화 | `false` |
-| `ABTEST_EXPERIMENT_ID` | 실험 ID | `""` |
-| `ABTEST_CHAMPION_VERSION` | Champion 모델 버전 | `v6` |
-| `ABTEST_CHALLENGER_VERSION` | Challenger 모델 버전 | `""` |
-| `ABTEST_CHALLENGER_PERCENT` | Challenger 트래픽 비율 (%) | `10` |
+| `TRAIN_HOLDOUT_RATIO` | 홀드아웃 비율 (analysis_id 해시 기준 결정적 분할) | `0.15` |
+| `GATE_MSE_TOLERANCE` | 허용 MSE 악화 비율 | `0.02` |
+| `GATE_RANK_TOLERANCE` | 허용 ranking accuracy 하락 (절대값) | `0.02` |
+| `MIN_HOLDOUT_SAMPLES` | 이보다 홀드아웃이 작으면 교체 거부 | `20` |
 
 ### 모니터링
 
@@ -712,7 +708,8 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow --filter-pattern "ERROR"
 - **v20.x** - DynamoDB 마이그레이션, 서버리스 전환
 - **v21.x** - 퍼스널컬러 진단, 헤어컬러 추천 추가
 - **v22.x** - Gemini 2.5 Flash Image 합성, 사용량 제한
-- **v23.0** - 종합 뷰티 컨설팅, A/B 테스팅, MLOps 파이프라인, GitHub Actions CI/CD
+- **v23.0** - 종합 뷰티 컨설팅, MLOps 파이프라인, GitHub Actions CI/CD
+- **v24.0** - 미사용 A/B 파이프라인 제거, 재학습 홀드아웃 품질 게이트 도입
 
 ---
 
