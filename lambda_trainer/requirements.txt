@@ -1,3 +1,13 @@
-numpy>=1.24.0
-torch>=2.0.0
-boto3>=1.28.0
+# HairMe Trainer Lambda 의존성 - 이 파일이 트레이너 이미지의 단일 소스다.
+# lambda_trainer/Dockerfile 은 이 파일만 설치한다 (버전을 Dockerfile 에 다시 적지 말 것).
+#
+# torch: CPU 전용 휠만 받도록 PyTorch CPU 인덱스를 추가하고 +cpu 로컬 버전까지 고정한다.
+#   - PyPI 의 Linux torch 휠은 CUDA 빌드(nvidia-* 의존성 수 GB)라 Lambda 이미지가 폭증한다.
+#   - "+cpu" 는 PyPI 에 존재하지 않으므로, 아래 인덱스 줄이 빠지면 조용히 CUDA 빌드를
+#     받는 대신 빌드가 즉시 실패한다.
+#   - 2.5.1: 서빙 Lambda 에서 체크포인트를 로드할 수 있는 조합으로 검증된 버전.
+# numpy 1.x: torch/서빙과의 ABI 호환 (numpy 2.x 금지).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+numpy>=1.26,<2.0
+boto3>=1.28,<2.0
