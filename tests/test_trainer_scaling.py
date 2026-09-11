@@ -180,7 +180,8 @@ def _fake_feedbacks(count: int):
     style = np.zeros((count, 384), dtype=np.float32)
     gt = np.array([90.0 if i % 2 == 0 else 10.0 for i in range(count)], np.float32)
     keys = [f"feedback/pending/f{i}.npz" for i in range(count)]
-    return face, skin, style, gt, count, keys
+    analysis_ids = [f"analysis-{i}" for i in range(count)]
+    return face, skin, style, gt, count, keys, analysis_ids
 
 
 def _patched_pipeline(count, evaluate_spy):
@@ -191,10 +192,11 @@ def _patched_pipeline(count, evaluate_spy):
     return [
         patch.object(lf, "load_pending_feedbacks", return_value=data),
         patch.object(lf, "load_base_model", return_value=(model, {"version": "v6"})),
-        patch.object(lf, "evaluate_model", side_effect=evaluate_spy),
+        patch.object(lf, "evaluate_holdout", side_effect=evaluate_spy),
         patch.object(lf, "fine_tune_model", return_value=(model, {"final_loss": 0.12})),
         patch.object(lf, "backup_lambda_config", return_value={}),
         patch.object(lf, "save_model_to_s3", return_value=True),
+        patch.object(lf, "save_rejected_model", return_value=True),
         patch.object(lf, "move_pending_to_processed", return_value=True),
         patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
@@ -203,14 +205,14 @@ def _patched_pipeline(count, evaluate_spy):
 
 
 def test_pipeline_passes_normalized_ground_truth_to_evaluate():
-    """evaluate_model 이 (gt - LABEL_MIN) / LABEL_RANGE 로 호출되어야 한다"""
+    """evaluate_holdout 이 (gt - LABEL_MIN) / LABEL_RANGE 로 호출되어야 한다"""
     calls = []
 
-    def spy(model, face, skin, style, gt):
+    def spy(model, face, skin, style, gt, analysis_ids):
         calls.append(np.asarray(gt).copy())
-        return {"mse": 0.1}
+        return {"mse": 0.1, "ranking_accuracy": 0.8, "num_pairs": 8}
 
-    patches = _patched_pipeline(60, spy)
+    patches = _patched_pipeline(200, spy)
     for p in patches:
         p.start()
     try:
@@ -222,10 +224,13 @@ def test_pipeline_passes_normalized_ground_truth_to_evaluate():
     assert result["success"] is True
     assert len(calls) == 2  # 학습 전/후
 
-    raw = _fake_feedbacks(60)[3]
-    expected = (raw - lf.LABEL_MIN) / lf.LABEL_RANGE
+    raw = _fake_feedbacks(200)[3]
+    analysis_ids = _fake_feedbacks(200)[6]
+    _, holdout_idx = lf.split_holdout_indices(analysis_ids, lf.TRAIN_HOLDOUT_RATIO)
+    expected = ((raw - lf.LABEL_MIN) / lf.LABEL_RANGE)[np.asarray(holdout_idx)]
 
     for observed in calls:
+        # 평가는 홀드아웃 분할에 대해서만 수행된다
         np.testing.assert_allclose(observed, expected, rtol=1e-6)
         assert observed.min() >= 0.0
         assert observed.max() <= 1.0
@@ -235,7 +240,7 @@ def test_pipeline_uses_loaded_sample_count_for_min_samples():
     """메타데이터 카운터가 아니라 실제 로드된 샘플 수로 학습 시작을 막아야 한다"""
     spy_calls = []
 
-    def spy(model, face, skin, style, gt):
+    def spy(model, face, skin, style, gt, analysis_ids):
         spy_calls.append(gt)
         return {}
 
@@ -259,23 +264,51 @@ def test_pipeline_uses_loaded_sample_count_for_min_samples():
 
 
 def test_pipeline_force_bypasses_min_samples():
-    """force=True 이벤트는 기존과 동일하게 MIN_SAMPLES 검사를 우회한다"""
+    """force=True 는 MIN_SAMPLES 만 우회한다 (학습은 시작되지만 게이트는 살아있다)"""
 
-    def spy(model, face, skin, style, gt):
-        return {"mse": 0.1}
+    def spy(model, face, skin, style, gt, analysis_ids):
+        return {"mse": 0.1, "ranking_accuracy": 0.8, "num_pairs": 4}
 
     patches = _patched_pipeline(9, spy)
     for p in patches:
         p.start()
     try:
         result = lf.run_training_pipeline({"trigger_type": "manual", "force": True})
+        # MIN_SAMPLES 를 넘겨 실제로 학습까지 진입한다
         assert lf.load_base_model.call_count == 1
+        assert lf.fine_tune_model.call_count == 1
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert result["samples_trained"] == 9
+    # 9건으로는 홀드아웃이 부족하므로 force 여도 모델은 교체되지 않는다
+    assert result["gate"]["passed"] is False
+    assert result["gate"]["reason"] == "insufficient_holdout"
+    assert result["model_promoted"] is False
+
+
+def test_pipeline_force_with_skip_gate_promotes():
+    """게이트 우회는 force 가 아니라 skip_gate 플래그로만 가능하다"""
+
+    def spy(model, face, skin, style, gt, analysis_ids):
+        return {"mse": 0.1, "ranking_accuracy": 0.8, "num_pairs": 4}
+
+    patches = _patched_pipeline(9, spy)
+    for p in patches:
+        p.start()
+    try:
+        result = lf.run_training_pipeline(
+            {"trigger_type": "manual", "force": True, "skip_gate": True}
+        )
     finally:
         for p in patches:
             p.stop()
 
     assert result["success"] is True
-    assert result["samples_trained"] == 9
+    assert result["gate"]["passed"] is True
+    assert result["gate"]["reason"] == "skipped"
+    assert result["model_promoted"] is True
 
 
 def test_trainer_has_no_repo_imports():

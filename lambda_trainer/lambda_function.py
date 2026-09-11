@@ -6,16 +6,22 @@ S3에서 피드백 데이터를 가져와 모델을 재학습합니다.
 
 학습 파이프라인:
 1. S3에서 feedback/pending/*.npz 로드
-2. 기존 model.pt 기반 fine-tuning
-3. 새 모델 저장:
+2. analysis_id 해시로 학습/홀드아웃 결정적 분할 (홀드아웃은 학습에 쓰지 않음)
+3. 기존 model.pt 기반 fine-tuning (학습 분할만 사용)
+4. 품질 게이트: 같은 홀드아웃으로 학습 전/후 모델 비교
+   - MSE(정규화 공간) 와 pairwise ranking accuracy 가 모두 허용치 안이면 통과
+5. 통과 시에만 새 모델 저장:
    - models/current/model.pt (교체)
    - models/archive/v6_feedback_YYYYMMDD.pt (백업)
-4. pending/*.npz → processed/로 이동
-5. hairme-analyze Lambda 환경변수 업데이트
-6. metadata.json 업데이트
+   거부 시 models/rejected/{version}.pt 에만 저장하고 현재 모델은 유지
+6. 통과 시에만 pending/*.npz → processed/로 이동
+   (거부 시 pending 은 그대로 두어 다음 학습에 재포함)
+7. hairme-analyze Lambda 환경변수 업데이트
+8. metadata.json 업데이트
 
 이벤트 플래그:
-- force: MIN_SAMPLES 게이트 우회
+- force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않음)
+- skip_gate: 품질 게이트 우회 (from_base 전체 재학습처럼 의도적일 때만)
 - allow_random_init: 시작점 모델이 없을 때 랜덤 초기화 허용
 - from_base: models/base/model.pt(번들 v6)에서 재학습 (fine-tune 드리프트 누적 차단)
 - include_processed: feedback/processed/ 데이터도 학습에 포함 (전체 재학습)
@@ -57,9 +63,20 @@ FINE_TUNE_EPOCHS = int(os.getenv("FINE_TUNE_EPOCHS", "10"))
 FINE_TUNE_LR = float(os.getenv("FINE_TUNE_LR", "0.0001"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
 
+# 품질 게이트 (홀드아웃 평가)
+# 홀드아웃 비율: analysis_id 해시로 분할하므로 실제 비율은 목표치 근사값이다.
+TRAIN_HOLDOUT_RATIO = float(os.getenv("TRAIN_HOLDOUT_RATIO", "0.15"))
+# MSE 는 이전 대비 이 비율만큼 나빠지는 것까지 허용 (0.02 = 2%)
+GATE_MSE_TOLERANCE = float(os.getenv("GATE_MSE_TOLERANCE", "0.02"))
+# ranking accuracy 는 이전 대비 이 절대값만큼 떨어지는 것까지 허용
+GATE_RANK_TOLERANCE = float(os.getenv("GATE_RANK_TOLERANCE", "0.02"))
+# 홀드아웃이 이보다 작으면 평가를 신뢰할 수 없으므로 교체를 거부한다
+MIN_HOLDOUT_SAMPLES = int(os.getenv("MIN_HOLDOUT_SAMPLES", "20"))
+
 # S3 키 상수
 CURRENT_MODEL_KEY = "models/current/model.pt"
 BASE_MODEL_KEY = "models/base/model.pt"
+REJECTED_MODEL_PREFIX = "models/rejected/"
 PENDING_PREFIX = "feedback/pending/"
 PROCESSED_PREFIX = "feedback/processed/"
 
@@ -399,6 +416,83 @@ class FeedbackDataset(Dataset):
         )
 
 
+# ========== 홀드아웃 분할 (analysis_id 해시 기준) ==========
+
+
+def analysis_id_from_key(key: str) -> str:
+    """
+    피드백 NPZ 키에서 analysis_id 그룹 키를 추출한다 (metadata 를 못 읽을 때의 대체 경로).
+
+    파일명 규칙(services/mlops/s3_feedback_store.py):
+        {YYYY-MM-DD}_{analysis_id[:8]}_s{style}_{uuid6}.npz
+        {YYYY-MM-DD}_trending_{analysis_id[:8]}_s{style}_{uuid6}.npz
+
+    규칙에 맞지 않으면 파일명 전체를 그룹 키로 쓴다(= 자기 자신만의 그룹).
+    """
+    filename = key.split("/")[-1]
+    if filename.endswith(".npz"):
+        filename = filename[: -len(".npz")]
+
+    parts = filename.split("_")
+    if len(parts) >= 3 and parts[1] == "trending":
+        return parts[2]
+    if len(parts) >= 2:
+        return parts[1]
+    return filename
+
+
+def analysis_id_bucket(analysis_id: str) -> float:
+    """
+    analysis_id 를 [0, 1) 구간의 결정적 실수로 매핑한다.
+
+    SHA-256 상위 64비트만 쓰므로 파이썬 hash() 의 프로세스별 랜덤 시드와 달리
+    실행·리전·샘플 순서와 무관하게 항상 같은 값이 나온다.
+    """
+    digest = hashlib.sha256(analysis_id.encode("utf-8")).hexdigest()
+    return int(digest[:16], 16) / float(1 << 64)
+
+
+def split_holdout_indices(
+    analysis_ids: List[str],
+    ratio: float = TRAIN_HOLDOUT_RATIO,
+) -> Tuple[List[int], List[int]]:
+    """
+    analysis_id 해시로 학습/홀드아웃 인덱스를 결정적으로 분할한다.
+
+    같은 analysis_id 의 샘플은 항상 같은 쪽으로 간다. pairwise ranking 지표가
+    "같은 analysis 안에서" 정의되므로 그룹이 쪼개지면 쌍이 사라지고,
+    같은 얼굴의 다른 스타일이 학습/평가에 동시에 들어가 누수가 생긴다.
+
+    Args:
+        analysis_ids: 샘플별 analysis_id (길이 = 샘플 수)
+        ratio: 홀드아웃 목표 비율. 0 이하이면 전부 학습에 사용한다.
+
+    Returns:
+        (train_indices, holdout_indices) - 둘 다 오름차순
+    """
+    if ratio <= 0:
+        return list(range(len(analysis_ids))), []
+
+    train_indices: List[int] = []
+    holdout_indices: List[int] = []
+
+    for idx, analysis_id in enumerate(analysis_ids):
+        if analysis_id_bucket(analysis_id) < ratio:
+            holdout_indices.append(idx)
+        else:
+            train_indices.append(idx)
+
+    return train_indices, holdout_indices
+
+
+def take_indices(
+    arrays: Tuple[np.ndarray, ...], indices: List[int]
+) -> Tuple[np.ndarray, ...]:
+    """numpy 배열 튜플에서 같은 인덱스 집합을 잘라낸다"""
+    index_array = np.asarray(indices, dtype=np.int64)
+    return tuple(arr[index_array] for arr in arrays)
+
+
 def get_s3_client():
     """S3 클라이언트 싱글톤"""
     import boto3
@@ -449,8 +543,19 @@ def update_metadata(
     pending_count: int = None,
     training_triggered: bool = False,
     new_model_version: str = None,
+    training_rejected: bool = False,
 ):
-    """메타데이터 업데이트"""
+    """
+    메타데이터 업데이트
+
+    Args:
+        training_triggered: 학습 성공(모델 교체). last_training_at 갱신 +
+            pending_count 리셋.
+        training_rejected: 품질 게이트 거부. pending 파일을 그대로 두므로
+            pending_count 를 리셋하면 안 되고, training_triggered_at 만 갱신해
+            2시간 쿨다운으로 트리거 폭주를 막는다
+            (services/mlops/s3_feedback_store.py 의 should_trigger_training 참조).
+    """
     s3 = get_s3_client()
 
     try:
@@ -459,6 +564,10 @@ def update_metadata(
         if training_triggered:
             metadata["last_training_at"] = datetime.now(timezone.utc).isoformat()
             metadata["pending_count"] = 0
+
+        if training_rejected:
+            metadata["training_triggered_at"] = datetime.now(timezone.utc).isoformat()
+            metadata["last_rejected_at"] = metadata["training_triggered_at"]
 
         if pending_count is not None:
             metadata["pending_count"] = pending_count
@@ -497,9 +606,27 @@ def list_npz_keys(s3, prefix: str) -> List[str]:
     return keys
 
 
+def extract_analysis_id(data: Any, key: str) -> str:
+    """
+    NPZ 의 metadata JSON 에서 analysis_id 를 읽고, 없으면 파일명에서 추출한다.
+
+    metadata 는 dtype=str 배열이므로 allow_pickle=False 로도 읽을 수 있다.
+    """
+    try:
+        raw = data["metadata"]
+        payload = json.loads(str(np.asarray(raw).reshape(-1)[0]))
+        analysis_id = payload.get("analysis_id")
+        if analysis_id:
+            return str(analysis_id)
+    except Exception:
+        pass
+
+    return analysis_id_from_key(key)
+
+
 def load_pending_feedbacks(
     include_processed: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str]]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str], List[str]]:
     """
     S3에서 피드백 데이터 로드
 
@@ -508,7 +635,8 @@ def load_pending_feedbacks(
             (전체 재학습용). 이동 대상은 여전히 pending/ 파일뿐이다.
 
     Returns:
-        (face_features, skin_features, style_embeddings, ground_truths, count, file_keys)
+        (face_features, skin_features, style_embeddings, ground_truths,
+         count, file_keys, analysis_ids)
     """
     s3 = get_s3_client()
 
@@ -525,13 +653,14 @@ def load_pending_feedbacks(
 
         if not target_keys:
             logger.info("No pending feedbacks found")
-            return None, None, None, None, 0, []
+            return None, None, None, None, 0, [], []
 
         face_list = []
         skin_list = []
         style_list = []
         gt_list = []
         file_keys = []
+        analysis_ids = []
 
         for key in target_keys:
             try:
@@ -545,13 +674,14 @@ def load_pending_feedbacks(
                 style_list.append(data["style_embedding"])
                 gt_list.append(data["ground_truth"])
                 file_keys.append(key)
+                analysis_ids.append(extract_analysis_id(data, key))
 
             except Exception as e:
                 logger.warning(f"Failed to load {key}: {e}")
                 continue
 
         if not face_list:
-            return None, None, None, None, 0, []
+            return None, None, None, None, 0, [], []
 
         face_features = np.stack(face_list)
         skin_features = np.stack(skin_list)
@@ -567,11 +697,12 @@ def load_pending_feedbacks(
             ground_truths,
             len(face_list),
             file_keys,
+            analysis_ids,
         )
 
     except Exception as e:
         logger.error(f"❌ 피드백 데이터 로드 실패: {e}")
-        return None, None, None, None, 0, []
+        return None, None, None, None, 0, [], []
 
 
 def get_source_model_key(from_base: bool = False) -> str:
@@ -901,11 +1032,199 @@ def evaluate_model(
     return metrics
 
 
+# ========== 홀드아웃 평가 + 품질 게이트 ==========
+
+
+def predict_normalized(
+    model: RecommendationModelV6,
+    face_features: np.ndarray,
+    skin_features: np.ndarray,
+    style_embeddings: np.ndarray,
+) -> np.ndarray:
+    """모델 예측값(정규화 0~1 공간)을 1차원 배열로 반환한다"""
+    device = torch.device("cpu")
+    model = model.to(device)
+    model.eval()
+
+    scaled_face, scaled_skin = scale_feature_batch(face_features, skin_features)
+
+    face_tensor = torch.FloatTensor(scaled_face).to(device)
+    skin_tensor = torch.FloatTensor(scaled_skin).to(device)
+    style_tensor = torch.FloatTensor(style_embeddings).to(device)
+
+    with torch.no_grad():
+        predictions = model(face_tensor, skin_tensor, style_tensor)
+
+    return predictions.cpu().numpy().flatten()
+
+
+def pairwise_ranking_accuracy(
+    predictions: np.ndarray,
+    ground_truths: np.ndarray,
+    analysis_ids: List[str],
+) -> Tuple[Optional[float], int]:
+    """
+    같은 analysis 안에서 good 이 bad 보다 높은 점수를 받은 비율.
+
+    같은 얼굴에 대해 어떤 스타일을 더 위로 올리는지가 추천 품질의 본질이므로,
+    절대 점수(MSE)만으로는 잡히지 않는 순위 붕괴를 잡아낸다.
+    서로 다른 analysis 사이의 쌍은 비교 대상이 아니므로 세지 않는다.
+    동점은 "더 높다"가 아니므로 오답으로 센다.
+
+    Returns:
+        (accuracy, num_pairs) - 유효한 쌍이 하나도 없으면 (None, 0)
+    """
+    groups: Dict[str, List[int]] = {}
+    for idx, analysis_id in enumerate(analysis_ids):
+        groups.setdefault(analysis_id, []).append(idx)
+
+    correct = 0
+    total = 0
+
+    for indices in groups.values():
+        if len(indices) < 2:
+            continue
+        for i in indices:
+            for j in indices:
+                if ground_truths[i] <= ground_truths[j]:
+                    continue
+                # i 가 더 좋은 피드백 -> 예측도 i 가 더 높아야 한다
+                total += 1
+                if predictions[i] > predictions[j]:
+                    correct += 1
+
+    if total == 0:
+        return None, 0
+
+    return correct / total, total
+
+
+def evaluate_holdout(
+    model: RecommendationModelV6,
+    face_features: np.ndarray,
+    skin_features: np.ndarray,
+    style_embeddings: np.ndarray,
+    ground_truths: np.ndarray,
+    analysis_ids: List[str],
+) -> Dict[str, Any]:
+    """
+    홀드아웃 지표 계산 (품질 게이트 전용)
+
+    Args:
+        ground_truths: 정규화된 정답 (0~1). 모델 출력과 같은 공간이어야 한다.
+
+    Returns:
+        {"mse", "mae", "ranking_accuracy", "num_pairs", "num_samples"}
+    """
+    preds = predict_normalized(model, face_features, skin_features, style_embeddings)
+    gts = np.asarray(ground_truths, dtype=np.float64).flatten()
+
+    mse = float(np.mean((preds - gts) ** 2))
+    mae = float(np.mean(np.abs(preds - gts)))
+    ranking_accuracy, num_pairs = pairwise_ranking_accuracy(preds, gts, analysis_ids)
+
+    metrics = {
+        "mse": mse,
+        "mae": mae,
+        "ranking_accuracy": ranking_accuracy,
+        "num_pairs": num_pairs,
+        "num_samples": int(len(gts)),
+    }
+
+    logger.info(
+        f"📊 홀드아웃 평가: n={metrics['num_samples']} mse={mse:.5f} "
+        f"mae={mae:.5f} rank_acc={ranking_accuracy} pairs={num_pairs}"
+    )
+
+    return metrics
+
+
+def evaluate_quality_gate(
+    before: Optional[Dict[str, Any]],
+    after: Optional[Dict[str, Any]],
+    holdout_size: int,
+    skip_gate: bool = False,
+    mse_tolerance: float = GATE_MSE_TOLERANCE,
+    rank_tolerance: float = GATE_RANK_TOLERANCE,
+    min_holdout: int = MIN_HOLDOUT_SAMPLES,
+) -> Dict[str, Any]:
+    """
+    학습 전/후 홀드아웃 지표를 비교해 models/current/model.pt 교체 여부를 정한다.
+
+    통과 조건:
+    - MSE(정규화 공간) <= 이전 MSE * (1 + mse_tolerance)
+    - ranking accuracy >= 이전 ranking accuracy - rank_tolerance
+      (어느 한쪽이라도 유효한 쌍이 없어 None 이면 MSE 만으로 판정)
+
+    Returns:
+        {"passed", "reason", "holdout_size", "before", "after"}
+    """
+    gate: Dict[str, Any] = {
+        "passed": False,
+        "reason": "",
+        "holdout_size": int(holdout_size),
+        "before": before,
+        "after": after,
+        "mse_tolerance": mse_tolerance,
+        "rank_tolerance": rank_tolerance,
+    }
+
+    if skip_gate:
+        gate["passed"] = True
+        gate["reason"] = "skipped"
+        gate["skipped"] = True
+        return gate
+
+    if holdout_size < min_holdout:
+        gate["reason"] = "insufficient_holdout"
+        gate["detail"] = f"holdout {holdout_size} < {min_holdout}"
+        return gate
+
+    if not before or not after:
+        gate["reason"] = "missing_metrics"
+        return gate
+
+    before_mse = float(before.get("mse", float("inf")))
+    after_mse = float(after.get("mse", float("inf")))
+    mse_budget = before_mse * (1.0 + mse_tolerance)
+
+    if not (after_mse <= mse_budget):
+        gate["reason"] = "mse_regressed"
+        gate["detail"] = (
+            f"mse {after_mse:.6f} > 허용치 {mse_budget:.6f} "
+            f"(이전 {before_mse:.6f} × {1.0 + mse_tolerance:.3f})"
+        )
+        return gate
+
+    before_rank = before.get("ranking_accuracy")
+    after_rank = after.get("ranking_accuracy")
+
+    if before_rank is None or after_rank is None:
+        gate["passed"] = True
+        gate["reason"] = "passed_mse_only"
+        gate["detail"] = "유효한 pairwise 쌍이 없어 MSE 만으로 판정"
+        return gate
+
+    rank_floor = float(before_rank) - rank_tolerance
+    if float(after_rank) < rank_floor:
+        gate["reason"] = "ranking_regressed"
+        gate["detail"] = (
+            f"ranking_accuracy {float(after_rank):.4f} < 허용치 {rank_floor:.4f} "
+            f"(이전 {float(before_rank):.4f} - {rank_tolerance:.3f})"
+        )
+        return gate
+
+    gate["passed"] = True
+    gate["reason"] = "passed"
+    return gate
+
+
 def save_evaluation_report(
     before_metrics: Dict[str, Any],
     after_metrics: Dict[str, Any],
     training_stats: Dict[str, Any],
     version: str,
+    gate: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     평가 리포트를 S3에 저장
@@ -915,6 +1234,7 @@ def save_evaluation_report(
         after_metrics: 학습 후 평가 지표
         training_stats: 학습 통계
         version: 모델 버전
+        gate: 품질 게이트 판정 결과 (거부 사유 추적용)
 
     Returns:
         성공 여부
@@ -947,6 +1267,8 @@ def save_evaluation_report(
             "after_training": after_metrics,
             "improvements": improvements,
             "training_stats": training_stats,
+            "gate": gate,
+            "model_promoted": bool(gate.get("passed")) if gate else None,
             "summary": {
                 "mse_improved": improvements.get("mse", 0) > 0,
                 "precision_improved": improvements.get("precision", 0) > 0,
@@ -1030,6 +1352,50 @@ def save_model_to_s3(
 
     except Exception as e:
         logger.error(f"❌ 모델 저장 실패: {e}")
+        traceback.print_exc()
+        return False
+
+
+def save_rejected_model(
+    model: RecommendationModelV6, config: Dict[str, Any], new_version: str
+) -> bool:
+    """
+    품질 게이트를 통과하지 못한 모델을 models/rejected/{version}.pt 에만 저장한다.
+
+    models/current/ 와 models/archive/ 는 건드리지 않는다. 서빙은 기존 모델을
+    계속 쓰고, 거부된 가중치는 사후 분석용으로만 남는다.
+
+    Returns:
+        성공 여부
+    """
+    s3 = get_s3_client()
+
+    try:
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "config": config,
+            "version": new_version,
+            "trained_at": datetime.now(timezone.utc).isoformat(),
+            "rejected": True,
+        }
+
+        buffer = io.BytesIO()
+        torch.save(checkpoint, buffer)
+        buffer.seek(0)
+
+        rejected_key = f"{REJECTED_MODEL_PREFIX}{new_version}.pt"
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=rejected_key,
+            Body=buffer.getvalue(),
+            ContentType="application/octet-stream",
+        )
+        logger.warning(f"🚫 게이트 거부 모델 보관: {rejected_key}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ 거부 모델 저장 실패: {e}")
         traceback.print_exc()
         return False
 
@@ -1203,7 +1569,8 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     Args:
         event: Lambda 이벤트
             - allow_random_init: 기존 모델이 없을 때 랜덤 초기화 허용
-            - force: MIN_SAMPLES 게이트 우회
+            - force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않는다)
+            - skip_gate: 품질 게이트 우회 (from_base 전체 재학습처럼 의도적일 때만)
             - from_base: models/base/model.pt 에서 시작 (드리프트 누적 차단)
             - include_processed: feedback/processed/ 데이터도 학습에 포함
 
@@ -1213,6 +1580,8 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     event = event or {}
     allow_random_init = bool(event.get("allow_random_init", False))
     force_train = bool(event.get("force", False))
+    # force 는 MIN_SAMPLES 만 우회한다. 품질 게이트 우회는 별도 플래그.
+    skip_gate = bool(event.get("skip_gate", False))
     from_base = bool(event.get("from_base", False))
     include_processed = bool(event.get("include_processed", False))
     source_model_key = get_source_model_key(from_base)
@@ -1232,6 +1601,9 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         "from_base": from_base,
         "include_processed": include_processed,
         "source_model_key": source_model_key,
+        "skip_gate": skip_gate,
+        "model_promoted": False,
+        "gate": None,
     }
 
     try:
@@ -1239,7 +1611,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         logger.info(
             f"📥 Step 1: 피드백 데이터 로드 (include_processed={include_processed})"
         )
-        face, skin, style, gt, count, file_keys = load_pending_feedbacks(
+        face, skin, style, gt, count, file_keys, analysis_ids = load_pending_feedbacks(
             include_processed=include_processed
         )
 
@@ -1265,6 +1637,38 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # 모델 출력이 sigmoid(0~1)이므로 동일 공간에서 비교해야 한다.
         gt_normalized = (gt - LABEL_MIN) / LABEL_RANGE
 
+        # 1.5. 학습/홀드아웃 결정적 분할 (analysis_id 해시)
+        logger.info(f"✂️ Step 1.5: 홀드아웃 분할 (ratio={TRAIN_HOLDOUT_RATIO})")
+        train_idx, holdout_idx = split_holdout_indices(
+            analysis_ids, TRAIN_HOLDOUT_RATIO
+        )
+        result["train_size"] = len(train_idx)
+        result["holdout_size"] = len(holdout_idx)
+        result["holdout_ratio"] = TRAIN_HOLDOUT_RATIO
+        logger.info(
+            f"  학습 {len(train_idx)}건 / 홀드아웃 {len(holdout_idx)}건 "
+            f"(총 {count}건)"
+        )
+
+        if not train_idx:
+            result["message"] = "No training samples after holdout split"
+            return result
+
+        train_face, train_skin, train_style, train_gt = take_indices(
+            (face, skin, style, gt), train_idx
+        )
+
+        if holdout_idx:
+            hold_face, hold_skin, hold_style, hold_gt_norm = take_indices(
+                (face, skin, style, gt_normalized), holdout_idx
+            )
+            hold_analysis_ids = [analysis_ids[i] for i in holdout_idx]
+        else:
+            hold_face = hold_skin = hold_style = hold_gt_norm = None
+            hold_analysis_ids = []
+
+        result["steps_completed"].append("holdout_split")
+
         # 2. 시작점 모델 로드 (from_base=True 이면 models/base/model.pt)
         logger.info(f"📥 Step 2: 시작점 모델 로드 (key={source_model_key})")
         model, config = load_base_model(
@@ -1283,56 +1687,119 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
 
         result["steps_completed"].append("load_model")
 
-        # 2.5. 학습 전 평가
-        logger.info("📊 Step 2.5: 학습 전 모델 평가")
-        before_metrics = evaluate_model(model, face, skin, style, gt_normalized)
-        result["before_metrics"] = before_metrics
-        result["steps_completed"].append("evaluate_before")
+        # 2.5. 학습 전 홀드아웃 평가 (현재 운영 모델의 기준선)
+        before_metrics = None
+        if holdout_idx:
+            logger.info("📊 Step 2.5: 학습 전 홀드아웃 평가")
+            before_metrics = evaluate_holdout(
+                model,
+                hold_face,
+                hold_skin,
+                hold_style,
+                hold_gt_norm,
+                hold_analysis_ids,
+            )
+            result["before_metrics"] = before_metrics
+            result["steps_completed"].append("evaluate_before")
 
-        # 3. Fine-tuning
+        # 3. Fine-tuning (학습 분할만 사용 - 홀드아웃 누수 방지)
         logger.info("🏋️ Step 3: Fine-tuning")
-        model, stats = fine_tune_model(model, face, skin, style, gt)
+        model, stats = fine_tune_model(
+            model, train_face, train_skin, train_style, train_gt
+        )
         result["final_loss"] = stats["final_loss"]
         result["steps_completed"].append("fine_tune")
 
-        # 3.5. 학습 후 평가
-        logger.info("📊 Step 3.5: 학습 후 모델 평가")
-        after_metrics = evaluate_model(model, face, skin, style, gt_normalized)
-        result["after_metrics"] = after_metrics
-        result["steps_completed"].append("evaluate_after")
+        # 3.5. 학습 후 홀드아웃 평가
+        after_metrics = None
+        if holdout_idx:
+            logger.info("📊 Step 3.5: 학습 후 홀드아웃 평가")
+            after_metrics = evaluate_holdout(
+                model,
+                hold_face,
+                hold_skin,
+                hold_style,
+                hold_gt_norm,
+                hold_analysis_ids,
+            )
+            result["after_metrics"] = after_metrics
+            result["steps_completed"].append("evaluate_after")
 
         # 4. 설정 업데이트
         config["version"] = new_version
         config["fine_tuned_at"] = timestamp.isoformat()
         config["samples_count"] = count
+        config["train_samples"] = len(train_idx)
+        config["holdout_samples"] = len(holdout_idx)
         config["from_base"] = from_base
         config["include_processed"] = include_processed
         config["source_model_key"] = source_model_key
         # BatchNorm running stats 는 fine-tuning 중 고정된다
         config["batchnorm_frozen"] = True
 
+        # 4.5. 품질 게이트 판정
+        logger.info("🚦 Step 4.5: 품질 게이트 판정")
+        gate = evaluate_quality_gate(
+            before_metrics,
+            after_metrics,
+            holdout_size=len(holdout_idx),
+            skip_gate=skip_gate,
+        )
+        result["gate"] = gate
+        result["steps_completed"].append("quality_gate")
+
+        if not gate["passed"]:
+            # 거부: 현재 모델 유지, 가중치는 rejected/ 에만 보관
+            logger.warning(
+                f"🚫 품질 게이트 거부 ({gate['reason']}): "
+                f"{gate.get('detail', '')} - models/current 유지"
+            )
+            config["gate_rejected"] = True
+            config["gate_reason"] = gate["reason"]
+            save_rejected_model(model, config, new_version)
+            result["steps_completed"].append("save_rejected_model")
+
+            # pending 은 이동하지 않는다 (다음 학습에 재포함)
+            result["pending_files_moved"] = 0
+
+            # pending_count 는 리셋하지 않고 training_triggered_at 만 갱신해
+            # 임계값 초과 상태에서 트리거가 매번 재발동하는 것을 막는다.
+            update_metadata(training_rejected=True)
+            result["steps_completed"].append("update_metadata")
+
+            save_evaluation_report(
+                before_metrics, after_metrics, stats, new_version, gate=gate
+            )
+            result["steps_completed"].append("save_evaluation_report")
+
+            result["success"] = False
+            result["model_promoted"] = False
+            result["message"] = f"Quality gate rejected: {gate['reason']}"
+            return result
+
         # 5. Lambda 환경변수 백업
-        logger.info("💾 Step 4: Lambda 설정 백업")
+        logger.info("💾 Step 5: Lambda 설정 백업")
         backup_lambda_config()
         result["steps_completed"].append("backup_config")
 
-        # 6. 모델 저장
-        logger.info("💾 Step 5: 모델 저장")
+        # 6. 모델 저장 (게이트 통과분만 models/current 교체)
+        logger.info("💾 Step 6: 모델 저장")
         if not save_model_to_s3(model, config, new_version):
             result["message"] = "Failed to save model"
             return result
 
+        result["model_promoted"] = True
         result["steps_completed"].append("save_model")
 
         # 7. pending → processed 이동 (processed/ 에서 읽어온 파일은 그대로 둔다)
-        logger.info("📦 Step 6: 피드백 파일 이동")
+        logger.info("📦 Step 7: 피드백 파일 이동")
         pending_keys = [k for k in file_keys if k.startswith(PENDING_PREFIX)]
         result["pending_files_moved"] = len(pending_keys)
         move_pending_to_processed(pending_keys, batch_name)
         result["steps_completed"].append("move_feedbacks")
 
         # 8. Lambda 환경변수 업데이트
-        logger.info("🔧 Step 7: Lambda 환경변수 업데이트")
+        logger.info("🔧 Step 8: Lambda 환경변수 업데이트")
         if not update_analyze_lambda_envvars(new_version, experiment_id):
             result["message"] = "Model saved but Lambda update failed"
             # 모델은 저장되었으므로 부분 성공으로 처리
@@ -1343,13 +1810,15 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         result["steps_completed"].append("update_lambda")
 
         # 9. 메타데이터 업데이트
-        logger.info("📝 Step 8: 메타데이터 업데이트")
+        logger.info("📝 Step 9: 메타데이터 업데이트")
         update_metadata(training_triggered=True, new_model_version=new_version)
         result["steps_completed"].append("update_metadata")
 
         # 10. 평가 리포트 저장
-        logger.info("📊 Step 9: 평가 리포트 저장")
-        save_evaluation_report(before_metrics, after_metrics, stats, new_version)
+        logger.info("📊 Step 10: 평가 리포트 저장")
+        save_evaluation_report(
+            before_metrics, after_metrics, stats, new_version, gate=gate
+        )
         result["steps_completed"].append("save_evaluation_report")
 
         result["success"] = True
@@ -1373,7 +1842,8 @@ def lambda_handler(event, context):
     Args:
         event: {
             "trigger_type": "scheduled" | "data_threshold" | "manual",
-            "force": false,             # true이면 MIN_SAMPLES 무시
+            "force": false,             # true이면 MIN_SAMPLES 무시 (게이트는 유지)
+            "skip_gate": false,         # true이면 품질 게이트 우회
             "from_base": false,         # true이면 models/base/model.pt 에서 재학습
             "include_processed": false, # true이면 feedback/processed/ 도 학습에 포함
             "allow_random_init": false,
@@ -1397,6 +1867,7 @@ def lambda_handler(event, context):
 
     trigger_type = event.get("trigger_type", "unknown")
     force_train = event.get("force", False)
+    skip_gate = bool(event.get("skip_gate", False))
     from_base = bool(event.get("from_base", False))
     include_processed = bool(event.get("include_processed", False))
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -1429,7 +1900,7 @@ def lambda_handler(event, context):
     # 실제 학습 파이프라인 실행
     logger.info(
         f"🏋️ Training triggered with {pending_count} samples "
-        f"(force={force_train}, from_base={from_base}, "
+        f"(force={force_train}, skip_gate={skip_gate}, from_base={from_base}, "
         f"include_processed={include_processed})"
     )
 
@@ -1448,7 +1919,10 @@ def lambda_handler(event, context):
                         "pending_count": pending_count,
                         "from_base": from_base,
                         "include_processed": include_processed,
+                        "skip_gate": skip_gate,
                         "source_model_key": training_result.get("source_model_key"),
+                        "gate": training_result.get("gate"),
+                        "model_promoted": training_result.get("model_promoted"),
                         "training_result": training_result,
                         "timestamp": timestamp,
                     }
@@ -1466,7 +1940,10 @@ def lambda_handler(event, context):
                         "pending_count": pending_count,
                         "from_base": from_base,
                         "include_processed": include_processed,
+                        "skip_gate": skip_gate,
                         "source_model_key": training_result.get("source_model_key"),
+                        "gate": training_result.get("gate"),
+                        "model_promoted": training_result.get("model_promoted"),
                         "training_result": training_result,
                         "timestamp": timestamp,
                     }

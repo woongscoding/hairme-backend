@@ -298,13 +298,15 @@ def test_load_feedbacks_uses_paginator_and_pending_only_by_default():
     )
 
     with patch.object(lf, "get_s3_client", return_value=fake_s3):
-        face, skin, style, gt, count, keys = lf.load_pending_feedbacks()
+        face, skin, style, gt, count, keys, analysis_ids = lf.load_pending_feedbacks()
 
     assert fake_s3.list_objects_v2_calls == 0
     assert count == 5
     assert set(keys) == set(pending)
     assert face.shape == (5, 6)
     assert gt.shape == (5,)
+    # 홀드아웃 분할용 analysis_id 가 샘플 수만큼 함께 나와야 한다
+    assert len(analysis_ids) == 5
 
 
 def test_load_feedbacks_include_processed():
@@ -321,13 +323,14 @@ def test_load_feedbacks_include_processed():
     )
 
     with patch.object(lf, "get_s3_client", return_value=fake_s3):
-        face, skin, style, gt, count, keys = lf.load_pending_feedbacks(
+        face, skin, style, gt, count, keys, analysis_ids = lf.load_pending_feedbacks(
             include_processed=True
         )
 
     assert count == 8
     assert set(keys) == set(pending) | set(processed)
     assert face.shape == (8, 6)
+    assert len(analysis_ids) == 8
 
 
 def test_move_pending_to_processed_skips_processed_keys():
@@ -363,7 +366,8 @@ def _fake_feedbacks(pending_count: int, processed_count: int = 0):
     keys = [f"feedback/pending/f{i}.npz" for i in range(pending_count)] + [
         f"feedback/processed/batch_a/g{i}.npz" for i in range(processed_count)
     ]
-    return face, skin, style, gt, total, keys
+    analysis_ids = [f"analysis-{i}" for i in range(total)]
+    return face, skin, style, gt, total, keys, analysis_ids
 
 
 def _patched_pipeline(pending_count, processed_count=0, saved=None):
@@ -379,10 +383,16 @@ def _patched_pipeline(pending_count, processed_count=0, saved=None):
     return [
         patch.object(lf, "load_pending_feedbacks", return_value=data),
         patch.object(lf, "load_base_model", return_value=(model, {"version": "v6"})),
-        patch.object(lf, "evaluate_model", return_value={"mse": 0.1}),
+        # 학습 전/후 동일 지표 -> 품질 게이트 통과 (게이트 자체는 별도 테스트에서 검증)
+        patch.object(
+            lf,
+            "evaluate_holdout",
+            return_value={"mse": 0.1, "ranking_accuracy": 0.8, "num_pairs": 10},
+        ),
         patch.object(lf, "fine_tune_model", return_value=(model, {"final_loss": 0.1})),
         patch.object(lf, "backup_lambda_config", return_value={}),
         patch.object(lf, "save_model_to_s3", side_effect=_save),
+        patch.object(lf, "save_rejected_model", return_value=True),
         patch.object(lf, "move_pending_to_processed", return_value=True),
         patch.object(lf, "update_analyze_lambda_envvars", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
@@ -393,7 +403,8 @@ def _patched_pipeline(pending_count, processed_count=0, saved=None):
 def test_pipeline_from_base_records_flags_and_moves_pending_only():
     """from_base + include_processed 기록, processed 파일은 이동 대상에서 제외"""
     saved = {}
-    patches = _patched_pipeline(20, processed_count=40, saved=saved)
+    # 홀드아웃(15%)이 MIN_HOLDOUT_SAMPLES 를 넘도록 충분한 표본을 쓴다
+    patches = _patched_pipeline(80, processed_count=160, saved=saved)
     for p in patches:
         p.start()
     try:
@@ -411,20 +422,23 @@ def test_pipeline_from_base_records_flags_and_moves_pending_only():
         # 로더에 include_processed 전달
         _, load_kwargs = lf.load_pending_feedbacks.call_args
         assert load_kwargs["include_processed"] is True
-        # pending 20건만 이동
+        # pending 80건만 이동
         moved_keys = lf.move_pending_to_processed.call_args[0][0]
-        assert len(moved_keys) == 20
+        assert len(moved_keys) == 80
         assert all(k.startswith(lf.PENDING_PREFIX) for k in moved_keys)
     finally:
         for p in patches:
             p.stop()
 
     assert result["success"] is True
-    assert result["samples_trained"] == 60
+    assert result["samples_trained"] == 240
     assert result["from_base"] is True
     assert result["include_processed"] is True
     assert result["source_model_key"] == lf.BASE_MODEL_KEY
-    assert result["pending_files_moved"] == 20
+    assert result["pending_files_moved"] == 80
+    # 홀드아웃은 학습에 쓰이지 않는다
+    assert result["train_size"] + result["holdout_size"] == 240
+    assert saved["config"]["train_samples"] == result["train_size"]
 
     # 저장되는 config 에도 기록
     assert saved["config"]["from_base"] is True
@@ -435,7 +449,7 @@ def test_pipeline_from_base_records_flags_and_moves_pending_only():
 
 def test_pipeline_defaults_are_current_model():
     """플래그가 없으면 기존과 동일하게 models/current/model.pt 사용"""
-    patches = _patched_pipeline(60)
+    patches = _patched_pipeline(200)
     for p in patches:
         p.start()
     try:
@@ -543,7 +557,7 @@ def test_no_direct_list_objects_v2_in_trainer():
 @pytest.mark.parametrize("flag", ["from_base", "include_processed"])
 def test_flags_default_false(flag):
     """이벤트에 플래그가 없으면 False 로 동작"""
-    patches = _patched_pipeline(60)
+    patches = _patched_pipeline(200)
     for p in patches:
         p.start()
     try:
