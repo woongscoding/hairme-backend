@@ -4,6 +4,7 @@
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
 - 비로그인 (레거시): device_id 기반 일일 무료 제한 (구버전 앱 호환용, 단계적 폐기 예정)
 - 캐시 히트 (같은 사진 + 같은 스타일): 과금 없이 즉시 반환 (Gemini 재호출 방지)
+  회원이면 과금 없이도 결과는 마이페이지에 저장한다
 
 보안:
 - 업로드는 확장자 + 매직 바이트 + Pillow 디코딩까지 검증 (core/upload_validation)
@@ -19,7 +20,7 @@ from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from core.logging import logger
+from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
 from core.jwt_auth import get_optional_user_id
 from core.quota import (
@@ -83,6 +84,40 @@ def _safe_product_recommendations(
     except Exception as e:
         logger.warning(f"제품 추천 실패 (무시): {str(e)}")
         return []
+
+
+def _charge_mode(user_id: Optional[str], quota: Optional[dict] = None) -> str:
+    """구조화 로그의 mode 값 (credits=회원 과금, device=비로그인 레거시).
+
+    캐시 히트는 과금 경로를 타지 않으므로 호출부에서 "cache" 를 직접 넣는다.
+    """
+    if quota and quota.get("mode"):
+        return str(quota["mode"])
+    return "credits" if user_id else "device"
+
+
+def _store_cached_result(
+    storage,
+    user_id: Optional[str],
+    image_base64: str,
+    image_format: str,
+    hairstyle_name: Optional[str],
+) -> Optional[str]:
+    """캐시 히트 시 회원 결과 저장 (과금은 하지 않는다 - 무과금 캐시는 의도된 정책).
+
+    캐시 자체는 이미 저장되어 있으므로 save_cached_result 는 호출하지 않고,
+    회원의 마이페이지에 결과가 남도록 save_user_result 만 수행한다.
+    실패해도 응답에 영향 없음.
+    """
+    if not user_id or not storage.enabled:
+        return None
+    try:
+        return storage.save_user_result(
+            user_id, image_base64, image_format, hairstyle_name
+        )
+    except Exception as e:
+        logger.warning(f"캐시 결과 저장 실패 (무시): {str(e)}")
+        return None
 
 
 def _store_result(
@@ -195,16 +230,53 @@ async def synthesize_hairstyle(
             gender.encode("utf-8"),
             (additional_instructions or "").encode("utf-8"),
         )
+        log_structured(
+            "synthesis_start",
+            {
+                "endpoint": "synthesize",
+                "mode": _charge_mode(user_id),
+                "cache_key": cache_key[:16],
+                "hairstyle_name": hairstyle_name,
+                "gender": gender,
+                "file_size_kb": round(len(image_data) / 1024, 2),
+                "authenticated": user_id is not None,
+            },
+        )
+
         cached = storage.get_cached_result(cache_key)
         if cached:
+            # 과금은 하지 않지만(무과금 캐시 정책), 회원 결과는 마이페이지에 남긴다
+            cached_result_url = _store_cached_result(
+                storage,
+                user_id,
+                cached["image_base64"],
+                cached["image_format"],
+                hairstyle_name,
+            )
+            cached_time = round(time.time() - start_time, 2)
+
+            log_structured(
+                "synthesis_success",
+                {
+                    "endpoint": "synthesize",
+                    "mode": "cache",
+                    "cache_key": cache_key[:16],
+                    "hairstyle_name": hairstyle_name,
+                    "gender": gender,
+                    "processing_time": cached_time,
+                    "authenticated": user_id is not None,
+                    "result_saved": cached_result_url is not None,
+                },
+            )
+
             return {
                 "success": True,
                 "image_base64": cached["image_base64"],
                 "image_format": cached["image_format"],
                 "message": f"'{hairstyle_name}' 스타일이 적용되었습니다.",
-                "processing_time": round(time.time() - start_time, 2),
+                "processing_time": cached_time,
                 "cached": True,
-                "result_url": None,
+                "result_url": cached_result_url,
                 "quota": None,
                 "recommended_products": _safe_product_recommendations(
                     hairstyle_name, gender
@@ -219,6 +291,18 @@ async def synthesize_hairstyle(
             endpoint="synthesize",
         )
         if quota_error is not None:
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "quota_denied",
+                    "status_code": quota_error.status_code,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": user_id is not None,
+                },
+            )
             return quota_error
 
         # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
@@ -236,6 +320,19 @@ async def synthesize_hairstyle(
             if not result["success"]:
                 refund()
                 logger.warning(f"⚠️ 합성 실패: {result['message']}")
+                log_structured(
+                    "synthesis_failed",
+                    {
+                        "endpoint": "synthesize",
+                        "mode": _charge_mode(user_id, quota),
+                        "cache_key": cache_key[:16],
+                        "reason": "synthesis_rejected",
+                        "status_code": 422,
+                        "processing_time": processing_time,
+                        "refunded": True,
+                        "authenticated": user_id is not None,
+                    },
+                )
                 return JSONResponse(
                     status_code=422,
                     content={
@@ -260,6 +357,19 @@ async def synthesize_hairstyle(
             raise
 
         logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
+        log_structured(
+            "synthesis_success",
+            {
+                "endpoint": "synthesize",
+                "mode": _charge_mode(user_id, quota),
+                "cache_key": cache_key[:16],
+                "hairstyle_name": hairstyle_name,
+                "gender": gender,
+                "processing_time": processing_time,
+                "authenticated": user_id is not None,
+                "result_saved": result_url is not None,
+            },
+        )
         return {
             "success": True,
             "image_base64": result["image_base64"],
@@ -287,6 +397,18 @@ async def synthesize_hairstyle(
         raise
     except Exception as e:
         logger.error(f"❌ 합성 오류: {str(e)}", exc_info=True)
+        log_structured(
+            "synthesis_failed",
+            {
+                "endpoint": "synthesize",
+                "mode": _charge_mode(user_id),
+                "reason": "internal_error",
+                "status_code": 500,
+                "error_message": str(e),
+                "processing_time": round(time.time() - start_time, 2),
+                "authenticated": user_id is not None,
+            },
+        )
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
@@ -340,16 +462,51 @@ async def synthesize_with_reference(
             gender.encode("utf-8"),
             b"reference",
         )
+        log_structured(
+            "synthesis_start",
+            {
+                "endpoint": "synthesize-with-reference",
+                "mode": _charge_mode(user_id),
+                "cache_key": cache_key[:16],
+                "gender": gender,
+                "file_size_kb": round(len(user_image_data) / 1024, 2),
+                "authenticated": user_id is not None,
+            },
+        )
+
         cached = storage.get_cached_result(cache_key)
         if cached:
+            # 과금은 하지 않지만(무과금 캐시 정책), 회원 결과는 마이페이지에 남긴다
+            cached_result_url = _store_cached_result(
+                storage,
+                user_id,
+                cached["image_base64"],
+                cached["image_format"],
+                hairstyle_name=None,
+            )
+            cached_time = round(time.time() - start_time, 2)
+
+            log_structured(
+                "synthesis_success",
+                {
+                    "endpoint": "synthesize-with-reference",
+                    "mode": "cache",
+                    "cache_key": cache_key[:16],
+                    "gender": gender,
+                    "processing_time": cached_time,
+                    "authenticated": user_id is not None,
+                    "result_saved": cached_result_url is not None,
+                },
+            )
+
             return {
                 "success": True,
                 "image_base64": cached["image_base64"],
                 "image_format": cached["image_format"],
                 "message": "레퍼런스 스타일이 적용되었습니다.",
-                "processing_time": round(time.time() - start_time, 2),
+                "processing_time": cached_time,
                 "cached": True,
-                "result_url": None,
+                "result_url": cached_result_url,
                 "quota": None,
                 "recommended_products": _safe_product_recommendations(None, gender),
             }
@@ -362,6 +519,18 @@ async def synthesize_with_reference(
             endpoint="synthesize-with-reference",
         )
         if quota_error is not None:
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize-with-reference",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "quota_denied",
+                    "status_code": quota_error.status_code,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": user_id is not None,
+                },
+            )
             return quota_error
 
         # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
@@ -378,6 +547,19 @@ async def synthesize_with_reference(
             if not result["success"]:
                 refund()
                 logger.warning(f"⚠️ 레퍼런스 합성 실패: {result['message']}")
+                log_structured(
+                    "synthesis_failed",
+                    {
+                        "endpoint": "synthesize-with-reference",
+                        "mode": _charge_mode(user_id, quota),
+                        "cache_key": cache_key[:16],
+                        "reason": "synthesis_rejected",
+                        "status_code": 422,
+                        "processing_time": processing_time,
+                        "refunded": True,
+                        "authenticated": user_id is not None,
+                    },
+                )
                 return JSONResponse(
                     status_code=422,
                     content={
@@ -402,6 +584,18 @@ async def synthesize_with_reference(
             raise
 
         logger.info(f"✅ 레퍼런스 합성 완료 ({processing_time}초)")
+        log_structured(
+            "synthesis_success",
+            {
+                "endpoint": "synthesize-with-reference",
+                "mode": _charge_mode(user_id, quota),
+                "cache_key": cache_key[:16],
+                "gender": gender,
+                "processing_time": processing_time,
+                "authenticated": user_id is not None,
+                "result_saved": result_url is not None,
+            },
+        )
         return {
             "success": True,
             "image_base64": result["image_base64"],
@@ -427,6 +621,18 @@ async def synthesize_with_reference(
         raise
     except Exception as e:
         logger.error(f"❌ 레퍼런스 합성 오류: {str(e)}", exc_info=True)
+        log_structured(
+            "synthesis_failed",
+            {
+                "endpoint": "synthesize-with-reference",
+                "mode": _charge_mode(user_id),
+                "reason": "internal_error",
+                "status_code": 500,
+                "error_message": str(e),
+                "processing_time": round(time.time() - start_time, 2),
+                "authenticated": user_id is not None,
+            },
+        )
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
