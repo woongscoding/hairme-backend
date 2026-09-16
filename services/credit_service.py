@@ -25,6 +25,19 @@ from config.settings import settings
 from core.logging import logger
 
 
+def _mask_user_id(user_id: Optional[str]) -> str:
+    """user_id 마스킹: 앞 4자 + sha256 앞 8자
+
+    core.quota.mask_device_id 와 동일한 기준.
+    core.quota 가 이 모듈을 import 하므로(순환 import 방지),
+    여기서 같은 규칙으로 따로 정의한다.
+    """
+    if not user_id:
+        return "unknown"
+    digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:8]
+    return f"{user_id[:4]}~{digest}"
+
+
 def _mask_ref(ref_key: str) -> str:
     """ref_key의 토큰 부분을 해시로 마스킹 (네임스페이스 접두사는 유지)"""
     prefix, sep, secret = ref_key.partition("#")
@@ -123,7 +136,8 @@ class CreditService:
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 balance = self._safe_balance(user_id)
-                logger.info(f"크레딧 부족: user_id={user_id}, balance={balance}")
+                masked = _mask_user_id(user_id)
+                logger.info(f"크레딧 부족: user_id={masked}, balance={balance}")
                 raise InsufficientCreditsError(balance)
             logger.error(f"크레딧 차감 실패: {e.response['Error']['Message']}")
             raise
