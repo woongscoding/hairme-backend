@@ -199,6 +199,65 @@ class MediaPipeFaceAnalyzer:
             logger.error(f"MediaPipe 얼굴 분석 실패: {str(e)}")
             return None
 
+    # ========== 얼굴형 임계값 (실측 분포 기반, 2026-09-17 재보정) ==========
+    # 이 클래스의 랜드마크 정의(턱 172/397, 광대 234/454, 이마 70/300)로 잰 비율은
+    # 사람 간 편차가 매우 작다. 운영 DB에 저장된 측정값 11,599건(2026-03~09)의 분포:
+    #   face_ratio     평균 1.228 ± 0.061 (p5 1.13 ~ p95 1.31)
+    #   jaw_ratio      평균 0.783 ± 0.025 (p5 0.74 ~ p95 0.82)
+    #   forehead_ratio 평균 0.845 ± 0.026 (p5 0.80 ~ p95 0.89)
+    # 이전의 교과서식 절대 임계값(예: 각진형 jaw_ratio > 0.95)은 이 분포에서 도달이
+    # 불가능해 10개월간 96.6%가 계란형으로 분류됐다. 아래 값은 위 분포의 분위수다.
+    # 같은 데이터에 적용하면 계란형 49% / 둥근형 20% / 긴형 19% / 각진형 10% / 하트형 1%.
+    # 재도출: hairme-analysis 의 mediapipe_face_ratio·jaw_ratio·forehead_ratio 분위수.
+    LONG_FACE_RATIO = 1.275  # p80 초과 → 긴형
+    ROUND_FACE_RATIO = 1.185  # p20 미만 → 둥근형
+    SQUARE_JAW_RATIO = 0.805  # p80 초과 → 각진형
+    HEART_JAW_RATIO = 0.766  # p25 미만이고
+    HEART_FOREHEAD_RATIO = 0.829  # p25 미만이면 → 하트형
+    # 신뢰도: 경계에서 0.60, 경계로부터 아래 폭만큼 멀어지면 0.90
+    _FACE_RATIO_CONF_SPAN = 0.10
+    _JAW_RATIO_CONF_SPAN = 0.04
+
+    @classmethod
+    def classify_from_ratios(
+        cls, face_ratio: float, forehead_ratio: float, jaw_ratio: float
+    ) -> Tuple[str, float]:
+        """비율 3개로 얼굴형과 신뢰도를 결정한다 (순수 함수, 테스트 가능)."""
+
+        def conf(distance: float, span: float) -> float:
+            return round(min(0.60 + 0.30 * max(distance, 0.0) / span, 0.90), 2)
+
+        # 1순위: 세로 비율 (가장 편차가 큰 측정값)
+        if face_ratio > cls.LONG_FACE_RATIO:
+            return "긴형", conf(
+                face_ratio - cls.LONG_FACE_RATIO, cls._FACE_RATIO_CONF_SPAN
+            )
+        if face_ratio < cls.ROUND_FACE_RATIO:
+            return "둥근형", conf(
+                cls.ROUND_FACE_RATIO - face_ratio, cls._FACE_RATIO_CONF_SPAN
+            )
+
+        # 2순위: 이마·턱이 모두 좁음 → 하트형
+        if (
+            jaw_ratio < cls.HEART_JAW_RATIO
+            and forehead_ratio < cls.HEART_FOREHEAD_RATIO
+        ):
+            narrowness = (cls.HEART_JAW_RATIO - jaw_ratio) + (
+                cls.HEART_FOREHEAD_RATIO - forehead_ratio
+            )
+            return "하트형", conf(narrowness, cls._JAW_RATIO_CONF_SPAN)
+
+        # 3순위: 턱이 넓음 → 각진형
+        if jaw_ratio > cls.SQUARE_JAW_RATIO:
+            return "각진형", conf(
+                jaw_ratio - cls.SQUARE_JAW_RATIO, cls._JAW_RATIO_CONF_SPAN
+            )
+
+        # 나머지: 계란형. 구간 중앙에 가까울수록 신뢰도가 높다
+        center = (cls.LONG_FACE_RATIO + cls.ROUND_FACE_RATIO) / 2
+        half = (cls.LONG_FACE_RATIO - cls.ROUND_FACE_RATIO) / 2
+        return "계란형", conf(half - abs(face_ratio - center), half)
+
     def _classify_face_shape(
         self, landmarks, image_shape: Tuple[int, int]
     ) -> Tuple[str, float, dict]:
@@ -255,63 +314,9 @@ class MediaPipeFaceAnalyzer:
             "jaw_ratio": jaw_ratio,
         }
 
-        # ========== 얼굴형 분류 로직 (개선됨 - 균형잡힌 분류) ==========
-        confidence = 0.0
-
-        # 1순위: 극단적인 비율 먼저 체크
-        if face_ratio > 1.45:
-            # 긴형: 얼굴이 세로로 매우 길다
-            face_shape = "긴형"
-            confidence = min(0.7 + (face_ratio - 1.45) * 0.5, 0.95)
-
-        elif face_ratio < 0.95:
-            # 둥근형: 얼굴이 가로로 넓다
-            face_shape = "둥근형"
-            confidence = min(0.7 + (0.95 - face_ratio) * 0.5, 0.95)
-
-        # 2순위: 하트형 체크 (이마와 턱이 모두 좁음)
-        elif forehead_ratio < 0.82 and jaw_ratio < 0.75:
-            face_shape = "하트형"
-            narrowness = (1.0 - forehead_ratio) + (1.0 - jaw_ratio)
-            confidence = min(0.65 + narrowness * 0.3, 0.90)
-
-        # 3순위: 각진형 체크 (턱이 넓거나 이마/턱 차이가 큼)
-        elif jaw_ratio > 0.95 or abs(forehead_ratio - jaw_ratio) > 0.18:
-            face_shape = "각진형"
-            if jaw_ratio > 0.95:
-                confidence = min(0.70 + (jaw_ratio - 0.95) * 2, 0.90)
-            else:
-                difference = abs(forehead_ratio - jaw_ratio)
-                confidence = min(0.65 + difference * 0.4, 0.88)
-
-        # 4순위: 긴형 (약간 긴 경우도 포함)
-        elif face_ratio > 1.35:
-            face_shape = "긴형"
-            confidence = min(0.65 + (face_ratio - 1.35) * 0.4, 0.88)
-
-        # 5순위: 둥근형 (약간 둥근 경우도 포함)
-        elif face_ratio < 1.05:
-            face_shape = "둥근형"
-            confidence = min(0.65 + (1.05 - face_ratio) * 0.4, 0.88)
-
-        # 6순위: 계란형 (균형잡힌 경우만)
-        elif 1.05 <= face_ratio <= 1.35 and abs(forehead_ratio - jaw_ratio) < 0.15:
-            face_shape = "계란형"
-            balance_score = 1.0 - abs(forehead_ratio - jaw_ratio) * 3
-            confidence = min(0.70 + balance_score * 0.15, 0.90)
-
-        # 나머지: 가장 가까운 타입으로 분류
-        else:
-            # face_ratio 기준으로 가장 가까운 타입 선택
-            if face_ratio > 1.20:
-                face_shape = "긴형"
-                confidence = 0.55
-            elif face_ratio < 1.10:
-                face_shape = "둥근형"
-                confidence = 0.55
-            else:
-                face_shape = "각진형"  # 기본값을 각진형으로 변경
-                confidence = 0.55
+        face_shape, confidence = self.classify_from_ratios(
+            face_ratio, forehead_ratio, jaw_ratio
+        )
 
         logger.debug(
             f"얼굴형 측정: ratio={face_ratio:.2f}, "
