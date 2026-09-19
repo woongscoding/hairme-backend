@@ -77,7 +77,11 @@ class HairstyleSynthesisService:
             - image_base64: Base64 encoded result image
             - image_format: Image format (e.g., "png")
             - message: Status message
+            - api_calls: 실제 Gemini 호출 횟수 (재시도 포함, 비용 계측용)
         """
+        # 이미지 열기/프롬프트 구성 단계에서 실패하면 호출 전일 수 있다
+        api_calls = 0
+
         try:
             from google.genai import types
 
@@ -116,6 +120,7 @@ class HairstyleSynthesisService:
 
             for attempt in range(self.MAX_RETRIES):
                 try:
+                    api_calls += 1
                     # Call Gemini 2.5 Flash Image API
                     response = self.client.models.generate_content(
                         model=settings.GEMINI_IMAGE_MODEL,
@@ -167,6 +172,7 @@ class HairstyleSynthesisService:
                     "image_format": None,
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text,
+                    "api_calls": api_calls,
                 }
 
             # Convert to base64
@@ -224,6 +230,7 @@ class HairstyleSynthesisService:
                 "image_format": image_format,
                 "message": f"'{hairstyle_name}' 스타일이 적용되었습니다.",
                 "gemini_response": result_text,
+                "api_calls": api_calls,
             }
 
         except Exception as e:
@@ -235,6 +242,7 @@ class HairstyleSynthesisService:
                 "image_format": None,
                 "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
                 "gemini_response": None,
+                "api_calls": api_calls,
             }
 
     def synthesize_with_reference(
@@ -249,8 +257,10 @@ class HairstyleSynthesisService:
             gender: User's gender
 
         Returns:
-            Same as synthesize_hairstyle()
+            Same as synthesize_hairstyle() (api_calls 포함)
         """
+        api_calls = 0
+
         try:
             from google.genai import types
 
@@ -279,6 +289,7 @@ class HairstyleSynthesisService:
 
             for attempt in range(self.MAX_RETRIES):
                 try:
+                    api_calls += 1
                     response = self.client.models.generate_content(
                         model=settings.GEMINI_IMAGE_MODEL,
                         contents=[prompt, user_image, reference_image],
@@ -326,6 +337,7 @@ class HairstyleSynthesisService:
                     "image_format": None,
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text,
+                    "api_calls": api_calls,
                 }
 
             image_bytes = result_image.data
@@ -361,6 +373,7 @@ class HairstyleSynthesisService:
                 "image_format": image_format,
                 "message": "레퍼런스 스타일이 적용되었습니다.",
                 "gemini_response": result_text,
+                "api_calls": api_calls,
             }
 
         except Exception as e:
@@ -371,6 +384,7 @@ class HairstyleSynthesisService:
                 "image_format": None,
                 "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
                 "gemini_response": None,
+                "api_calls": api_calls,
             }
 
 

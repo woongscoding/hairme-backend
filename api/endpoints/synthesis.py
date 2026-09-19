@@ -13,7 +13,7 @@
 """
 
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
@@ -27,6 +27,11 @@ from core.quota import (
     QuotaResult,
     charge_synthesis_quota,
     client_ip_from_request,
+)
+from core.synthesis_lock import (
+    NOOP_RELEASE,
+    acquire_synthesis_lock,
+    duplicate_request_response_body,
 )
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
@@ -84,6 +89,17 @@ def _safe_product_recommendations(
     except Exception as e:
         logger.warning(f"제품 추천 실패 (무시): {str(e)}")
         return []
+
+
+def _lock_subject(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
+    """중복 요청 판정의 주체. 회원은 user_id, 비로그인은 device_id.
+
+    잠금 키는 이 값을 해시해서 만들므로 원문이 저장소에 남지 않는다.
+    """
+    if user_id:
+        return f"user:{user_id}"
+    trimmed = (device_id or "").strip()
+    return f"device:{trimmed}" if trimmed else None
 
 
 def _charge_mode(user_id: Optional[str], quota: Optional[dict] = None) -> str:
@@ -190,6 +206,8 @@ async def synthesize_hairstyle(
         }
     """
     start_time = time.time()
+    # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
+    release_lock: Callable[[], None] = NOOP_RELEASE
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -283,7 +301,31 @@ async def synthesize_hairstyle(
                 ),
             }
 
-        # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
+        # ===== 3. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
+        acquired, release_lock = acquire_synthesis_lock(
+            _lock_subject(user_id, device_id),
+            cache_key,
+            endpoint="synthesize",
+        )
+        if not acquired:
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "duplicate_in_flight",
+                    "status_code": 409,
+                    "api_calls": 0,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": user_id is not None,
+                },
+            )
+            return JSONResponse(
+                status_code=409, content=duplicate_request_response_body()
+            )
+
+        # ===== 4. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
             user_id,
             device_id,
@@ -299,13 +341,14 @@ async def synthesize_hairstyle(
                     "cache_key": cache_key[:16],
                     "reason": "quota_denied",
                     "status_code": quota_error.status_code,
+                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },
             )
             return quota_error
 
-        # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        # ===== 5. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
             result = service.synthesize_hairstyle(
@@ -316,6 +359,7 @@ async def synthesize_hairstyle(
             )
 
             processing_time = round(time.time() - start_time, 2)
+            api_calls = result.get("api_calls", 0)
 
             if not result["success"]:
                 refund()
@@ -328,6 +372,7 @@ async def synthesize_hairstyle(
                         "cache_key": cache_key[:16],
                         "reason": "synthesis_rejected",
                         "status_code": 422,
+                        "api_calls": api_calls,
                         "processing_time": processing_time,
                         "refunded": True,
                         "authenticated": user_id is not None,
@@ -342,7 +387,7 @@ async def synthesize_hairstyle(
                     },
                 )
 
-            # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 6. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 image_data,
@@ -365,6 +410,7 @@ async def synthesize_hairstyle(
                 "cache_key": cache_key[:16],
                 "hairstyle_name": hairstyle_name,
                 "gender": gender,
+                "api_calls": api_calls,
                 "processing_time": processing_time,
                 "authenticated": user_id is not None,
                 "result_saved": result_url is not None,
@@ -413,6 +459,9 @@ async def synthesize_hairstyle(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+    finally:
+        # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
+        release_lock()
 
 
 @router.post("/synthesize-with-reference")
@@ -434,6 +483,8 @@ async def synthesize_with_reference(
     과금 정책은 /synthesize와 동일 (회원: 크레딧, 비로그인: device_id 일일 제한).
     """
     start_time = time.time()
+    # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
+    release_lock: Callable[[], None] = NOOP_RELEASE
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -511,7 +562,31 @@ async def synthesize_with_reference(
                 "recommended_products": _safe_product_recommendations(None, gender),
             }
 
-        # ===== 3. 과금 (크레딧 또는 레거시 일일 제한) =====
+        # ===== 3. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
+        acquired, release_lock = acquire_synthesis_lock(
+            _lock_subject(user_id, device_id),
+            cache_key,
+            endpoint="synthesize-with-reference",
+        )
+        if not acquired:
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize-with-reference",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "duplicate_in_flight",
+                    "status_code": 409,
+                    "api_calls": 0,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": user_id is not None,
+                },
+            )
+            return JSONResponse(
+                status_code=409, content=duplicate_request_response_body()
+            )
+
+        # ===== 4. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
             user_id,
             device_id,
@@ -527,13 +602,14 @@ async def synthesize_with_reference(
                     "cache_key": cache_key[:16],
                     "reason": "quota_denied",
                     "status_code": quota_error.status_code,
+                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },
             )
             return quota_error
 
-        # ===== 4. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        # ===== 5. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
             result = service.synthesize_with_reference(
@@ -543,6 +619,7 @@ async def synthesize_with_reference(
             )
 
             processing_time = round(time.time() - start_time, 2)
+            api_calls = result.get("api_calls", 0)
 
             if not result["success"]:
                 refund()
@@ -555,6 +632,7 @@ async def synthesize_with_reference(
                         "cache_key": cache_key[:16],
                         "reason": "synthesis_rejected",
                         "status_code": 422,
+                        "api_calls": api_calls,
                         "processing_time": processing_time,
                         "refunded": True,
                         "authenticated": user_id is not None,
@@ -569,7 +647,7 @@ async def synthesize_with_reference(
                     },
                 )
 
-            # ===== 5. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 6. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 user_image_data,
@@ -591,6 +669,7 @@ async def synthesize_with_reference(
                 "mode": _charge_mode(user_id, quota),
                 "cache_key": cache_key[:16],
                 "gender": gender,
+                "api_calls": api_calls,
                 "processing_time": processing_time,
                 "authenticated": user_id is not None,
                 "result_saved": result_url is not None,
@@ -637,3 +716,6 @@ async def synthesize_with_reference(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+    finally:
+        # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
+        release_lock()
