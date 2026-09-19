@@ -14,6 +14,8 @@ from typing import Optional, Dict, List
 from pathlib import Path
 import json
 
+from config.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -188,6 +190,12 @@ class ReasonGenerator:
         """
         base_reason = self.generate_simple(face_shape, skin_tone, hairstyle)
 
+        # 별점 접두어는 기본적으로 붙이지 않는다 (settings.SHOW_CONFIDENCE_STARS).
+        # 기준(75/80/85/90)은 그대로 두고 문구만 감춘다 - 점수에 변별력이 생기면
+        # 플래그만 올려서 되돌린다.
+        if not settings.SHOW_CONFIDENCE_STARS:
+            return base_reason
+
         # 점수별 신뢰도 표현 (더 자연스럽게 수정)
         if ml_score >= 90:
             confidence = "★★★ 강력 추천"
@@ -280,7 +288,8 @@ if __name__ == "__main__":
         print()
 
     # ML 점수 포함 테스트
-    print("\n=== ML 점수 포함 테스트 ===\n")
+    # (별점 접두어는 settings.SHOW_CONFIDENCE_STARS 가 True 일 때만 붙는다)
+    print(f"\n=== ML 점수 포함 테스트 (별점={settings.SHOW_CONFIDENCE_STARS}) ===\n")
     for score in [95, 85, 75, 65]:
         reason = generator.generate_with_score("계란형", "봄웜", "레이어드 컷", score)
         print(f"점수 {score}: {reason}")

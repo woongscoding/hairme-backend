@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     # 로그(event_type=legacy_device_flow)로 확인한 뒤 내릴 것.
     LEGACY_DEVICE_FLOW_ENABLED: bool = True
 
+    # ===== 추천 사유 문구 =====
+    # 별점 접두어("★★★ 강력 추천" 등)를 사유 문구에 붙일지 여부.
+    # 재학습 모델(v6_feedback_20260909)이 40~65 점대를 내는데 기준은 75/80/85/90
+    # 고정이라 모든 카드가 "★☆☆ 추천" 으로 나간다. 점수에 변별력이 생길 때까지
+    # 문구에서 빼둔다(기준 재설정은 하지 않는다). True 로 올리면 즉시 되돌아간다.
+    SHOW_CONFIDENCE_STARS: bool = False
+
     # ===== 크레딧 정책 =====
     SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
     SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
