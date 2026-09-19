@@ -10,6 +10,14 @@ os.environ.setdefault("ML_MODEL_PATH", "models/test_model.pt")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
 os.environ["TESTING"] = "true"  # Skip .env file loading during tests
 
+# settings.USE_DYNAMODB 는 기본값이 False 인데도 Settings.__init__ 의 AWS 환경
+# 처리에서 True 로 올라온다. 반면 database.dynamodb_connection.init_dynamodb 는
+# os.getenv("USE_DYNAMODB") 를 보므로 False 다. 이 불일치 때문에 /api/health 의
+# check_dynamodb 만 실제 DescribeTable 을 호출하고 있었다
+# (test_health_check.py 의 latency_ms 플레이크 원인이기도 하다 - 실제 네트워크 지연).
+# 테스트에서는 두 경로의 판단을 명시적으로 일치시킨다.
+os.environ.setdefault("USE_DYNAMODB", "false")
+
 import pytest
 import io
 from unittest.mock import Mock, patch, MagicMock
@@ -18,6 +26,62 @@ from fastapi.testclient import TestClient
 
 from main import app
 from config.settings import settings
+
+
+# ========== 실제 AWS 호출 차단 ==========
+# 기본 단위 테스트는 AWS 를 건드리면 안 된다. 목을 빠뜨리면 조용히 운영
+# 테이블(hairstyle_usage, hairme-analysis 등)에 붙어버리는데, 코드 대부분이
+# 저장소 장애를 fail-open 으로 삼키기 때문에 테스트는 그대로 통과한다.
+# (2026-09-19 에 실제로 발생 - docs/OPS_TEST_AWS_INCIDENT.md 참고)
+#
+# 그래서 botocore 의 API 호출 진입점을 막고, 시도 자체를 즉시 실패로 만든다.
+#
+# 예외(실제 호출을 허용)는 둘 뿐이다:
+#   - RUN_DYNAMODB_INTEGRATION=1  : 의도적인 통합 테스트 (전용 테스트 테이블 필요)
+#   - @pytest.mark.aws           : 실제 호출이 목적인 개별 테스트
+AWS_INTEGRATION_OPT_IN_ENV = "RUN_DYNAMODB_INTEGRATION"
+
+
+class RealAWSCallAttempted(BaseException):
+    """단위 테스트에서 실제 AWS 호출을 시도했을 때 발생.
+
+    BaseException 을 상속하는 이유: 프로덕션 코드 곳곳의 `except Exception`
+    (저장소 장애 시 통과시키는 fail-open 경로)에 삼켜지면 안 되기 때문이다.
+    삼켜지면 목을 빠뜨린 테스트가 그대로 통과해 차단 장치가 무의미해진다.
+    """
+
+
+@pytest.fixture(autouse=True)
+def block_real_aws_calls(request):
+    """모든 테스트에서 실제 AWS API 호출을 차단한다 (위 예외 두 가지 제외)"""
+    if os.getenv(AWS_INTEGRATION_OPT_IN_ENV) == "1":
+        yield
+        return
+    if request.node.get_closest_marker("aws"):
+        yield
+        return
+
+    try:
+        import botocore.client
+    except ImportError:  # boto3 미설치 환경
+        yield
+        return
+
+    def _blocked(self, operation_name, api_params):
+        service = getattr(getattr(self, "meta", None), "service_model", None)
+        service_name = getattr(service, "service_name", "aws")
+        raise RealAWSCallAttempted(
+            f"단위 테스트가 실제 AWS 호출을 시도했습니다: "
+            f"{service_name}.{operation_name}\n"
+            f"목을 추가하세요. 실제 호출이 목적이라면 @pytest.mark.aws 를 붙이거나 "
+            f"{AWS_INTEGRATION_OPT_IN_ENV}=1 로 실행하세요.\n"
+            f"흔한 원인: api/endpoints/* 는 서비스 팩토리를 import 시점에 "
+            f"바인딩하므로, core.quota 가 아니라 해당 엔드포인트 모듈의 이름을 "
+            f"patch 해야 합니다."
+        )
+
+    with patch.object(botocore.client.BaseClient, "_make_api_call", _blocked):
+        yield
 
 
 # ========== Test Client Setup ==========

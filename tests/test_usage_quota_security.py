@@ -217,9 +217,17 @@ class TestDeviceIdValidation:
         storage.get_cached_result.return_value = None
         usage = FakeUsageService()
 
+        # 합성 엔드포인트는 get_usage_limit_service 를 import 시점에 바인딩하므로
+        # core.quota 쪽만 패치하면 실제 DynamoDB 로 나간다. 두 곳 모두 패치한다.
+        # 중복 요청 잠금도 DynamoDB 를 쓰므로 함께 막는다.
         with patch(
             "api.endpoints.synthesis.get_photo_storage_service", return_value=storage
-        ), patch("core.quota.get_usage_limit_service", return_value=usage):
+        ), patch("core.quota.get_usage_limit_service", return_value=usage), patch(
+            "api.endpoints.synthesis.get_usage_limit_service", return_value=usage
+        ), patch(
+            "api.endpoints.synthesis.acquire_synthesis_lock",
+            return_value=(True, lambda: None),
+        ):
             response = client.post(
                 "/api/v2/synthesize",
                 files={"file": ("face.png", _png_bytes(), "image/png")},

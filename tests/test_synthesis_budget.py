@@ -149,7 +149,9 @@ class TestRecordApiCalls:
         assert "ConditionExpression" not in kwargs
         assert "if_not_exists" in kwargs["UpdateExpression"]
         assert kwargs["ExpressionAttributeNames"]["#cnt"] == "count"
-        # TTL 로 다음날 정리된다
+        # expire_at(TTL)은 남은 행 청소용이다. 날짜가 바뀌면 정렬 키가 바뀌어
+        # 새 행에서 0 부터 시작하므로, 집계 초기화는 TTL 삭제와 무관하다
+        # (DynamoDB TTL 삭제는 즉시가 아니라 최대 48시간까지 늦어질 수 있다)
         assert kwargs["ExpressionAttributeValues"][":ttl"] > 0
 
     def test_zero_or_negative_is_not_recorded(self):
@@ -381,8 +383,9 @@ class TestBudgetBlocksAnonymousOnly:
         ]
         assert failures[-1]["reason"] == "daily_budget_exceeded"
         assert failures[-1]["status_code"] == 503
-        assert failures[-1]["api_calls"] == 0
         assert failures[-1]["authenticated"] is False
+        # 사전 거절은 Gemini 를 부르지 않았으므로 api_calls 필드가 없어야 한다
+        assert "api_calls" not in failures[-1]
 
     def test_no_charge_when_rejected(self, client, storage):
         """503 으로 거절된 요청은 무료 한도도 크레딧도 소모하지 않는다"""
@@ -578,3 +581,134 @@ class TestResponseBody:
         assert body["success"] is False
         assert body["error"] == "daily_budget_exceeded"
         assert isinstance(body["message"], str) and body["message"].strip()
+
+
+# ========== (c) 예산 0(무제한)에서도 집계는 계속된다 ==========
+
+
+class TestAggregationRunsAtZeroBudget:
+    """상한 조회만 생략하고, 호출 기록은 값과 무관하게 항상 쓴다.
+
+    상한을 정하려면 먼저 평소 호출량이 쌓여야 하므로 이게 깨지면
+    "며칠 모아서 상한 결정" 자체가 불가능해진다.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _zero_budget(self, monkeypatch):
+        monkeypatch.setattr(settings, "DAILY_SYNTHESIS_BUDGET", 0)
+
+    def test_record_writes_even_when_budget_is_zero(self):
+        table = MagicMock()
+
+        record_api_calls(2, usage_service_factory=lambda: _usage_service(table))
+
+        assert (
+            table.update_item.call_args.kwargs["ExpressionAttributeValues"][":inc"] == 2
+        )
+
+    def test_check_skips_lookup_but_record_still_writes(self):
+        table = MagicMock()
+        factory = lambda: _usage_service(table)
+
+        assert daily_budget_exceeded(usage_service_factory=factory) is False
+        record_api_calls(1, usage_service_factory=factory)
+
+        table.get_item.assert_not_called()  # 상한 조회는 생략
+        table.update_item.assert_called_once()  # 집계는 수행
+
+    def test_huge_recorded_total_never_blocks_at_zero(self):
+        """이미 많이 썼어도 상한 0 이면 막지 않는다"""
+        table = _table_with_count(1_000_000)
+
+        assert (
+            daily_budget_exceeded(usage_service_factory=lambda: _usage_service(table))
+            is False
+        )
+
+    # ----- 모든 합성 경로: 성공 / 실패 / 재시도 -----
+
+    @pytest.mark.parametrize(
+        "poster,endpoint_name",
+        [
+            (_post_synthesize, "synthesize"),
+            (_post_reference, "synthesize-with-reference"),
+        ],
+    )
+    @pytest.mark.parametrize("success", [True, False])
+    @pytest.mark.parametrize("api_calls", [1, 3])
+    @pytest.mark.parametrize("anonymous", [True, False])
+    def test_every_path_is_aggregated(
+        self, client, storage, poster, endpoint_name, success, api_calls, anonymous
+    ):
+        credit = MagicMock()
+        credit.consume.return_value = 4
+        usage = FakeUsageService()
+
+        with patch(
+            "api.endpoints.synthesis.acquire_synthesis_lock",
+            return_value=(True, lambda: None),
+        ), patch(
+            "api.endpoints.synthesis.get_credit_service", return_value=credit
+        ), patch(
+            "api.endpoints.synthesis.get_usage_limit_service", return_value=usage
+        ), patch(
+            "core.quota.get_usage_limit_service", return_value=usage
+        ), patch(
+            "api.endpoints.synthesis.get_synthesis_service",
+            return_value=_synthesis_service(success=success, api_calls=api_calls),
+        ), patch(
+            "api.endpoints.synthesis.get_user_repository"
+        ), patch(
+            "api.endpoints.synthesis.record_api_calls"
+        ) as mock_record:
+            response = poster(
+                client,
+                headers=None if anonymous else AUTH,
+                device_id=DEVICE_ID if anonymous else None,
+            )
+
+        assert response.status_code == (200 if success else 422)
+        # 성공이든 실패든, 회원이든 비로그인이든, 재시도가 몇 번이든 전부 기록된다
+        mock_record.assert_called_once()
+        assert mock_record.call_args.args[0] == api_calls
+        assert mock_record.call_args.kwargs["endpoint"] == endpoint_name
+
+    def test_zero_api_calls_is_passed_through_and_ignored_by_the_store(
+        self, client, storage
+    ):
+        """호출 전에 실패하면 0 이 넘어오고, 저장소는 아무것도 쓰지 않는다"""
+        credit = MagicMock()
+        credit.consume.return_value = 4
+        table = MagicMock()
+
+        with patch(
+            "api.endpoints.synthesis.acquire_synthesis_lock",
+            return_value=(True, lambda: None),
+        ), patch(
+            "api.endpoints.synthesis.get_credit_service", return_value=credit
+        ), patch(
+            "api.endpoints.synthesis.get_synthesis_service",
+            return_value=_synthesis_service(success=False, api_calls=0),
+        ), patch(
+            "core.synthesis_budget.get_usage_limit_service",
+            return_value=_usage_service(table),
+        ):
+            response = _post_synthesize(client, headers=AUTH)
+
+        assert response.status_code == 422
+        table.update_item.assert_not_called()
+
+    def test_cache_hit_is_still_excluded_at_zero_budget(self, client, storage):
+        storage.get_cached_result.return_value = {
+            "image_base64": "aW1n",
+            "image_format": "png",
+        }
+
+        with patch("api.endpoints.synthesis.record_api_calls") as mock_record, patch(
+            "api.endpoints.synthesis.get_credit_service", return_value=MagicMock()
+        ):
+            response = _post_synthesize(client, headers=AUTH)
+
+        assert response.status_code == 200
+        assert response.json()["cached"] is True
+        mock_record.assert_not_called()

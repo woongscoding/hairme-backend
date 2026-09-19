@@ -346,7 +346,9 @@ class TestDuplicateRequestRejected:
         ]
         assert failures[-1]["reason"] == "duplicate_in_flight"
         assert failures[-1]["status_code"] == 409
-        assert failures[-1]["api_calls"] == 0
+        # Gemini 를 부르지 않은 사전 거절이므로 api_calls 필드 자체가 없다
+        # (있으면 로그 합산에서 실제 호출로 오인될 수 있다)
+        assert "api_calls" not in failures[-1]
 
 
 class TestLockLifecycle:

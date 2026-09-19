@@ -64,12 +64,19 @@ def synthesis_mocks():
 
     synthesis = MagicMock()
 
+    # 중복 요청 잠금 / 일 예산 집계는 DynamoDB 를 쓴다. 이 스위트의 관심사가
+    # 아니므로 통과시키고, 실제 호출이 나가지 않게 막는다.
     with patch(
         "api.endpoints.synthesis.get_credit_service", return_value=credit
     ), patch(
         "api.endpoints.synthesis.get_photo_storage_service", return_value=storage
     ), patch(
         "api.endpoints.synthesis.get_synthesis_service", return_value=synthesis
+    ), patch(
+        "api.endpoints.synthesis.acquire_synthesis_lock",
+        return_value=(True, lambda: None),
+    ), patch(
+        "api.endpoints.synthesis.record_api_calls"
     ):
         yield {"credit": credit, "synthesis": synthesis}
 

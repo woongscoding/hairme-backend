@@ -34,10 +34,11 @@ class Settings(BaseSettings):
     DAILY_SYNTHESIS_LIMIT: int = 3
     # 비로그인(device_id) 합성은 device_id 회전으로 우회 가능하므로 IP 단위 일일 상한을 추가로 둔다.
     ANON_IP_DAILY_SYNTHESIS_LIMIT: int = 15
-    # 하루 전체 실제 Gemini 호출 수(api_calls 합계, 캐시 히트 제외)의 상한.
-    # 0(기본)이면 무제한 - 집계만 하고 막지 않는다.
-    # 상한에 닿으면 비로그인 합성만 503 으로 거절하고 회원은 전원 통과시킨다
-    # (크레딧 잔액이 단일 정수라 유료/보너스 출처를 나눌 수 없기 때문).
+    # 하루 전체 Gemini 호출 수(api_calls 합계, 캐시 히트 제외)를 기준으로
+    # 비로그인 신규 합성을 멈추는 장치. 전체 비용의 하드 상한이 아니다:
+    # 호출 후 집계라 동시 요청은 함께 통과하고, 회원은 제한하지 않으며,
+    # 집계 저장소 장애 시에도 통과시킨다 (core/synthesis_budget.py 참고).
+    # 0(기본)이면 상한 조회를 건너뛴다. 집계는 값과 무관하게 항상 수행한다.
     DAILY_SYNTHESIS_BUDGET: int = 0
 
     # ===== 회원 인증 (Kakao 로그인 + 자체 JWT) =====

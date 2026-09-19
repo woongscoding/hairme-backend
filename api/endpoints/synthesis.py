@@ -10,6 +10,14 @@
 - 업로드는 확장자 + 매직 바이트 + Pillow 디코딩까지 검증 (core/upload_validation)
 - 프롬프트에 삽입되는 사용자 입력은 정제 (프롬프트 인젝션 완화)
 - 모든 검증은 과금(크레딧/사용량 차감)보다 먼저 수행
+
+구조화 로그의 api_calls 규약:
+- api_calls 는 "실제로 Gemini 를 시도한" 이벤트에만 넣는다 (성공/실패 모두).
+  값 0 은 호출 전에 실패했다는 뜻이다 (예: 이미지 열기 실패).
+- 사전 거절(중복 요청 409 / 예산 503 / 한도 402·429)과 캐시 히트는 Gemini 를
+  부르지 않으므로 필드 자체를 넣지 않는다. 덕분에 로그를 합산할 때
+  "api_calls 가 있는 이벤트만" 골라내면 실제 호출량이 나온다
+  (docs/OPS_SYNTHESIS_COST_METRICS.md 의 쿼리 참고).
 """
 
 import time
@@ -317,7 +325,6 @@ async def synthesize_hairstyle(
                     "cache_key": cache_key[:16],
                     "reason": "daily_budget_exceeded",
                     "status_code": 503,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": False,
                 },
@@ -341,7 +348,6 @@ async def synthesize_hairstyle(
                     "cache_key": cache_key[:16],
                     "reason": "duplicate_in_flight",
                     "status_code": 409,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },
@@ -366,7 +372,6 @@ async def synthesize_hairstyle(
                     "cache_key": cache_key[:16],
                     "reason": "quota_denied",
                     "status_code": quota_error.status_code,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },
@@ -602,7 +607,6 @@ async def synthesize_with_reference(
                     "cache_key": cache_key[:16],
                     "reason": "daily_budget_exceeded",
                     "status_code": 503,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": False,
                 },
@@ -626,7 +630,6 @@ async def synthesize_with_reference(
                     "cache_key": cache_key[:16],
                     "reason": "duplicate_in_flight",
                     "status_code": 409,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },
@@ -651,7 +654,6 @@ async def synthesize_with_reference(
                     "cache_key": cache_key[:16],
                     "reason": "quota_denied",
                     "status_code": quota_error.status_code,
-                    "api_calls": 0,
                     "processing_time": round(time.time() - start_time, 2),
                     "authenticated": user_id is not None,
                 },

@@ -498,10 +498,28 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow
 
 | 속성 | 타입 | 설명 |
 |------|------|------|
-| `device_id` | String | 디바이스 고유 식별자 |
-| `date` | String | 날짜 (KST 기준) |
-| `count` | Number | 당일 합성 사용 횟수 |
-| `ttl` | Number | 자동 삭제 시간 (7일 후, epoch) |
+| `device_id` | String | 디바이스 고유 식별자 **또는 서버 전용 네임스페이스 키** (아래) |
+| `date` | String | 날짜 (KST 기준). 합성 잠금만 고정값 `lock` |
+| `count` | Number | 당일 카운트 (합성 사용 횟수 / Gemini 호출 수) |
+| `expire_at` | Number | TTL 속성 (epoch). 일일 카운터는 다음날 자정 KST, 합성 잠금은 생성 1시간 뒤 |
+| `lock_expires_at` | Number | 합성 잠금 전용. 잠금 만료 시각(epoch), 해제 시 0 |
+
+**파티션 키 네임스페이스** (클라이언트 `device_id` 는 `#` 이 금지되어 겹치지 않는다):
+
+| 접두사 | 용도 |
+|---|---|
+| (없음) | 비로그인 기기의 일일 합성 카운터 |
+| `ip#<addr>` | IP 단위 일일 합성 상한 |
+| `reward_ad#<user_id>` | 리워드 광고 일일 보상 상한 |
+| `synlock#<주체해시>#<cache_key>` | 합성 중복 요청 잠금 |
+| `budget#gemini_calls` | 일 합성 예산 집계 (실제 Gemini 호출 수) |
+
+> **TTL 주의**: `expire_at` 은 *언젠가 지우기 위한* 값이다. DynamoDB TTL 은 지정
+> 시각에 즉시 삭제하지 않으며 보통 수 시간, 최대 48시간까지 늦어질 수 있고 시점이
+> 보장되지 않는다. 일일 카운터가 날마다 0 에서 시작하는 것은 **정렬 키(날짜)가
+> 바뀌기 때문**이지 TTL 삭제 때문이 아니다. 즉 초기화는 날짜 키가 하고, 삭제는
+> TTL 이 한다. 지난 날짜 집계를 며칠 뒤 비교하려면 이 행에 의존하지 말고
+> CloudWatch 로그를 쓸 것 ([docs/OPS_SYNTHESIS_COST_METRICS.md](docs/OPS_SYNTHESIS_COST_METRICS.md)).
 
 ---
 
