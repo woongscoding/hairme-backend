@@ -28,6 +28,11 @@ from core.quota import (
     charge_synthesis_quota,
     client_ip_from_request,
 )
+from core.synthesis_budget import (
+    budget_exceeded_response_body,
+    daily_budget_exceeded,
+    record_api_calls,
+)
 from core.synthesis_lock import (
     NOOP_RELEASE,
     acquire_synthesis_lock,
@@ -301,7 +306,27 @@ async def synthesize_hairstyle(
                 ),
             }
 
-        # ===== 3. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
+        # ===== 3. 일 예산 상한 (비로그인만 - 회원은 전원 통과) =====
+        # 잠금 획득보다 먼저 확인한다 (거절될 요청이 잠금을 잡으면 안 된다)
+        if user_id is None and daily_budget_exceeded(endpoint="synthesize"):
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "daily_budget_exceeded",
+                    "status_code": 503,
+                    "api_calls": 0,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": False,
+                },
+            )
+            return JSONResponse(
+                status_code=503, content=budget_exceeded_response_body()
+            )
+
+        # ===== 4. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
         acquired, release_lock = acquire_synthesis_lock(
             _lock_subject(user_id, device_id),
             cache_key,
@@ -325,7 +350,7 @@ async def synthesize_hairstyle(
                 status_code=409, content=duplicate_request_response_body()
             )
 
-        # ===== 4. 과금 (크레딧 또는 레거시 일일 제한) =====
+        # ===== 5. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
             user_id,
             device_id,
@@ -348,7 +373,7 @@ async def synthesize_hairstyle(
             )
             return quota_error
 
-        # ===== 5. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        # ===== 6. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
             result = service.synthesize_hairstyle(
@@ -360,6 +385,8 @@ async def synthesize_hairstyle(
 
             processing_time = round(time.time() - start_time, 2)
             api_calls = result.get("api_calls", 0)
+            # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
+            record_api_calls(api_calls, endpoint="synthesize")
 
             if not result["success"]:
                 refund()
@@ -387,7 +414,7 @@ async def synthesize_hairstyle(
                     },
                 )
 
-            # ===== 6. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 image_data,
@@ -562,7 +589,29 @@ async def synthesize_with_reference(
                 "recommended_products": _safe_product_recommendations(None, gender),
             }
 
-        # ===== 3. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
+        # ===== 3. 일 예산 상한 (비로그인만 - 회원은 전원 통과) =====
+        # 잠금 획득보다 먼저 확인한다 (거절될 요청이 잠금을 잡으면 안 된다)
+        if user_id is None and daily_budget_exceeded(
+            endpoint="synthesize-with-reference"
+        ):
+            log_structured(
+                "synthesis_failed",
+                {
+                    "endpoint": "synthesize-with-reference",
+                    "mode": _charge_mode(user_id),
+                    "cache_key": cache_key[:16],
+                    "reason": "daily_budget_exceeded",
+                    "status_code": 503,
+                    "api_calls": 0,
+                    "processing_time": round(time.time() - start_time, 2),
+                    "authenticated": False,
+                },
+            )
+            return JSONResponse(
+                status_code=503, content=budget_exceeded_response_body()
+            )
+
+        # ===== 4. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
         acquired, release_lock = acquire_synthesis_lock(
             _lock_subject(user_id, device_id),
             cache_key,
@@ -586,7 +635,7 @@ async def synthesize_with_reference(
                 status_code=409, content=duplicate_request_response_body()
             )
 
-        # ===== 4. 과금 (크레딧 또는 레거시 일일 제한) =====
+        # ===== 5. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
             user_id,
             device_id,
@@ -609,7 +658,7 @@ async def synthesize_with_reference(
             )
             return quota_error
 
-        # ===== 5. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
+        # ===== 6. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
             result = service.synthesize_with_reference(
@@ -620,6 +669,8 @@ async def synthesize_with_reference(
 
             processing_time = round(time.time() - start_time, 2)
             api_calls = result.get("api_calls", 0)
+            # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
+            record_api_calls(api_calls, endpoint="synthesize-with-reference")
 
             if not result["success"]:
                 refund()
@@ -647,7 +698,7 @@ async def synthesize_with_reference(
                     },
                 )
 
-            # ===== 6. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 user_image_data,

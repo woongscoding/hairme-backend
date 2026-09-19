@@ -227,6 +227,13 @@ def _no_rate_limit():
     synthesis_module.limiter.enabled = previous
 
 
+@pytest.fixture(autouse=True)
+def _no_budget_writes():
+    """일 예산 집계는 여기의 관심사가 아니다 (실제 DynamoDB 쓰기 차단)"""
+    with patch("api.endpoints.synthesis.record_api_calls"):
+        yield
+
+
 @pytest.fixture
 def storage():
     service = MagicMock()
