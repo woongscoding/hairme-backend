@@ -21,6 +21,8 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
         processing_time: float,
         detection_method: str,
         mp_features: Optional[Any] = None,
+        model_version: Optional[str] = None,
+        gender: Optional[str] = None,
     ) -> Optional[str]:
         """
         Save analysis result to DynamoDB
@@ -52,7 +54,16 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
                 "processing_time": processing_time,
                 "detection_method": detection_method,
                 "opencv_gemini_agreement": mediapipe_agreement,
+                # 품질 전후 비교용 - 값이 없으면 dynamodb_connection 이 "unknown" 으로 채운다
+                "model_version": model_version,
             }
+
+            # 성별은 요청에 있을 때만 저장 (분석 결과의 추정값이 있으면 그것을 우선)
+            resolved_gender = gender or analysis_result.get("analysis", {}).get(
+                "gender"
+            )
+            if resolved_gender:
+                data["gender"] = resolved_gender
 
             # Add MediaPipe continuous features
             if mp_features:

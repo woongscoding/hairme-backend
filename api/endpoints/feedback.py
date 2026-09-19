@@ -118,12 +118,20 @@ async def submit_feedback(
         elif normalized_feedback == "dislike":
             normalized_feedback = "bad"
 
+        # 싫어요 사유 (선택) - 구버전 앱은 보내지 않는다
+        dislike_reason = (
+            feedback_data.dislike_reason.value
+            if feedback_data.dislike_reason is not None
+            else None
+        )
+
         # Save feedback
         success = save_feedback(
             analysis_id=str(feedback_data.analysis_id),
             style_index=feedback_data.style_index,
             feedback=normalized_feedback,
             naver_clicked=feedback_data.naver_clicked,
+            dislike_reason=dislike_reason,
         )
 
         if not success:
@@ -142,6 +150,7 @@ async def submit_feedback(
                 "style_index": feedback_data.style_index,
                 "feedback": feedback_data.feedback.value,
                 "naver_clicked": feedback_data.naver_clicked,
+                "dislike_reason": dislike_reason,
             },
         )
 

@@ -14,7 +14,6 @@
   (services.usage_limit_service.validate_device_id)
 """
 
-import hashlib
 import ipaddress
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -22,7 +21,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from core.logging import log_structured, logger
+from core.logging import log_structured, logger, mask_user_id as mask_identifier
 from services.credit_service import InsufficientCreditsError, get_credit_service
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
@@ -37,11 +36,9 @@ def mask_device_id(device_id: Optional[str]) -> str:
     """device_id 마스킹: 앞 4자 + sha256 앞 8자
 
     로그에 원본 식별자를 남기지 않으면서도 같은 기기를 셀 수 있게 한다.
+    (core.logging.mask_user_id 와 동일한 규칙)
     """
-    if not device_id:
-        return "unknown"
-    digest = hashlib.sha256(device_id.encode("utf-8")).hexdigest()[:8]
-    return f"{device_id[:4]}~{digest}"
+    return mask_identifier(device_id)
 
 
 def mask_ip(client_ip: Optional[str]) -> str:

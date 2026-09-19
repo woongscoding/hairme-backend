@@ -20,6 +20,8 @@ class AnalysisRepository(ABC):
         processing_time: float,
         detection_method: str,
         mp_features: Optional[Any] = None,
+        model_version: Optional[str] = None,
+        gender: Optional[str] = None,
     ) -> Optional[str]:
         """
         Save analysis result to database
@@ -30,6 +32,8 @@ class AnalysisRepository(ABC):
             processing_time: Processing time in seconds
             detection_method: Detection method used
             mp_features: MediaPipe features (optional)
+            model_version: 추천 ML 모델 버전 (미지정 시 "unknown" 으로 저장)
+            gender: 요청 성별 (있으면 함께 저장)
 
         Returns:
             Analysis ID (UUID string) if successful, None otherwise

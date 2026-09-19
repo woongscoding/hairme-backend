@@ -291,9 +291,15 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             }
         )
 
-        # A/B 테스트 정보 (model_version, experiment_id, ab_variant)
-        if data.get("model_version"):
-            item["model_version"] = data.get("model_version")
+        # 모델 버전은 항상 채운다 (품질 수정 전후를 나누는 기준이므로 누락되면
+        # 집계에서 해당 기간이 통째로 빠진다). 알 수 없으면 "unknown".
+        item["model_version"] = data.get("model_version") or "unknown"
+
+        # 성별 (요청에 있을 때만)
+        if data.get("gender"):
+            item["gender"] = data.get("gender")
+
+        # A/B 테스트 정보 (experiment_id, ab_variant)
         if data.get("experiment_id"):
             item["experiment_id"] = data.get("experiment_id")
         if data.get("ab_variant"):
@@ -377,7 +383,11 @@ def get_analysis(analysis_id: str) -> Optional[Dict[str, Any]]:
 
 
 def save_feedback(
-    analysis_id: str, style_index: int, feedback: str, naver_clicked: bool
+    analysis_id: str,
+    style_index: int,
+    feedback: str,
+    naver_clicked: bool,
+    dislike_reason: Optional[str] = None,
 ) -> bool:
     """
     Save user feedback for a specific style recommendation
@@ -387,6 +397,7 @@ def save_feedback(
         style_index: Style index (1, 2, or 3)
         feedback: Feedback value ('good' or 'bad')
         naver_clicked: Whether user clicked Naver search link
+        dislike_reason: 싫어요 사유 (선택). 없으면 필드를 기록하지 않는다
 
     Returns:
         bool: True if successful, False otherwise
@@ -407,18 +418,26 @@ def save_feedback(
         feedback_field = f"style_{style_index}_feedback"
         clicked_field = f"style_{style_index}_naver_clicked"
 
+        set_clauses = [
+            f"{feedback_field} = :feedback",
+            f"{clicked_field} = :clicked",
+            "feedback_at = :timestamp",
+        ]
+        expression_values = {
+            ":feedback": feedback,
+            ":clicked": naver_clicked,
+            ":timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # 싫어요 사유는 보내온 경우에만 기록 (구버전 앱은 필드 자체가 없다)
+        if dislike_reason:
+            set_clauses.append(f"style_{style_index}_dislike_reason = :dislike_reason")
+            expression_values[":dislike_reason"] = dislike_reason
+
         response = dynamodb_table.update_item(
             Key={"analysis_id": analysis_id},
-            UpdateExpression=f"""
-                SET {feedback_field} = :feedback,
-                    {clicked_field} = :clicked,
-                    feedback_at = :timestamp
-            """,
-            ExpressionAttributeValues={
-                ":feedback": feedback,
-                ":clicked": naver_clicked,
-                ":timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+            UpdateExpression="SET " + ", ".join(set_clauses),
+            ExpressionAttributeValues=expression_values,
             ReturnValues="UPDATED_NEW",
         )
 
@@ -434,6 +453,7 @@ def save_feedback(
                 "style_index": style_index,
                 "feedback": feedback,
                 "naver_clicked": naver_clicked,
+                "dislike_reason": dislike_reason,
             },
         )
 

@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 
-from core.logging import logger
+from core.logging import log_structured, logger, mask_user_id
 from core.jwt_auth import get_current_user_id
 from services.photo_storage_service import get_photo_storage_service
 
@@ -35,5 +35,17 @@ async def get_my_results(
     except Exception:
         logger.error(f"❌ 결과 히스토리 조회 실패: user_id={user_id}", exc_info=True)
         raise HTTPException(status_code=500, detail="결과 조회에 실패했습니다.")
+
+    # 결과 재열람 계측 (리텐션 지표). user_id 원문은 남기지 않는다.
+    log_structured(
+        "results_viewed",
+        {
+            "user_id": mask_user_id(user_id),
+            "count": len(page["items"]),
+            "limit": limit,
+            "paged": continuation_token is not None,
+            "has_next": page["next_token"] is not None,
+        },
+    )
 
     return {"results": page["items"], "next_token": page["next_token"]}

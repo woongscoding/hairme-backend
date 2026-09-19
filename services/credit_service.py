@@ -22,20 +22,12 @@ except ImportError:
     BOTO3_AVAILABLE = False
 
 from config.settings import settings
-from core.logging import logger
+from core.logging import logger, mask_user_id
 
 
 def _mask_user_id(user_id: Optional[str]) -> str:
-    """user_id 마스킹: 앞 4자 + sha256 앞 8자
-
-    core.quota.mask_device_id 와 동일한 기준.
-    core.quota 가 이 모듈을 import 하므로(순환 import 방지),
-    여기서 같은 규칙으로 따로 정의한다.
-    """
-    if not user_id:
-        return "unknown"
-    digest = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:8]
-    return f"{user_id[:4]}~{digest}"
+    """user_id 마스킹 (core.logging.mask_user_id 위임, 기존 호출부 호환용 별칭)"""
+    return mask_user_id(user_id)
 
 
 def _mask_ref(ref_key: str) -> str:

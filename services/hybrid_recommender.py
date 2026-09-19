@@ -9,6 +9,7 @@ Version: 2.0.0 (ML-only mode)
 """
 
 import logging
+import statistics
 from typing import List, Dict, Optional, Any
 import sys
 from pathlib import Path
@@ -49,6 +50,35 @@ class MLRecommendationService:
         except Exception as e:
             logger.warning(f"⚠️ 추천 이유 생성기 로드 실패: {str(e)}")
             self.reason_generator = None
+
+    @property
+    def model_version(self) -> str:
+        """현재 로드된 추천 모델의 버전 (체크포인트 config["version"])
+
+        재학습 모델은 "v6_feedback_YYYYMMDD" 형태다. 계측 로그/DynamoDB 저장에
+        쓰이며, 추천기가 없거나 속성이 없으면 "unknown" 을 돌려준다.
+        """
+        return str(getattr(self.ml_recommender, "model_version", None) or "unknown")
+
+    @staticmethod
+    def _score_stats(ml_recommendations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """ML 원점수(0-100)의 1위 점수와 표준편차
+
+        응답의 score 는 0-1 로 나눈 뒤 소수 2자리로 반올림하므로 (1점 단위),
+        표준편차가 2~5 수준인 현재 모델에서는 해상도가 부족하다.
+        계측은 반올림 전 원점수로 계산한다.
+        """
+        scores = [
+            float(rec.get("score"))
+            for rec in ml_recommendations
+            if rec.get("score") is not None
+        ]
+        if not scores:
+            return {"top_score": None, "score_stddev": None}
+        return {
+            "top_score": round(max(scores), 2),
+            "score_stddev": round(statistics.pstdev(scores), 3),
+        }
 
     def _build_recommendations(
         self, ml_recommendations: List[Dict[str, Any]], face_shape: str, skin_tone: str
@@ -203,6 +233,9 @@ class MLRecommendationService:
                 "ml_count": len(recommendations) - trending_count,
                 "trending_count": trending_count,
                 "method": "ml",
+                "model_version": self.model_version,
+                # 반올림 전 원점수 기준 (계측용, 기존 필드는 그대로 유지)
+                **self._score_stats(ml_recommendations),
             },
         }
 

@@ -22,6 +22,7 @@ from core.exceptions import (
     InvalidFileFormatException,
 )
 from core.cache import calculate_image_hash, get_cached_result, save_to_cache
+from core.jwt_auth import get_optional_user_id
 from core.upload_validation import validate_file_extension, validate_image_upload
 
 # NOTE: models.ml_recommender / models.mediapipe_analyzer 를 top-level 에서
@@ -44,6 +45,8 @@ def save_to_database(
     processing_time: float,
     detection_method: str,
     mp_features: Optional["MediaPipeFaceFeatures"] = None,
+    model_version: Optional[str] = None,
+    gender: Optional[str] = None,
 ) -> Optional[Union[int, str]]:
     """
     Save analysis result to database using Repository pattern
@@ -56,6 +59,8 @@ def save_to_database(
         processing_time: Processing time in seconds
         detection_method: Detection method used
         mp_features: MediaPipe features (optional)
+        model_version: 추천에 사용된 ML 모델 버전 (품질 전후 비교용)
+        gender: 요청의 성별 (있으면 함께 저장)
 
     Returns:
         Analysis ID (UUID string) if successful, None otherwise
@@ -70,6 +75,8 @@ def save_to_database(
             processing_time=processing_time,
             detection_method=detection_method,
             mp_features=mp_features,
+            model_version=model_version,
+            gender=gender,
         )
 
         # Log the result
@@ -233,12 +240,15 @@ async def analyze_face(
 
         # Save to database
         total_time = round(time.time() - start_time, 2)
+        legacy_meta = recommendation_result.get("meta") or {}
         analysis_id = save_to_database(
             image_hash=image_hash,
             analysis_result=analysis_result,
             processing_time=total_time,
             detection_method="ml",
             mp_features=mp_features,
+            model_version=str(legacy_meta.get("model_version") or "unknown"),
+            gender=detected_gender,
         )
 
         if analysis_id is None:
@@ -247,16 +257,28 @@ async def analyze_face(
                 f"image_hash: {image_hash[:16]}"
             )
 
+        legacy_recommendations = analysis_result.get("recommendations") or []
         log_structured(
             "analysis_complete",
             {
+                "endpoint": "analyze",
                 "image_hash": image_hash[:16],
                 "processing_time": total_time,
                 "face_detection_time_ms": face_detection_time,
                 "ml_inference_time_ms": ml_time,
                 "method": "ml_only",
+                "model_version": str(legacy_meta.get("model_version") or "unknown"),
                 "face_shape": face_shape,
                 "personal_color": skin_tone,
+                "gender": detected_gender,
+                "top_style": (
+                    legacy_recommendations[0].get("style_name")
+                    if legacy_recommendations
+                    else None
+                ),
+                "top_score": legacy_meta.get("top_score"),
+                "score_stddev": legacy_meta.get("score_stddev"),
+                "authenticated": False,
                 "analysis_id": analysis_id,
             },
         )
@@ -321,6 +343,7 @@ async def analyze_face_hybrid(
     gender: str = Form("male"),  # 성별 파라미터 추가 (기본값: male)
     face_detector: "FaceDetectionService" = Depends(get_face_detection_service),
     ml_recommender: "MLRecommendationService" = Depends(get_hybrid_service),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ):
     """
     ML 기반 헤어스타일 추천 (v2)
@@ -444,12 +467,17 @@ async def analyze_face_hybrid(
             "recommendations": recommendation_result.get("recommendations", []),
         }
 
+        meta = recommendation_result.get("meta") or {}
+        model_version = str(meta.get("model_version") or "unknown")
+
         analysis_id = save_to_database(
             image_hash=image_hash,
             analysis_result=analysis_result_for_db,
             processing_time=total_time,
             detection_method="ml",
             mp_features=mp_features,
+            model_version=model_version,
+            gender=gender,
         )
 
         # Warn if database save failed but continue with response
@@ -470,6 +498,29 @@ async def analyze_face_hybrid(
             )
 
         logger.info(f"✅ ML 분석 완료 ({total_time}초)")
+
+        # 품질 수정 전후 비교용 계측 (레거시 /api/analyze 와 같은 이벤트 이름).
+        # 사진/원본 식별자는 남기지 않는다 - image_hash 는 앞 16자만.
+        recommendations = recommendation_result.get("recommendations") or []
+        top_style = recommendations[0].get("style_name") if recommendations else None
+        log_structured(
+            "analysis_complete",
+            {
+                "endpoint": "v2/analyze-hybrid",
+                "method": "ml",
+                "model_version": model_version,
+                "face_shape": face_shape,
+                "personal_color": skin_tone,
+                "gender": gender,
+                "top_style": top_style,
+                "top_score": meta.get("top_score"),
+                "score_stddev": meta.get("score_stddev"),
+                "authenticated": user_id is not None,
+                "processing_time": total_time,
+                "analysis_id": analysis_id,
+                "image_hash": image_hash[:16],
+            },
+        )
 
         return {
             "success": True,

@@ -1,5 +1,6 @@
 """Structured logging utilities for HairMe Backend"""
 
+import hashlib
 import json
 import logging
 from datetime import datetime
@@ -93,3 +94,17 @@ def log_structured(event_type: str, data: Dict[str, Any]) -> None:
         **data,
     }
     logger.info(json.dumps(log_entry, ensure_ascii=False))
+
+
+def mask_user_id(user_id: Any) -> str:
+    """식별자 마스킹: 앞 4자 + sha256 앞 8자
+
+    구조화 로그에 user_id / device_id 원문을 남기지 않으면서도 같은 사용자를
+    셀 수 있게 한다. core.quota.mask_device_id, services.credit_service 와
+    같은 규칙이며, 순환 import 가 없는 이 모듈을 단일 출처로 삼는다.
+    """
+    if not user_id:
+        return "unknown"
+    text = str(user_id)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+    return f"{text[:4]}~{digest}"
