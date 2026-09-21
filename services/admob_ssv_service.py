@@ -214,9 +214,7 @@ class AdMobSSVService:
 
         for candidate in self._signed_message_candidates(message):
             try:
-                public_key.verify(
-                    signature_bytes, candidate, ec.ECDSA(hashes.SHA256())
-                )
+                public_key.verify(signature_bytes, candidate, ec.ECDSA(hashes.SHA256()))
                 break
             except InvalidSignature:
                 continue
