@@ -216,16 +216,22 @@ async def reward_ad_callback(request: Request):
             detail="검증 서비스를 일시적으로 사용할 수 없습니다.",
         )
 
-    # 서명이 유효해도 우리 광고 단위가 아니거나 오래된 콜백이면 거부
-    _verify_ad_unit(params.get("ad_unit"))
-    _verify_timestamp(params.get("timestamp"))
-
+    # AdMob 콘솔의 "URL 확인" 핑은 서명은 유효하지만 user_id/transaction_id가 비어 있다.
+    # 400을 주면 SSV 설정을 저장할 수 없으므로, 아무것도 지급하지 않고 200으로 답한다.
+    # (서명 검증을 통과한 요청만 여기 도달하므로 위조로 악용될 수 없다.)
     user_id = params.get("user_id")
     transaction_id = params.get("transaction_id")
     if not user_id or not transaction_id:
-        # user_id는 앱에서 SSV 옵션으로 설정해야만 포함됨
-        logger.warning("⚠️ SSV 콜백에 user_id/transaction_id 누락")
-        raise HTTPException(status_code=400, detail="검증에 실패했습니다.")
+        # 앱이 SSV 옵션에 user_id를 설정하지 않은 경우도 여기로 온다
+        logger.info(
+            "ℹ️ SSV 검증 핑 또는 user_id 없는 콜백 - 지급 없이 200 "
+            f"(ad_unit={params.get('ad_unit')})"
+        )
+        return {"success": True, "rewarded": False, "reason": "verification_ping"}
+
+    # 서명이 유효해도 우리 광고 단위가 아니거나 오래된 콜백이면 거부
+    _verify_ad_unit(params.get("ad_unit"))
+    _verify_timestamp(params.get("timestamp"))
 
     credit_service = get_credit_service()
 

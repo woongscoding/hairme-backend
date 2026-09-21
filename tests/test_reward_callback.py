@@ -8,6 +8,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
 import base64
 import time
 from unittest.mock import MagicMock, patch
+from urllib.parse import quote
 
 import pytest
 from botocore.exceptions import ClientError
@@ -70,6 +71,29 @@ class TestAdMobSSVService:
 
         assert params["user_id"] == "reward-user-id"
         assert params["transaction_id"] == "tx-abc-123"
+
+    def test_percent_encoded_value_verifies_against_decoded_message(self):
+        """Tink(RewardedAdsVerifier)는 URI.getQuery() = 퍼센트 디코딩본에 서명한다
+
+        reward_item이 한글이면 쿼리에는 인코딩된 채로 오지만 서명 대상은 디코딩본이라
+        원본 바이트로만 검증하면 정상 콜백이 400으로 거부된다.
+        """
+        svc = _service_with_cached_key()
+        decoded = (
+            "ad_unit=4849788332&reward_amount=1&reward_item=크레딧"
+            "&transaction_id=tx-abc-123&user_id=reward-user-id"
+        )
+        signature = _PRIVATE_KEY.sign(
+            decoded.encode("utf-8"), ec.ECDSA(hashes.SHA256())
+        )
+        sig_b64 = base64.urlsafe_b64encode(signature).rstrip(b"=").decode("utf-8")
+        encoded = decoded.replace("크레딧", quote("크레딧"))
+        raw = f"{encoded}&signature={sig_b64}&key_id={TEST_KEY_ID}".encode("utf-8")
+
+        params = svc.verify_callback(raw)
+
+        assert params["reward_item"] == "크레딧"
+        assert params["user_id"] == "reward-user-id"
 
     def test_tampered_message_rejected(self):
         """파라미터 변조 (보상 횟수 부풀리기 등) 시 서명 불일치"""
@@ -230,12 +254,29 @@ class TestRewardCallback:
         mock_credit.grant.assert_not_called()
 
     def test_missing_user_id(self, client, mock_ssv, mock_credit, mock_usage):
-        """앱이 SSV 옵션에 user_id를 설정하지 않으면 지급 불가"""
+        """user_id 없는 콜백(= AdMob URL 확인 핑)은 지급 없이 200
+
+        400을 주면 AdMob 콘솔에서 SSV 콜백 URL을 저장할 수 없다.
+        """
         mock_ssv.verify_callback.return_value = {"transaction_id": "tx-abc-123"}
 
         response = client.get(CALLBACK_URL)
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.json()["rewarded"] is False
+        assert response.json()["reason"] == "verification_ping"
+        mock_credit.grant.assert_not_called()
+
+    def test_verification_ping_before_allowlist_check(
+        self, client, mock_ssv, mock_credit, mock_usage, monkeypatch
+    ):
+        """검증 핑은 ad_unit이 비어 있어도 200 (허용목록 검사보다 먼저 처리)"""
+        monkeypatch.setattr(settings, "ADMOB_REWARD_AD_UNIT_IDS", "4849788332")
+        mock_ssv.verify_callback.return_value = {"ad_unit": "", "user_id": ""}
+
+        response = client.get(CALLBACK_URL)
+
+        assert response.status_code == 200
         mock_credit.grant.assert_not_called()
 
     def test_duplicate_transaction(self, client, mock_ssv, mock_credit, mock_usage):

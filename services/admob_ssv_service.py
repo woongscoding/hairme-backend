@@ -4,8 +4,10 @@ AdMob이 광고 시청 완료 시 우리 서버로 보내는 콜백의 ECDSA(P-2
 서명을 검증한다. 위조된 콜백으로 보상 크레딧을 챙기는 것을 방지.
 
 - 공개키: https://www.gstatic.com/admob/reward/verifier-keys.json 에서 로드 후 캐싱
-- 서명 대상: 원본 쿼리 스트링에서 "&signature=" 직전까지의 바이트
-  (Google Tink RewardedAdsVerifier 레퍼런스 구현과 동일 - URL 디코딩 없이 원본 그대로)
+- 서명 대상: 쿼리 스트링에서 "&signature=" 직전까지
+  Google Tink RewardedAdsVerifier는 URI.getQuery() (= 퍼센트 디코딩된 문자열)에
+  서명하므로 디코딩본을 우선 검증하고, 원본 바이트도 후보로 함께 시도한다.
+  (값에 escape 문자가 없으면 둘은 동일하다)
 - 반환 파라미터는 "서명된 구간"에서만 파싱한다. 서명 뒤에 붙은 값
   (예: &user_id=victim)은 서명 대상이 아니므로 신뢰할 수 없다.
 """
@@ -13,7 +15,7 @@ AdMob이 광고 시청 완료 시 우리 서버로 보내는 콜백의 ECDSA(P-2
 import base64
 import time
 from typing import Dict, Iterable, List, Optional, Set, Tuple
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote
 
 import httpx
 from cryptography.exceptions import InvalidSignature
@@ -121,6 +123,18 @@ class AdMobSSVService:
         )
 
     @staticmethod
+    def _signed_message_candidates(message: bytes) -> List[bytes]:
+        """서명 대상 바이트 후보 (디코딩본 우선)
+
+        레퍼런스 구현(Tink)은 URI.getQuery() 결과에 서명하므로 퍼센트 디코딩된
+        문자열이 정답이다. 값에 escape 문자가 없으면 원본과 같아서 후보는 하나뿐이고,
+        한글 reward_item처럼 인코딩된 값이 있을 때만 둘이 갈린다.
+        둘 다 Google이 서명한 동일 내용에서 파생되므로 원본도 함께 허용한다.
+        """
+        decoded = unquote(message.decode("utf-8", errors="replace")).encode("utf-8")
+        return [decoded] if decoded == message else [decoded, message]
+
+    @staticmethod
     def _has_duplicate_keys(keys: Iterable[str]) -> bool:
         seen: Set[str] = set()
         for key in keys:
@@ -194,15 +208,21 @@ class AdMobSSVService:
                 signature + "=" * (-len(signature) % 4)
             )
             public_key = load_pem_public_key(pem.encode("utf-8"))
-            public_key.verify(signature_bytes, message, ec.ECDSA(hashes.SHA256()))
-        except InvalidSignature:
-            logger.warning("⚠️ SSV 서명 검증 실패 (위조 가능성)")
-            raise InvalidSSVError("signature verification failed")
-        except InvalidSSVError:
-            raise
         except Exception:
             logger.warning("⚠️ SSV 서명 형식 오류", exc_info=True)
             raise InvalidSSVError("malformed signature")
+
+        for candidate in self._signed_message_candidates(message):
+            try:
+                public_key.verify(
+                    signature_bytes, candidate, ec.ECDSA(hashes.SHA256())
+                )
+                break
+            except InvalidSignature:
+                continue
+        else:
+            logger.warning("⚠️ SSV 서명 검증 실패 (위조 가능성)")
+            raise InvalidSSVError("signature verification failed")
 
         return params
 
