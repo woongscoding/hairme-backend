@@ -353,6 +353,7 @@ async def analyze_face_hybrid(
     2. ML 모델로 Top-3 헤어스타일 추천 (성별 필터링 적용)
     """
     start_time = time.time()
+    image_hash = None
 
     try:
         # File validation
@@ -538,6 +539,23 @@ async def analyze_face_hybrid(
         }
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
+        # 400 의 원인(얼굴 미감지 / 파일 포맷)을 구분해서 센다.
+        # 레거시 /api/analyze 와 같은 이벤트 이름·error_type 을 쓴다.
+        error_type = (
+            "no_face_detected"
+            if isinstance(e, NoFaceDetectedException)
+            else "invalid_file_format"
+        )
+        log_structured(
+            "analysis_error",
+            {
+                "endpoint": "v2/analyze-hybrid",
+                "error_type": error_type,
+                "status_code": 400,
+                "image_hash": image_hash[:16] if image_hash else "unknown",
+                "authenticated": user_id is not None,
+            },
+        )
         return JSONResponse(
             status_code=400,
             content={

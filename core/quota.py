@@ -76,17 +76,60 @@ def _ip_limit_response(limit: int) -> JSONResponse:
 
 
 def _device_limit_response(daily_limit: int, used: int) -> JSONResponse:
+    """비로그인 일일 한도 429 본문.
+
+    막힌 사용자에게 다음 행동(로그인)을 알려준다. 충전/광고 유도는 넣지 않는다 -
+    비로그인 상태에서는 선택할 수 없는 액션이기 때문.
+    """
     return JSONResponse(
         status_code=429,
         content={
             "error": "daily_limit_exceeded",
-            "message": f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다.",
+            "message": (
+                f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다. "
+                f"로그인하면 가입 보너스 {settings.SIGNUP_BONUS_CREDITS}회를 "
+                "받고 바로 이어서 합성할 수 있어요."
+            ),
             "limit_type": "device",
             "daily_limit": daily_limit,
             "used": used,
             "remaining": 0,
         },
     )
+
+
+def _insufficient_credits_response(balance: int) -> JSONResponse:
+    """회원 크레딧 부족 402 본문.
+
+    잔액이 왜 비었는지(가입 보너스는 1회성 지급)를 설명한다. 충전/광고 시청 같은
+    액션 문구는 넣지 않는다 - 무엇을 보여줄지는 앱이 결정한다.
+    """
+    return JSONResponse(
+        status_code=402,
+        content={
+            "error": "insufficient_credits",
+            "message": (
+                f"남은 합성 횟수가 없습니다. (현재 잔액 {balance}회) "
+                f"가입 보너스 {settings.SIGNUP_BONUS_CREDITS}회는 가입할 때 한 번만 "
+                "지급되며 매일 다시 채워지지 않습니다."
+            ),
+            "balance": balance,
+        },
+    )
+
+
+def refunded_balance(quota: Optional[Dict[str, Any]]) -> Optional[int]:
+    """환불 후 잔액 (회원 크레딧만). 레거시 device 흐름/무과금 경로는 None.
+
+    quota["balance"] 는 차감 직후 값이므로, 환불분을 더해 되돌아온 잔액을 알려준다.
+    실패 응답에 넣어 "차감되지 않았다"를 사용자가 숫자로 확인할 수 있게 한다.
+    """
+    if not quota or quota.get("mode") != "credits":
+        return None
+    balance = quota.get("balance")
+    if balance is None:
+        return None
+    return balance + settings.SYNTHESIS_CREDIT_COST
 
 
 def charge_synthesis_quota(
@@ -128,14 +171,7 @@ def charge_synthesis_quota(
             balance = credit_factory().consume(user_id, cost, reason="synthesis")
         except InsufficientCreditsError as e:
             return (
-                JSONResponse(
-                    status_code=402,
-                    content={
-                        "error": "insufficient_credits",
-                        "message": "크레딧이 부족합니다. 크레딧을 충전해주세요.",
-                        "balance": e.balance,
-                    },
-                ),
+                _insufficient_credits_response(e.balance),
                 None,
                 NOOP_REFUND,
             )

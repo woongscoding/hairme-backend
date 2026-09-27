@@ -35,6 +35,7 @@ from core.quota import (
     QuotaResult,
     charge_synthesis_quota,
     client_ip_from_request,
+    refunded_balance,
 )
 from core.synthesis_budget import (
     budget_exceeded_response_body,
@@ -102,6 +103,19 @@ def _safe_product_recommendations(
     except Exception as e:
         logger.warning(f"제품 추천 실패 (무시): {str(e)}")
         return []
+
+
+def _safe_disclosure() -> str:
+    """추천 제품과 함께 표시할 대가성 문구 (공정위 표시광고 의무).
+
+    recommended_products 를 내려주는 모든 응답에 함께 넣어야 한다
+    (api/endpoints/products.py 와 같은 규약). 실패해도 합성 응답을 깨뜨리지 않는다.
+    """
+    try:
+        return get_product_recommendation_service().disclosure
+    except Exception as e:
+        logger.warning(f"대가성 문구 조회 실패 (무시): {str(e)}")
+        return ""
 
 
 def _lock_subject(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
@@ -215,7 +229,19 @@ async def synthesize_hairstyle(
             "processing_time": 3.5,
             "cached": false,
             "result_url": "https://...(회원만)",
-            "quota": {"mode": "credits", "balance": 4}
+            "quota": {"mode": "credits", "balance": 4},
+            "recommended_products": [...],
+            "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로..."
+        }
+
+    실패(422) 응답:
+        {
+            "success": false,
+            "error": "synthesis_rejected",
+            "message": "AI가 잠깐 헤맸어요.. 다시 시도해주세요!",
+            "processing_time": 8.1,
+            "refunded": true,
+            "balance": 5  # 환불 후 크레딧 잔액 (비로그인은 null)
         }
     """
     start_time = time.time()
@@ -312,6 +338,7 @@ async def synthesize_hairstyle(
                 "recommended_products": _safe_product_recommendations(
                     hairstyle_name, gender
                 ),
+                "disclosure": _safe_disclosure(),
             }
 
         # ===== 3. 일 예산 상한 (비로그인만 - 회원은 전원 통과) =====
@@ -414,8 +441,12 @@ async def synthesize_hairstyle(
                     status_code=422,
                     content={
                         "success": False,
+                        "error": "synthesis_rejected",
                         "message": result["message"],
                         "processing_time": processing_time,
+                        # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
+                        "refunded": True,
+                        "balance": refunded_balance(quota),
                     },
                 )
 
@@ -460,6 +491,7 @@ async def synthesize_hairstyle(
             "recommended_products": _safe_product_recommendations(
                 hairstyle_name, gender
             ),
+            "disclosure": _safe_disclosure(),
         }
 
     except InvalidFileFormatException as e:
@@ -592,6 +624,7 @@ async def synthesize_with_reference(
                 "result_url": cached_result_url,
                 "quota": None,
                 "recommended_products": _safe_product_recommendations(None, gender),
+                "disclosure": _safe_disclosure(),
             }
 
         # ===== 3. 일 예산 상한 (비로그인만 - 회원은 전원 통과) =====
@@ -695,8 +728,12 @@ async def synthesize_with_reference(
                     status_code=422,
                     content={
                         "success": False,
+                        "error": "synthesis_rejected",
                         "message": result["message"],
                         "processing_time": processing_time,
+                        # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
+                        "refunded": True,
+                        "balance": refunded_balance(quota),
                     },
                 )
 
@@ -738,6 +775,7 @@ async def synthesize_with_reference(
             "result_url": result_url,
             "quota": quota,
             "recommended_products": _safe_product_recommendations(None, gender),
+            "disclosure": _safe_disclosure(),
         }
 
     except InvalidFileFormatException as e:

@@ -162,5 +162,7 @@ def duplicate_request_response_body() -> dict:
     return {
         "success": False,
         "error": "synthesis_in_progress",
-        "message": "같은 사진으로 합성이 진행 중입니다. 잠시 후 결과를 확인해주세요.",
+        # "결과를 확인해주세요" 는 어딘가에 결과가 있다는 오해를 준다.
+        # 이 요청은 버려졌으므로 재시도를 안내한다.
+        "message": "같은 사진으로 합성이 진행 중입니다. 잠시 후 다시 시도해주세요.",
     }

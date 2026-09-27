@@ -24,7 +24,11 @@ from slowapi.util import get_remote_address
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
 from core.jwt_auth import get_optional_user_id
-from core.quota import charge_synthesis_quota, client_ip_from_request
+from core.quota import (
+    charge_synthesis_quota,
+    client_ip_from_request,
+    refunded_balance,
+)
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
     MAX_HAIRSTYLE_NAME_LENGTH,
@@ -343,10 +347,14 @@ async def synthesize_hair_color(
                 status_code=422,
                 content={
                     "success": False,
+                    "error": "synthesis_rejected",
                     "message": result["message"],
                     "color_name": color_name,
                     "color_hex": color_hex,
                     "processing_time": processing_time,
+                    # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
+                    "refunded": True,
+                    "balance": refunded_balance(quota),
                 },
             )
 
@@ -482,9 +490,13 @@ async def synthesize_recommended_color(
                 status_code=422,
                 content={
                     "success": False,
+                    "error": "synthesis_rejected",
                     "message": synthesis_result["message"],
                     "personal_color": personal_color,
                     "processing_time": processing_time,
+                    # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
+                    "refunded": True,
+                    "balance": refunded_balance(quota),
                 },
             )
 
