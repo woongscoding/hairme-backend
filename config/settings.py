@@ -98,7 +98,15 @@ class Settings(BaseSettings):
     PLAY_VOID_LOOKBACK_DAYS: int = 30  # 폴링 시 조회할 과거 기간 (Play 최대 30일)
 
     # ===== AdMob 리워드 광고 (SSV) =====
-    REWARD_AD_DAILY_LIMIT: int = 5  # 유저당 하루 보상 횟수 상한
+    # 유저당 하루 보상 횟수 상한.
+    #
+    # 5 -> 3 하향: 보상 1회 = 크레딧 1개 = 합성 1회인데, 한국 eCPM $3~8 기준
+    # 보상형 노출 수익은 7원 안팎이고 합성 1회 Gemini 비용은 60~95원이다
+    # (gemini-3.1-flash-image, 출력 1장). 즉 보상형 노출은 구조적으로 10배 적자이고,
+    # 이 값은 "한 유저가 하루에 만들 수 있는 적자"의 상한으로 기능한다.
+    # 광고 수익을 늘리는 수단이 아니라, 크레딧이 소진된 회원을 앱에 남기는
+    # 밸브로만 쓴다.
+    REWARD_AD_DAILY_LIMIT: int = 3
     # 우리 앱의 AdMob 리워드 광고 단위 ID 허용목록 (쉼표 구분).
     # SSV 검증 키는 전 퍼블리셔 공용이므로, 비어 있으면 프로덕션에서 콜백을 거부한다.
     ADMOB_REWARD_AD_UNIT_IDS: str = ""
