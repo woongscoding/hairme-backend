@@ -1,7 +1,11 @@
 """제휴 제품 추천/클릭 엔드포인트 (쿠팡파트너스)
 
 - GET /products/recommendations: 스타일 기반 제품 추천 (affiliate_url 미포함)
-- POST /products/click: 클릭 로그 기록 + 제휴 링크 발급 (로그인 필수)
+- POST /products/click: 클릭 로그 기록 + 제휴 링크 발급 (로그인 불필요)
+
+클릭이 로그인 필수였던 동안 합성 성공의 84%(비로그인)가 제품 링크를 아예 받을 수
+없었다. 제휴 수수료는 사업자 등록 없이도 수령 가능한 유일한 수익 채널인데 도달이
+1/6로 묶여 있던 셈이다. 비로그인은 device_id로 식별해 클릭 로그를 계속 남긴다.
 
 disclosure(대가성 문구)는 공정위 표시광고 의무사항이다. 클라이언트는 추천 제품이
 노출되는 영역에 이 문구를 반드시 함께 표시해야 한다.
@@ -18,12 +22,13 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from core.jwt_auth import get_current_user_id
+from core.jwt_auth import get_optional_user_id
 from core.logging import logger
 from services.affiliate_click_service import get_affiliate_click_service
 from services.product_recommendation_service import (
     get_product_recommendation_service,
 )
+from services.usage_limit_service import validate_device_id
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -42,6 +47,11 @@ class ClickRequest(BaseModel):
     hair_profile: Optional[Dict[str, Any]] = Field(
         None,
         description="유저 헤어 프로필 스냅샷 (얼굴형/퍼스널컬러 등, 앱이 보유한 분석 결과)",
+    )
+    device_id: Optional[str] = Field(
+        None,
+        max_length=128,
+        description="비로그인 식별자. 토큰이 없을 때 클릭 로그의 주체로 쓴다.",
     )
 
 
@@ -73,35 +83,61 @@ async def get_product_recommendations(
     return {"style": style, "products": products, "disclosure": disclosure}
 
 
+def _click_principal(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
+    """클릭 로그의 주체를 정한다. 로그를 남길 수 없으면 None.
+
+    - 로그인: user_id 그대로 (기존 파티션 키와 호환)
+    - 비로그인: "device#<device_id>" - 같은 테이블에서 두 세그먼트를 구분할 수 있고,
+      device_id가 파티션 키에 흩어져 핫 파티션이 생기지 않는다.
+
+    device_id가 없거나 형식이 틀리면 None을 돌려준다. 링크 발급은 막지 않는다
+    (수익 기회 > 로그 1건). 그래도 WARNING은 남겨서 클라이언트 버그가 묻히지 않게 한다.
+    """
+    if user_id:
+        return user_id
+    if not device_id:
+        return None
+    try:
+        return f"device#{validate_device_id(device_id)}"
+    except ValueError as e:
+        logger.warning(f"⚠️ 클릭 로그 생략 - device_id 형식 오류: {str(e)}")
+        return None
+
+
 @router.post("/products/click")
 @limiter.limit("30/minute")
 async def click_product(
     request: Request,
     body: ClickRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: Optional[str] = Depends(get_optional_user_id),
 ):
     """
-    제휴 제품 클릭: 클릭 로그 기록 후 제휴 링크 반환 (로그인 필수)
+    제휴 제품 클릭: 클릭 로그 기록 후 제휴 링크 반환 (로그인 불필요)
 
     로그 기록이 실패해도 affiliate_url은 반환한다 (수익 기회 > 로그 1건).
+    비로그인도 device_id로 로그를 남기므로 "헤어 프로필 x 제품 클릭" 데이터 자산은
+    유지된다 - 오히려 모집단이 6배가 된다.
     """
     product = get_product_recommendation_service().get_product(body.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="존재하지 않는 제품입니다.")
 
-    try:
-        # 동기 boto3 호출이라 스레드풀로 - 이벤트 루프 차단 방지
-        await run_in_threadpool(
-            get_affiliate_click_service().log_click,
-            user_id,
-            product,
-            body.style,
-            body.source,
-            body.hair_profile,
-        )
-    except Exception as e:
-        # log_click은 내부에서 예외를 삼키지만, 서비스 초기화 실패 등도 방어
-        logger.error(f"❌ 클릭 로그 처리 실패 (링크는 발급): {str(e)}")
+    principal = _click_principal(user_id, body.device_id)
+    if principal is not None:
+        try:
+            # 동기 boto3 호출이라 스레드풀로 - 이벤트 루프 차단 방지
+            await run_in_threadpool(
+                get_affiliate_click_service().log_click,
+                principal,
+                product,
+                body.style,
+                body.source,
+                body.hair_profile,
+                user_id is not None,
+            )
+        except Exception as e:
+            # log_click은 내부에서 예외를 삼키지만, 서비스 초기화 실패 등도 방어
+            logger.error(f"❌ 클릭 로그 처리 실패 (링크는 발급): {str(e)}")
 
     return {
         "success": True,

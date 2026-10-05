@@ -140,12 +140,70 @@ class TestRecommendationsEndpoint:
 
 
 class TestClickEndpoint:
-    def test_requires_auth(self, client, mock_click_service, known_product_id):
+    def test_anonymous_gets_url_and_is_logged_by_device(
+        self, client, mock_click_service, known_product_id
+    ):
+        """비로그인도 링크를 받고, device_id로 클릭 로그가 남는다.
+
+        로그인 필수였던 동안 합성 성공의 84%(비로그인)가 링크를 못 받았다.
+        """
+        response = client.post(
+            "/api/products/click",
+            json={
+                "product_id": known_product_id,
+                "source": "synthesis_result",
+                "device_id": "device-abc-12345678",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["affiliate_url"].startswith("https://")
+
+        args = mock_click_service.log_click.call_args.args
+        assert args[0] == "device#device-abc-12345678"
+        assert args[5] is False  # authenticated
+
+    def test_anonymous_without_device_id_still_gets_url(
+        self, client, mock_click_service, known_product_id
+    ):
+        """식별자가 없으면 로그만 생략하고 링크는 발급한다 (수익 기회 > 로그 1건)."""
         response = client.post(
             "/api/products/click", json={"product_id": known_product_id}
         )
-        assert response.status_code == 401
+
+        assert response.status_code == 200
+        assert response.json()["affiliate_url"].startswith("https://")
         mock_click_service.log_click.assert_not_called()
+
+    def test_malformed_device_id_skips_log_but_returns_url(
+        self, client, mock_click_service, known_product_id
+    ):
+        response = client.post(
+            "/api/products/click",
+            json={"product_id": known_product_id, "device_id": "a"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["affiliate_url"].startswith("https://")
+        mock_click_service.log_click.assert_not_called()
+
+    def test_token_wins_over_device_id(
+        self, client, auth_headers, mock_click_service, known_product_id
+    ):
+        """토큰이 있으면 device_id가 같이 와도 user_id로 기록한다."""
+        response = client.post(
+            "/api/products/click",
+            json={
+                "product_id": known_product_id,
+                "device_id": "device-abc-12345678",
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        args = mock_click_service.log_click.call_args.args
+        assert args[0] == "click-user-id"
+        assert args[5] is True  # authenticated
 
     def test_returns_affiliate_url_and_logs(
         self, client, auth_headers, mock_click_service, known_product_id
@@ -170,6 +228,7 @@ class TestClickEndpoint:
         assert args[2] == "C컬펌"
         assert args[3] == "synthesis_result"
         assert args[4] == {"face_shape": "계란형", "personal_color": "봄웜"}
+        assert args[5] is True  # authenticated
 
     def test_unknown_product_404(self, client, auth_headers, mock_click_service):
         response = client.post(
