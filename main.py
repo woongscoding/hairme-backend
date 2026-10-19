@@ -16,13 +16,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from config.settings import settings
 from core.logging import logger
 from core.monitoring import init_sentry
+from core.rate_limit import rate_limit_exceeded_handler
 
 # Lambda 환경 감지 - 무거운 import를 지연 로딩
 IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
@@ -95,8 +96,9 @@ app = FastAPI(
 )
 
 # Attach limiter to app state
+# 429 본문은 앱 화면에 그대로 노출되므로 slowapi 기본(영어) 핸들러를 쓰지 않는다.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # ========== Trusted Host Middleware ==========

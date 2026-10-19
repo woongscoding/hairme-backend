@@ -23,7 +23,11 @@ from fastapi.responses import JSONResponse
 from config.settings import settings
 from core.logging import log_structured, logger, mask_user_id as mask_identifier
 from services.credit_service import InsufficientCreditsError, get_credit_service
-from services.usage_limit_service import get_usage_limit_service, validate_device_id
+from services.usage_limit_service import (
+    get_usage_limit_service,
+    next_reset_epoch_kst,
+    validate_device_id,
+)
 
 NOOP_REFUND: Callable[[], None] = lambda: None
 
@@ -78,8 +82,11 @@ def _ip_limit_response(limit: int) -> JSONResponse:
 def _device_limit_response(daily_limit: int, used: int) -> JSONResponse:
     """비로그인 일일 한도 429 본문.
 
-    막힌 사용자에게 다음 행동(로그인)을 알려준다. 충전/광고 유도는 넣지 않는다 -
-    비로그인 상태에서는 선택할 수 없는 액션이기 때문.
+    막힌 사용자에게 다음 행동(로그인)과 리셋 시각을 알려준다. 지금 로그인하지
+    않는 사용자에게도 다시 올 이유(내일 0시)가 남아야 한다.
+    충전/광고 유도는 넣지 않는다 - 비로그인 상태에서는 선택할 수 없는 액션이기 때문.
+
+    reset_at: KST 다음 자정의 epoch 초 (카운터가 실제로 새로 시작되는 시각)
     """
     return JSONResponse(
         status_code=429,
@@ -87,6 +94,7 @@ def _device_limit_response(daily_limit: int, used: int) -> JSONResponse:
             "error": "daily_limit_exceeded",
             "message": (
                 f"오늘의 무료 합성 횟수({daily_limit}회)를 모두 사용했습니다. "
+                f"내일 0시에 무료 {daily_limit}회가 다시 채워집니다. "
                 f"로그인하면 가입 보너스 {settings.SIGNUP_BONUS_CREDITS}회를 "
                 "받고 바로 이어서 합성할 수 있어요."
             ),
@@ -94,6 +102,7 @@ def _device_limit_response(daily_limit: int, used: int) -> JSONResponse:
             "daily_limit": daily_limit,
             "used": used,
             "remaining": 0,
+            "reset_at": next_reset_epoch_kst(),
         },
     )
 

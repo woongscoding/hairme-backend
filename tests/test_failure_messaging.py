@@ -7,8 +7,10 @@
   (추천 제품이 함께 내려가므로 공정위 표시광고 문구가 빠지면 안 된다)
 - 합성 거절 422 본문에 error 코드 / refunded / balance
 - 중복 요청 409 는 "다시 시도" 를 안내한다 (받을 결과가 있다는 오해 제거)
-- 비로그인 429 는 로그인을, 회원 402 는 잔액이 빈 이유(가입 보너스 1회성)를 알린다
+- 비로그인 429 는 로그인과 리셋 시각(내일 0시)을, 회원 402 는 잔액이 빈 이유
+  (가입 보너스 1회성)를 알린다
   (충전/광고 시청 같은 액션 문구는 서버가 넣지 않는다)
+- 분당 요청 제한 429 는 slowapi 기본 영어 본문이 아니라 한국어 안내를 내려준다
 - /v2/analyze-hybrid 의 400 은 analysis_error 로 원인(얼굴 미감지/포맷)을 구분해 센다
 
 외부 호출(DynamoDB / S3 / Gemini)은 전부 모킹한다.
@@ -16,6 +18,7 @@
 
 import io
 import os
+from datetime import datetime
 
 os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
@@ -371,6 +374,27 @@ class TestQuotaDeniedMessages:
         assert str(settings.SIGNUP_BONUS_CREDITS) in body["message"]
         synthesis.assert_not_called()
 
+    def test_device_limit_tells_when_free_quota_comes_back(self, client, storage):
+        """로그인하지 않는 사용자에게도 다시 올 이유(내일 0시)가 남아야 한다"""
+        from services.usage_limit_service import KST
+
+        usage = FakeUsageService(device_allowed=False)
+
+        with patch(
+            "api.endpoints.synthesis.get_usage_limit_service", return_value=usage
+        ):
+            response = _post_synthesize(client, device_id=DEVICE_ID)
+
+        assert response.status_code == 429
+        body = response.json()
+        assert "0시" in body["message"]
+        assert f"{settings.DAILY_SYNTHESIS_LIMIT}회가 다시" in body["message"]
+
+        # reset_at 은 카운터가 실제로 새로 시작되는 KST 다음 자정
+        reset_at = datetime.fromtimestamp(body["reset_at"], KST)
+        assert (reset_at.hour, reset_at.minute, reset_at.second) == (0, 0, 0)
+        assert reset_at > datetime.now(KST)
+
     def test_insufficient_credits_explains_one_time_bonus(self, client, storage):
         from services.credit_service import InsufficientCreditsError
 
@@ -455,3 +479,50 @@ class TestV2AnalysisErrorInstrumentation:
         assert len(events) == 1
         assert events[0]["error_type"] == "invalid_file_format"
         assert events[0]["image_hash"] == "unknown"
+
+
+# ========== (6) 분당 요청 제한 429 문구 ==========
+
+
+class TestRateLimitMessage:
+    def test_app_does_not_use_the_english_default_handler(self):
+        from slowapi import _rate_limit_exceeded_handler
+        from slowapi.errors import RateLimitExceeded
+
+        from core.rate_limit import rate_limit_exceeded_handler
+
+        handler = app.exception_handlers[RateLimitExceeded]
+        assert handler is rate_limit_exceeded_handler
+        assert handler is not _rate_limit_exceeded_handler
+
+    def test_blocked_request_body_is_korean(self):
+        """제한에 걸린 요청 본문에 영어 문장·제한 수치가 없다"""
+        from fastapi import FastAPI, Request
+        from slowapi import Limiter
+        from slowapi.errors import RateLimitExceeded
+        from slowapi.util import get_remote_address
+
+        from core.rate_limit import rate_limit_exceeded_handler
+
+        # 실제 엔드포인트의 분당 제한을 소진시키지 않고 핸들러 동작만 확인한다
+        mini_app = FastAPI()
+        mini_limiter = Limiter(key_func=get_remote_address)
+        mini_app.state.limiter = mini_limiter
+        mini_app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+        @mini_app.get("/ping")
+        @mini_limiter.limit("1/minute")
+        async def ping(request: Request):
+            return {"ok": True}
+
+        with TestClient(mini_app) as mini_client:
+            assert mini_client.get("/ping").status_code == 200
+            blocked = mini_client.get("/ping")
+
+        assert blocked.status_code == 429
+        body = blocked.json()
+        assert body["error"] == "rate_limit_exceeded"
+        assert "잠시 후 다시 시도해주세요" in body["message"]
+        # 앱이 본문 원문을 그대로 보여주므로 영어/제한 수치가 새어나가면 안 된다
+        assert "Rate limit exceeded" not in blocked.text
+        assert "per 1 minute" not in blocked.text

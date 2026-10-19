@@ -55,6 +55,19 @@ def validate_device_id(device_id: str) -> str:
     return trimmed
 
 
+def next_reset_epoch_kst() -> int:
+    """다음 무료 한도 리셋 시각 (KST 내일 자정) epoch 초
+
+    일일 카운터의 정렬 키가 KST 날짜이므로 자정에 카운터가 새로 시작된다.
+    같은 값을 아이템 TTL(expire_at)과 한도 초과 응답의 reset_at 에 함께 쓴다.
+    """
+    now_kst = datetime.now(KST)
+    tomorrow = (now_kst + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return int(tomorrow.timestamp())
+
+
 class UsageLimitService:
     """
     Service for managing daily synthesis usage limits per device.
@@ -99,11 +112,7 @@ class UsageLimitService:
     @staticmethod
     def _tomorrow_kst_epoch() -> int:
         """Get epoch timestamp for midnight tomorrow KST (for TTL)"""
-        now_kst = datetime.now(KST)
-        tomorrow = (now_kst + timedelta(days=1)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        return int(tomorrow.timestamp())
+        return next_reset_epoch_kst()
 
     def check_usage(self, device_id: str) -> Dict[str, Any]:
         """
