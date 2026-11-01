@@ -4,7 +4,7 @@
 - 플래그 꺼짐: 기존 k=3 호출 경로 그대로, 노출 메타는 결정적(propensity 1.0)
 - 동점권 경계·채우기, 시드 재현성, 표시 순서, 포함 확률
 - 실험군/대조군 배정과 meta / analysis_complete 로그 필드
-- 트렌드 카드·full_ranking 은 탐색과 무관
+- 트렌드 카드는 탐색과 무관, full_ranking 은 실험군에서만 화면 Top-3 를 앞에 둔다
 
 AWS·실제 모델 없이 돈다 (recommend_top_k 는 점수 리스트를 돌려주는 mock).
 """
@@ -389,30 +389,89 @@ class TestServiceExplore:
 
         recs = result["recommendations"]
         assert [r["source"] for r in recs] == ["ml", "ml", "ml", "trending", "trending"]
-        # 트렌드 카드 rank 는 기존 로직 그대로 (append 중 len 이 늘어 4, 6 이 된다 - 범위 밖)
-        assert [r["rank"] for r in recs[:3]] == [1, 2, 3]
+        # 트렌드 카드 rank 는 ML 카드 뒤로 연속 (4, 5)
+        assert [r["rank"] for r in recs] == [1, 2, 3, 4, 5]
         for r in recs[3:]:
             assert r.get("propensity") is None
             assert r.get("ml_rank") is None
             assert r.get("raw_score") is None
         assert result["meta"]["trending_count"] == 2
 
-    def test_full_ranking_is_independent_of_flag(self, monkeypatch):
+    def test_trending_rank_flag_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "REC_EXPLORE_ENABLED", False)
+        trending = [
+            {"style_name": "트렌드A", "reason": "요즘 인기", "source": "trending"},
+            {"style_name": "트렌드B", "reason": "요즘 인기", "source": "trending"},
+        ]
+        recs = _recommend(_service(_ranked(TIGHT_SCORES)), trending=trending)[
+            "recommendations"
+        ]
+        assert [r["rank"] for r in recs] == [1, 2, 3, 4, 5]
+
+    def test_full_ranking_deterministic_paths_unchanged(self, monkeypatch):
+        """꺼짐·대조군은 full_ranking 이 점수순 그대로 (탐색 도입 전과 동일)"""
         ranked = _ranked(TIGHT_SCORES)
+        expected = [
+            {"style_name": r["hairstyle"], "score": round(r["score"] / 100.0, 2)}
+            for r in ranked
+        ]
+
         monkeypatch.setattr(settings, "REC_EXPLORE_ENABLED", False)
         off_service = _service(ranked)
         off = _recommend(off_service)["full_ranking"]
 
         monkeypatch.setattr(settings, "REC_EXPLORE_ENABLED", True)
-        monkeypatch.setattr(settings, "REC_EXPLORE_RATIO", 1.0)
-        on_service = _service(ranked)
-        on = _recommend(on_service)["full_ranking"]
+        monkeypatch.setattr(settings, "REC_EXPLORE_RATIO", 0.0)  # 전원 대조군
+        control_service = _service(ranked)
+        control_result = _recommend(control_service)
+        control = control_result["full_ranking"]
 
-        assert on == off
-        assert [r["style_name"] for r in on] == [r["hairstyle"] for r in ranked]
+        assert control_result["meta"]["experiment_arm"] == ARM_CONTROL
+        assert off == expected
+        assert control == expected
         off_call = off_service.ml_recommender.recommend_top_k.call_args_list[-1]
-        on_call = on_service.ml_recommender.recommend_top_k.call_args_list[-1]
-        assert on_call.kwargs == off_call.kwargs
+        control_call = control_service.ml_recommender.recommend_top_k.call_args_list[-1]
+        assert control_call.kwargs == off_call.kwargs
+
+    def test_full_ranking_follows_displayed_top3_in_explore_arm(self, explore_on):
+        ranked = _ranked(TIGHT_SCORES)
+        for i in range(30):
+            result = _recommend(_service(ranked), image_hash=f"{i:064x}")
+            cards = _ml_cards(result)
+            ranking = result["full_ranking"]
+            shown = [c["style_name"] for c in cards]
+
+            assert [r["style_name"] for r in ranking[:3]] == shown
+            rest = [r["style_name"] for r in ranking[3:]]
+            assert rest == [r["hairstyle"] for r in ranked if r["hairstyle"] not in shown]
+            assert len(ranking) == len(ranked)
+            # 점수는 전체 랭킹 값 그대로 유지
+            by_name = {r["hairstyle"]: round(r["score"] / 100.0, 2) for r in ranked}
+            assert all(r["score"] == by_name[r["style_name"]] for r in ranking)
+
+    def test_full_ranking_empty_stays_empty_in_explore_arm(self, explore_on, monkeypatch):
+        monkeypatch.setattr(settings, "FULL_RANKING_LIMIT", 0)
+        assert _recommend(_service(_ranked(TIGHT_SCORES)))["full_ranking"] == []
+
+    def test_align_full_ranking_adds_missing_displayed_style(self):
+        from services.hybrid_recommender import _align_full_ranking
+
+        ranking = [
+            {"style_name": "A", "score": 0.6},
+            {"style_name": "B 컷", "score": 0.5},
+            {"style_name": "C", "score": 0.4},
+        ]
+        recs = [
+            {"style_name": "B컷", "source": "ml", "score": 0.5},
+            {"style_name": "Z", "source": "ml", "score": 0.3},
+            {"style_name": "C", "source": "trending"},
+        ]
+        assert _align_full_ranking(ranking, recs) == [
+            {"style_name": "B 컷", "score": 0.5},
+            {"style_name": "Z", "score": 0.3},
+            {"style_name": "A", "score": 0.6},
+            {"style_name": "C", "score": 0.4},
+        ]
 
     def test_cards_convert_to_decimal_for_dynamodb(self, explore_on):
         from database.dynamodb_connection import _convert_floats_to_decimal

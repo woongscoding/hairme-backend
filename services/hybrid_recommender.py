@@ -31,6 +31,43 @@ def _raw_score(rec: Dict[str, Any]) -> float:
     return float(raw if raw is not None else rec.get("score", 0.0))
 
 
+def _align_full_ranking(
+    full_ranking: List[Dict[str, Any]], recommendations: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """full_ranking 맨 앞을 화면에 나온 ML 카드(표시 순서)로 맞춘다
+
+    나머지는 기존 점수순 그대로 두고 앞에 올린 스타일은 중복 제거한다.
+    전체 랭킹 계산이 꺼졌거나 실패해 비어 있으면 그대로 둔다.
+    """
+    if not full_ranking:
+        return full_ranking
+
+    by_name = {}
+    for entry in full_ranking:
+        by_name.setdefault(normalize_style_name(entry["style_name"]), entry)
+
+    head: List[Dict[str, Any]] = []
+    shown = set()
+    for card in recommendations:
+        if card.get("source") != "ml":
+            continue
+        name = (card.get("style_name") or "").strip()
+        normalized = normalize_style_name(name) if name else ""
+        if not normalized or normalized in shown:
+            continue
+        shown.add(normalized)
+        head.append(
+            by_name.get(normalized) or {"style_name": name, "score": card.get("score")}
+        )
+
+    tail = [
+        entry
+        for entry in full_ranking
+        if normalize_style_name(entry["style_name"]) not in shown
+    ]
+    return head + tail
+
+
 class MLRecommendationService:
     """ML 기반 헤어스타일 추천 서비스"""
 
@@ -408,12 +445,21 @@ class MLRecommendationService:
                 gender=gender or "neutral",
                 exclude_styles=ml_style_names,
             )
+            base_rank = len(recommendations)  # append 로 len 이 늘기 전에 고정
             for idx, tr in enumerate(trending_recs):
-                tr["rank"] = len(recommendations) + idx + 1
+                tr["rank"] = base_rank + idx + 1
                 recommendations.append(tr)
             trending_count = len(trending_recs)
         except Exception as e:
             logger.warning(f"트렌드 스타일 추가 실패: {e}")
+
+        full_ranking = self._full_ranking(
+            face_shape, skin_tone, face_features, skin_features, gender
+        )
+        if exposure_meta.get("rec_policy") == rec_exploration.POLICY_EXPLORE:
+            # 탐색으로 화면 Top-3 가 점수 1~3위와 달라질 수 있으니 화면 순서에 맞춘다.
+            # 결정적 경로(꺼짐/대조군)는 기존 그대로 둔다.
+            full_ranking = _align_full_ranking(full_ranking, recommendations)
 
         # 결과 구성
         result = {
@@ -423,9 +469,7 @@ class MLRecommendationService:
                 "features": "ML 모델 기반 분석",
             },
             "recommendations": recommendations,
-            "full_ranking": self._full_ranking(
-                face_shape, skin_tone, face_features, skin_features, gender
-            ),
+            "full_ranking": full_ranking,
             "meta": {
                 "total_count": len(recommendations),
                 "ml_count": len(recommendations) - trending_count,
