@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# cmd.exe 배치 파일은 LF 줄바꿈에서 레이블/goto 가 깨질 수 있다
+*.cmd text eol=crlf
+*.bat text eol=crlf
