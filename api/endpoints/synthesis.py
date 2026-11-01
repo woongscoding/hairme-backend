@@ -75,7 +75,7 @@ from services.result_quality import (
     is_preview,
     result_quality,
 )
-from services.usage_limit_service import get_usage_limit_service
+from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
 
@@ -193,6 +193,25 @@ def _store_cached_result(
         return None
 
 
+def _training_subject(
+    user_id: Optional[str], device_id: Optional[str], device_consent: bool
+) -> Optional[str]:
+    """학습 데이터 저장 주체. 동의하지 않았으면 None (저장하지 않음).
+
+    - 회원: 계정에 저장된 training_consent (요청 폼 값은 무시 - 계정 설정이 기준)
+    - 비로그인: 요청 폼의 training_consent=true + 형식이 올바른 device_id
+    """
+    if user_id:
+        user = get_user_repository().get_by_id(user_id)
+        return f"user-{user_id}" if user and user.get("training_consent") else None
+    if not device_consent or not device_id:
+        return None
+    try:
+        return f"device-{validate_device_id(device_id)}"
+    except ValueError:
+        return None
+
+
 def _store_result(
     user_id: Optional[str],
     image_data: bytes,
@@ -200,8 +219,16 @@ def _store_result(
     image_base64: str,
     image_format: str,
     hairstyle_name: Optional[str],
+    device_id: Optional[str] = None,
+    device_consent: bool = False,
+    training_meta: Optional[dict] = None,
+    raw_result: Optional[dict] = None,
 ) -> Optional[str]:
-    """합성 성공 후 저장 처리 (캐시 + 회원 결과 + 동의 시 원본). 실패해도 응답에 영향 없음"""
+    """합성 성공 후 저장 처리 (캐시 + 회원 결과 + 동의 시 학습 데이터). 실패해도 응답에 영향 없음
+
+    raw_result: 워터마크 전 Gemini 결과 {"image_base64", "image_format"}.
+                학습 데이터에는 워터마크 없는 원본을 남긴다 (없으면 image_base64 사용).
+    """
     storage = get_photo_storage_service()
     if not storage.enabled:
         return None
@@ -213,13 +240,24 @@ def _store_result(
         result_url = storage.save_user_result(
             user_id, image_base64, image_format, hairstyle_name
         )
-        # AI 학습 활용에 동의한 회원만 원본 저장
-        try:
-            user = get_user_repository().get_by_id(user_id)
-            if user and user.get("training_consent"):
-                storage.save_original_photo(user_id, image_data)
-        except Exception as e:
-            logger.warning(f"원본 저장 확인 실패 (무시): {str(e)}")
+
+    # AI 학습 활용에 동의한 경우만 원본 + 합성 결과를 묶어 저장 (회원/비로그인 공통)
+    try:
+        subject = _training_subject(user_id, device_id, device_consent)
+        if subject:
+            storage.save_training_sample(
+                subject,
+                image_data,
+                (raw_result or {}).get("image_base64") or image_base64,
+                (raw_result or {}).get("image_format") or image_format,
+                {
+                    **(training_meta or {}),
+                    "hairstyle_name": hairstyle_name,
+                    "authenticated": user_id is not None,
+                },
+            )
+    except Exception as e:
+        logger.warning(f"학습 데이터 저장 확인 실패 (무시): {str(e)}")
 
     return result_url
 
@@ -238,6 +276,9 @@ async def synthesize_hairstyle(
     ),
     additional_instructions: Optional[str] = Form(
         None, description="추가 스타일링 요청 (선택)"
+    ),
+    training_consent: bool = Form(
+        False, description="비로그인 사용자의 AI 학습 활용 동의 (회원은 계정 설정 기준)"
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
 ):
@@ -496,7 +537,7 @@ async def synthesize_hairstyle(
             # 무료 등급은 워터마크 (캐시·마이페이지에도 워터마크본이 남는다)
             image_base64, image_format = finalize_image(result, tier)
 
-            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 학습 데이터) =====
             result_url = _store_result(
                 user_id,
                 image_data,
@@ -504,6 +545,15 @@ async def synthesize_hairstyle(
                 image_base64,
                 image_format,
                 hairstyle_name,
+                device_id=device_id,
+                device_consent=training_consent,
+                training_meta={
+                    "endpoint": "synthesize",
+                    "gender": gender,
+                    "additional_instructions": additional_instructions,
+                    "tier": tier,
+                },
+                raw_result=result,
             )
         except Exception:
             # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파
@@ -589,6 +639,9 @@ async def synthesize_with_reference(
     gender: str = Form("male", description="성별 (male/female)"),
     device_id: Optional[str] = Form(
         None, description="디바이스 고유 ID (비로그인 레거시 흐름용)"
+    ),
+    training_consent: bool = Form(
+        False, description="비로그인 사용자의 AI 학습 활용 동의 (회원은 계정 설정 기준)"
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
 ):
@@ -804,7 +857,7 @@ async def synthesize_with_reference(
 
             image_base64, image_format = finalize_image(result, tier)
 
-            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 학습 데이터) =====
             result_url = _store_result(
                 user_id,
                 user_image_data,
@@ -812,6 +865,14 @@ async def synthesize_with_reference(
                 image_base64,
                 image_format,
                 hairstyle_name=None,
+                device_id=device_id,
+                device_consent=training_consent,
+                training_meta={
+                    "endpoint": "synthesize-with-reference",
+                    "gender": gender,
+                    "tier": tier,
+                },
+                raw_result=result,
             )
         except Exception:
             # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파

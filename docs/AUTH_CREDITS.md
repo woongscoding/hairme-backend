@@ -51,8 +51,8 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 |--------|------|---------|
 | `cache/{sha256}` | 합성 결과 캐시 — 같은 사진+스타일 재요청 시 Gemini 재호출 방지 (비용 절감 핵심) | 90일 |
 | `results/{user_id}/` | 회원별 합성 결과 (presigned URL로 재열람) | 180일 |
-| `originals/{user_id}/` | AI 학습용 원본 (training_consent=true 회원만) | 무기한 |
-| `reports/{date}/` | AI 생성 이미지 신고 (이미지 없이 사유만) | 미설정 (개인정보처리방침과 같은 값으로 수명주기 설정 필요) |
+| `training/{subject}/` | AI 학습용 원본+결과 (학습 동의분만) | `scripts/setup_photo_lifecycle.py` 로 설정 (방침과 동일 값) |
+| `reports/{date}/` | AI 생성 이미지 신고 (이미지 없이 사유만) | 위와 같음 |
 
 퍼블릭 액세스 전면 차단, presigned URL로만 접근.
 

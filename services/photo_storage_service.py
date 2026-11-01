@@ -3,8 +3,15 @@
 버킷 구조 (PHOTO_S3_BUCKET):
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
-- originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
+- training/{subject}/{id}/      학습 데이터 (학습 활용에 동의한 경우만)
+    original.{ext}  원본 사진
+    result.{fmt}    합성 결과
+    meta.json       스타일명/성별/엔드포인트/동의 출처
+  subject = user-{user_id} (회원) | device-{device_id} (비로그인)
 - reports/{YYYY-MM-DD}/{id}.json AI 생성 이미지 신고 (결과 이미지 자체는 저장하지 않음)
+
+보관 기한(수명주기)은 scripts/setup_photo_lifecycle.py 로 버킷에 건다.
+개인정보처리방침의 보관·파기 기간과 같은 값이어야 한다.
 
 PHOTO_S3_BUCKET 미설정 시 모든 기능이 조용히 비활성화됨 (합성 자체는 정상 동작).
 """
@@ -228,38 +235,69 @@ class PhotoStorageService:
 
         return {"items": items, "next_token": next_token}
 
-    # ========== 원본 사진 저장 (동의한 회원만) ==========
+    # ========== 학습 데이터 저장 (동의한 경우만) ==========
 
-    def save_original_photo(
-        self, user_id: str, image_bytes: bytes, content_type: str = "image/jpeg"
+    @staticmethod
+    def _sniff_image_type(image_bytes: bytes) -> Tuple[str, str]:
+        """매직 바이트로 (확장자, content-type) 판별. 업로드는 이미 검증을 거쳤다"""
+        if image_bytes.startswith(b"\x89PNG"):
+            return "png", "image/png"
+        if image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+            return "webp", "image/webp"
+        return "jpg", "image/jpeg"
+
+    def save_training_sample(
+        self,
+        subject: str,
+        original_bytes: bytes,
+        result_base64: str,
+        result_format: str,
+        metadata: Dict[str, Any],
     ) -> Optional[str]:
         """
-        학습 활용에 동의(training_consent=True)한 회원의 원본 사진 저장
+        원본 사진 + 합성 결과 + 메타데이터를 한 묶음으로 저장 (AI 학습용)
 
-        호출자가 동의 여부를 확인한 뒤 호출해야 한다.
+        호출자가 학습 활용 동의 여부를 확인한 뒤 호출해야 한다.
+
+        Args:
+            subject: user-{user_id} 또는 device-{device_id}
 
         Returns:
-            저장된 S3 key (실패 시 None)
+            저장된 묶음의 S3 prefix (실패 시 None)
         """
         if not self.enabled:
             return None
 
-        ext = content_type.split("/")[-1] if "/" in content_type else "jpg"
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        key = f"originals/{user_id}/{ts}_{uuid.uuid4().hex[:8]}.{ext}"
+        prefix = f"training/{subject}/{ts}_{uuid.uuid4().hex[:8]}/"
+        ext, content_type = self._sniff_image_type(original_bytes)
+        meta = {**metadata, "created_at": datetime.now(timezone.utc).isoformat()}
 
         try:
             self.client.put_object(
                 Bucket=self.bucket,
-                Key=key,
-                Body=image_bytes,
+                Key=f"{prefix}original.{ext}",
+                Body=original_bytes,
                 ContentType=content_type,
                 Metadata={"training-consent": "true"},
             )
-            logger.info(f"📸 원본 사진 저장 (학습 동의): user_id={user_id}")
-            return key
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=f"{prefix}result.{result_format}",
+                Body=base64.b64decode(result_base64),
+                ContentType=f"image/{result_format}",
+                Metadata={"training-consent": "true"},
+            )
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=f"{prefix}meta.json",
+                Body=json.dumps(meta, ensure_ascii=False).encode("utf-8"),
+                ContentType="application/json",
+            )
+            logger.info(f"📸 학습 데이터 저장 (동의): {subject}")
+            return prefix
         except Exception as e:
-            logger.warning(f"원본 저장 실패 (무시): {str(e)}")
+            logger.warning(f"학습 데이터 저장 실패 (무시): {str(e)}")
             return None
 
     # ========== AI 생성 이미지 신고 ==========
