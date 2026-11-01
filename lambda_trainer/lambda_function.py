@@ -5,18 +5,27 @@ EventBridge 또는 수동 트리거로 실행됩니다.
 S3에서 피드백 데이터를 가져와 모델을 재학습합니다.
 
 학습 파이프라인:
-1. S3에서 feedback/pending/*.npz 로드
+1. S3에서 feedback/pending/**/*.npz 로드 (하위 prefix 포함: 명시 피드백 + implicit/ 암묵 샘플)
+   - 같은 (analysis_id, 스타일) 쌍은 하나만 사용 (명시 > share > save > synthesize >
+     shown_not_chosen, 동순위면 최신 timestamp)
 2. analysis_id 해시로 학습/홀드아웃 결정적 분할 (홀드아웃은 학습에 쓰지 않음)
-3. 기존 model.pt 기반 fine-tuning (학습 분할만 사용)
-4. 품질 게이트: 같은 홀드아웃으로 학습 전/후 모델 비교
+3. 시작점 모델 기반 fine-tuning (학습 분할만 사용, sample_weight 가중 MSE)
+4. 품질 게이트: 같은 홀드아웃으로 "현재 운영 모델(models/current)" 과 학습 후 모델 비교
    - MSE(정규화 공간) 와 pairwise ranking accuracy 가 모두 허용치 안이면 통과
+   - 게이트 지표는 가중치 없이 계산한다 (실행 간 비교 일관성)
 5. 통과 시에만 새 모델 저장:
    - models/current/model.pt (교체)
    - models/archive/v6_feedback_YYYYMMDD.pt (백업)
    거부 시 models/rejected/{version}.pt 에만 저장하고 현재 모델은 유지
-6. 통과 시에만 pending/*.npz → processed/로 이동
+6. 통과 시에만 pending/**.npz → processed/ 로 이동 (하위 prefix 구조 유지)
    (거부 시 pending 은 그대로 두어 다음 학습에 재포함)
 7. metadata.json 업데이트
+
+트리거별 기본값:
+- scheduled (주간 EventBridge): from_base=True, include_processed=True
+  (base + 전체 데이터 재학습 → 홀드아웃이 충분히 확보됨). event 에 명시값이 있으면 그 값 우선.
+  실행 조건은 "새 pending 샘플(중복 제거 후) >= MIN_SAMPLES".
+- data_threshold / manual: from_base=False, include_processed=False (기존과 동일)
 
 이벤트 플래그:
 - force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않음)
@@ -52,7 +61,9 @@ logger.setLevel(logging.INFO)
 
 # Configuration
 S3_BUCKET = os.getenv("MLOPS_S3_BUCKET", "hairme-mlops")
-MIN_SAMPLES = int(os.getenv("MLOPS_MIN_SAMPLES", "50"))
+# 새 pending 샘플이 이 수 이상일 때만 학습한다.
+# 주의: 환경변수 MLOPS_MIN_SAMPLES 가 설정돼 있으면 그 값이 우선한다.
+MIN_SAMPLES = int(os.getenv("MLOPS_MIN_SAMPLES", "30"))
 # AWS_REGION은 Lambda 내장 환경변수 사용 (AWS_DEFAULT_REGION)
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", os.getenv("AWS_REGION", "ap-northeast-2"))
 
@@ -77,6 +88,26 @@ BASE_MODEL_KEY = "models/base/model.pt"
 REJECTED_MODEL_PREFIX = "models/rejected/"
 PENDING_PREFIX = "feedback/pending/"
 PROCESSED_PREFIX = "feedback/processed/"
+# 암묵 피드백 샘플 하위 prefix: feedback/pending/implicit/{analysis_id}_{hairstyle_id}.npz
+IMPLICIT_SUBDIR = "implicit"
+
+# ========== 암묵 피드백 ==========
+# 서버(services/mlops)가 저장하는 암묵 샘플의 ground_truth:
+#   share 85 / save 80 / synthesize 55 / shown_not_chosen 40 (명시 피드백 good 90 / bad 10)
+# 트레이너는 npz 에 저장된 ground_truth 를 그대로 쓴다.
+SOURCE_IMPLICIT = "implicit"
+SOURCE_EXPLICIT = "explicit"
+# 같은 (analysis_id, 스타일) 쌍이 여러 개일 때의 우선순위 (작을수록 우선)
+# 명시 피드백(source 없음 또는 != implicit) = 0
+SAMPLE_PRIORITY_EXPLICIT = 0
+IMPLICIT_SIGNAL_PRIORITY: Dict[str, int] = {
+    "share": 1,
+    "save": 2,
+    "synthesize": 3,
+    "shown_not_chosen": 4,
+}
+# 알 수 없는 signal_type 의 암묵 샘플은 가장 뒤로
+SAMPLE_PRIORITY_UNKNOWN_IMPLICIT = 99
 
 # 라벨 정규화 상수
 LABEL_MIN = 10.0
@@ -389,7 +420,13 @@ class FeedbackDataset(Dataset):
         skin_features: np.ndarray,
         style_embeddings: np.ndarray,
         ground_truths: np.ndarray,
+        sample_weights: Optional[np.ndarray] = None,
     ):
+        """
+        Args:
+            sample_weights: 샘플별 손실 가중치. None 이면 전부 1.0.
+                학습률 영향이 없도록 normalize_sample_weights 로 평균 1 로 맞춰 넣는다.
+        """
         # 입력 스케일링 (serving과 동일한 분포로 정렬 - train/serve skew 방지)
         # NPZ에는 DynamoDB 원본 픽셀값이 저장되므로 텐서 변환 전에 반드시 적용한다.
         scaled_face, scaled_skin = scale_feature_batch(face_features, skin_features)
@@ -402,6 +439,9 @@ class FeedbackDataset(Dataset):
         normalized_gt = (ground_truths - LABEL_MIN) / LABEL_RANGE
         self.ground_truths = torch.tensor(normalized_gt, dtype=torch.float32)
 
+        weights = normalize_sample_weights(sample_weights, len(self.ground_truths))
+        self.sample_weights = torch.tensor(weights, dtype=torch.float32)
+
     def __len__(self):
         return len(self.ground_truths)
 
@@ -411,7 +451,43 @@ class FeedbackDataset(Dataset):
             self.skin_features[idx],
             self.style_embeddings[idx],
             self.ground_truths[idx],
+            self.sample_weights[idx],
         )
+
+
+def normalize_sample_weights(
+    sample_weights: Optional[np.ndarray], count: int
+) -> np.ndarray:
+    """
+    샘플 가중치를 평균 1 로 정규화한다.
+
+    가중 MSE = mean(w_i * (pred_i - gt_i)^2) 이므로 가중치 평균이 1 이면 손실 스케일
+    (= 실효 학습률)이 비가중 MSE 와 같다. 전부 1.0 이면 기존 nn.MSELoss 와 동일한 값.
+    None / 길이 불일치 / 비정상 값(음수·NaN·합 0)이면 전부 1.0 으로 대체한다.
+    """
+    if sample_weights is None:
+        return np.ones(count, dtype=np.float32)
+
+    weights = np.asarray(sample_weights, dtype=np.float64).reshape(-1)
+    if (
+        weights.shape[0] != count
+        or not np.all(np.isfinite(weights))
+        or np.any(weights < 0)
+        or weights.sum() <= 0
+    ):
+        logger.warning(
+            f"⚠️ 비정상 sample_weights (shape={weights.shape}, count={count}) - 1.0 으로 대체"
+        )
+        return np.ones(count, dtype=np.float32)
+
+    return (weights / weights.mean()).astype(np.float32)
+
+
+def weighted_mse_loss(
+    pred: torch.Tensor, target: torch.Tensor, weights: torch.Tensor
+) -> torch.Tensor:
+    """sample_weight 가중 MSE: mean(w * (pred - target)^2)"""
+    return torch.mean(weights * (pred - target) ** 2)
 
 
 # ========== 홀드아웃 분할 (analysis_id 해시 기준) ==========
@@ -425,11 +501,18 @@ def analysis_id_from_key(key: str) -> str:
         {YYYY-MM-DD}_{analysis_id[:8]}_s{style}_{uuid6}.npz
         {YYYY-MM-DD}_trending_{analysis_id[:8]}_s{style}_{uuid6}.npz
 
+    암묵 샘플(.../implicit/{analysis_id}_{hairstyle_id}.npz)은 마지막 "_" 앞 전체가
+    analysis_id 다.
+
     규칙에 맞지 않으면 파일명 전체를 그룹 키로 쓴다(= 자기 자신만의 그룹).
     """
     filename = key.split("/")[-1]
     if filename.endswith(".npz"):
         filename = filename[: -len(".npz")]
+
+    if is_implicit_key(key):
+        head, sep, _ = filename.rpartition("_")
+        return head if sep and head else filename
 
     parts = filename.split("_")
     if len(parts) >= 3 and parts[1] == "trending":
@@ -437,6 +520,14 @@ def analysis_id_from_key(key: str) -> str:
     if len(parts) >= 2:
         return parts[1]
     return filename
+
+
+def is_implicit_key(key: str) -> bool:
+    """pending/processed 아래 implicit/ 하위 prefix 에 있는 암묵 샘플 키인지"""
+    for prefix in (PENDING_PREFIX, PROCESSED_PREFIX):
+        if key.startswith(prefix):
+            return key[len(prefix) :].split("/")[0] == IMPLICIT_SUBDIR
+    return False
 
 
 def analysis_id_bucket(analysis_id: str) -> float:
@@ -597,29 +688,182 @@ def list_npz_keys(s3, prefix: str) -> List[str]:
     return keys
 
 
-def extract_analysis_id(data: Any, key: str) -> str:
+def read_npz_metadata(data: Any) -> Dict[str, Any]:
     """
-    NPZ 의 metadata JSON 에서 analysis_id 를 읽고, 없으면 파일명에서 추출한다.
+    NPZ 의 metadata JSON(dtype=str 배열)을 dict 로 읽는다. 없거나 깨졌으면 {}.
 
     metadata 는 dtype=str 배열이므로 allow_pickle=False 로도 읽을 수 있다.
     """
     try:
         raw = data["metadata"]
         payload = json.loads(str(np.asarray(raw).reshape(-1)[0]))
-        analysis_id = payload.get("analysis_id")
-        if analysis_id:
-            return str(analysis_id)
+        if isinstance(payload, dict):
+            return payload
     except Exception:
         pass
+    return {}
+
+
+def extract_analysis_id(
+    data: Any, key: str, meta: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    NPZ 의 metadata JSON 에서 analysis_id 를 읽고, 없으면 파일명에서 추출한다.
+    """
+    payload = meta if meta is not None else read_npz_metadata(data)
+    analysis_id = payload.get("analysis_id")
+    if analysis_id:
+        return str(analysis_id)
 
     return analysis_id_from_key(key)
 
 
+def extract_style_key(meta: Dict[str, Any], key: str) -> Optional[str]:
+    """
+    중복 제거용 스타일 식별자.
+
+    - hairstyle_id 가 있으면 "id:{정수}" (명시/암묵 공통)
+    - 트렌드 피드백처럼 style_name 만 있으면 "name:{style_name}"
+    - 암묵 샘플 파일명 {analysis_id}_{hairstyle_id}.npz 에서 대체 추출
+    - 그 외(구형 npz 등)는 None -> 중복 제거 대상에서 제외(파일 단위로 유일)
+    """
+    hairstyle_id = meta.get("hairstyle_id")
+    if hairstyle_id is not None and hairstyle_id != "":
+        try:
+            return f"id:{int(hairstyle_id)}"
+        except (TypeError, ValueError):
+            return f"id:{hairstyle_id}"
+
+    style_name = meta.get("style_name")
+    if style_name:
+        return f"name:{style_name}"
+
+    if is_implicit_key(key):
+        filename = key.split("/")[-1]
+        if filename.endswith(".npz"):
+            filename = filename[: -len(".npz")]
+        _, sep, tail = filename.rpartition("_")
+        if sep and tail:
+            try:
+                return f"id:{int(tail)}"
+            except ValueError:
+                return f"id:{tail}"
+
+    return None
+
+
+def classify_sample(meta: Dict[str, Any], key: str) -> Tuple[str, Optional[str]]:
+    """
+    (source, signal_type) 판정. source 는 "implicit" 또는 "explicit".
+
+    metadata.source == "implicit" 이거나 (source 가 없고) implicit/ 하위 prefix 에
+    있으면 암묵 샘플이다. 그 외(source 없음, "trending" 등)는 명시 피드백으로 취급한다.
+    """
+    source = meta.get("source")
+    if source == SOURCE_IMPLICIT or (source is None and is_implicit_key(key)):
+        signal_type = meta.get("signal_type")
+        return SOURCE_IMPLICIT, str(signal_type) if signal_type else None
+    return SOURCE_EXPLICIT, None
+
+
+def sample_priority(source: str, signal_type: Optional[str]) -> int:
+    """중복 제거 우선순위 (작을수록 우선): 명시 > share > save > synthesize > shown_not_chosen"""
+    if source != SOURCE_IMPLICIT:
+        return SAMPLE_PRIORITY_EXPLICIT
+    return IMPLICIT_SIGNAL_PRIORITY.get(
+        signal_type or "", SAMPLE_PRIORITY_UNKNOWN_IMPLICIT
+    )
+
+
+_MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def parse_timestamp(value: Any) -> datetime:
+    """metadata.timestamp(ISO 8601) 파싱. 없거나 깨졌으면 가장 오래된 값으로 취급"""
+    if not value:
+        return _MIN_TIMESTAMP
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return _MIN_TIMESTAMP
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def read_sample_weight(data: Any) -> float:
+    """
+    npz 의 sample_weight(float32[1]) 를 읽는다. 없으면 1.0 (기존 명시 피드백 npz).
+    음수·NaN·inf 이면 ValueError (해당 샘플은 로드 실패로 건너뛴다).
+    """
+    if "sample_weight" not in getattr(data, "files", data):
+        return 1.0
+    weight = float(np.asarray(data["sample_weight"], dtype=np.float64).reshape(-1)[0])
+    if not np.isfinite(weight) or weight < 0:
+        raise ValueError(f"invalid sample_weight={weight}")
+    return weight
+
+
+def dedupe_feedback_records(
+    records: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    같은 (analysis_id, 스타일) 쌍에서 하나만 남긴다.
+
+    우선순위: 명시 피드백 > share > save > synthesize > shown_not_chosen,
+    동순위면 최신 timestamp, 그래도 같으면 키 사전순 마지막(결정적).
+    스타일 식별자가 없는 레코드(style_key=None)는 중복 제거하지 않는다.
+
+    Returns:
+        (kept_records - 입력 순서 유지, dropped_count)
+    """
+
+    def rank(rec: Dict[str, Any]) -> Tuple[int, datetime, str]:
+        # 클수록 우선
+        return (-rec["priority"], rec["timestamp"], rec["key"])
+
+    best: Dict[Tuple[str, str], int] = {}
+    for idx, rec in enumerate(records):
+        if rec["style_key"] is None:
+            continue
+        group = (rec["analysis_id"], rec["style_key"])
+        current = best.get(group)
+        if current is None or rank(rec) > rank(records[current]):
+            best[group] = idx
+
+    winners = set(best.values())
+    kept = [
+        rec
+        for idx, rec in enumerate(records)
+        if rec["style_key"] is None or idx in winners
+    ]
+    return kept, len(records) - len(kept)
+
+
+def empty_sample_info() -> Dict[str, Any]:
+    return {
+        "sample_keys": [],
+        "sample_weights": np.zeros(0, dtype=np.float32),
+        "sources": [],
+        "signal_types": [],
+        "duplicates_dropped": 0,
+    }
+
+
 def load_pending_feedbacks(
     include_processed: bool = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, List[str], List[str]]:
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    int,
+    List[str],
+    List[str],
+    Dict[str, Any],
+]:
     """
-    S3에서 피드백 데이터 로드
+    S3에서 피드백 데이터 로드 (하위 prefix 포함 - implicit/ 암묵 샘플도 로드된다)
 
     Args:
         include_processed: True이면 feedback/processed/ 하위 npz도 함께 로드한다
@@ -627,13 +871,22 @@ def load_pending_feedbacks(
 
     Returns:
         (face_features, skin_features, style_embeddings, ground_truths,
-         count, file_keys, analysis_ids)
+         count, file_keys, analysis_ids, sample_info)
+
+        - count / analysis_ids / 배열들은 중복 제거 후 샘플 기준
+        - file_keys: 로드에 성공한 모든 키 (중복 제거로 빠진 키 포함).
+          학습 성공 시 이 중 pending/ 키를 전부 processed/ 로 옮겨야
+          중복으로 빠진 pending 파일이 pending 에 계속 남지 않는다.
+        - sample_info: 샘플별 부가 정보 (배열과 같은 순서)
+            {"sample_keys", "sample_weights", "sources", "signal_types",
+             "duplicates_dropped"}
     """
+    empty = (None, None, None, None, 0, [], [], empty_sample_info())
     s3 = get_s3_client()
 
     try:
         target_keys = list_npz_keys(s3, PENDING_PREFIX)
-        logger.info(f"📄 pending npz: {len(target_keys)}개")
+        logger.info(f"📄 pending npz: {len(target_keys)}개 (하위 prefix 포함)")
 
         if include_processed:
             processed_keys = list_npz_keys(s3, PROCESSED_PREFIX)
@@ -644,14 +897,9 @@ def load_pending_feedbacks(
 
         if not target_keys:
             logger.info("No pending feedbacks found")
-            return None, None, None, None, 0, [], []
+            return empty
 
-        face_list = []
-        skin_list = []
-        style_list = []
-        gt_list = []
-        file_keys = []
-        analysis_ids = []
+        records: List[Dict[str, Any]] = []
 
         for key in target_keys:
             try:
@@ -660,40 +908,115 @@ def load_pending_feedbacks(
                 # 보안: S3 NPZ는 신뢰할 수 없는 입력이므로 pickle 역직렬화 차단
                 data = np.load(buffer, allow_pickle=False)
 
-                face_list.append(data["face_features"])
-                skin_list.append(data["skin_features"])
-                style_list.append(data["style_embedding"])
-                gt_list.append(data["ground_truth"])
-                file_keys.append(key)
-                analysis_ids.append(extract_analysis_id(data, key))
+                meta = read_npz_metadata(data)
+                source, signal_type = classify_sample(meta, key)
+                records.append(
+                    {
+                        "key": key,
+                        "face": data["face_features"],
+                        "skin": data["skin_features"],
+                        "style": data["style_embedding"],
+                        "gt": data["ground_truth"],
+                        "weight": read_sample_weight(data),
+                        "analysis_id": extract_analysis_id(data, key, meta),
+                        "style_key": extract_style_key(meta, key),
+                        "source": source,
+                        "signal_type": signal_type,
+                        "priority": sample_priority(source, signal_type),
+                        "timestamp": parse_timestamp(meta.get("timestamp")),
+                    }
+                )
 
             except Exception as e:
                 logger.warning(f"Failed to load {key}: {e}")
                 continue
 
-        if not face_list:
-            return None, None, None, None, 0, [], []
+        if not records:
+            return empty
 
-        face_features = np.stack(face_list)
-        skin_features = np.stack(skin_list)
-        style_embeddings = np.stack(style_list)
-        ground_truths = np.concatenate(gt_list)
+        file_keys = [rec["key"] for rec in records]
+        kept, dropped = dedupe_feedback_records(records)
+        if dropped:
+            logger.info(f"🧹 중복 (analysis_id, 스타일) 샘플 {dropped}개 제외")
 
-        logger.info(f"✅ {len(face_list)}개 피드백 데이터 로드 완료")
+        face_features = np.stack([rec["face"] for rec in kept])
+        skin_features = np.stack([rec["skin"] for rec in kept])
+        style_embeddings = np.stack([rec["style"] for rec in kept])
+        ground_truths = np.concatenate([rec["gt"] for rec in kept])
+
+        sample_info = {
+            "sample_keys": [rec["key"] for rec in kept],
+            "sample_weights": np.asarray(
+                [rec["weight"] for rec in kept], dtype=np.float32
+            ),
+            "sources": [rec["source"] for rec in kept],
+            "signal_types": [rec["signal_type"] for rec in kept],
+            "duplicates_dropped": dropped,
+        }
+
+        logger.info(
+            f"✅ {len(kept)}개 피드백 데이터 로드 완료 (파일 {len(records)}개, "
+            f"암묵 {sample_info['sources'].count(SOURCE_IMPLICIT)}개)"
+        )
 
         return (
             face_features,
             skin_features,
             style_embeddings,
             ground_truths,
-            len(face_list),
+            len(kept),
             file_keys,
-            analysis_ids,
+            [rec["analysis_id"] for rec in kept],
+            sample_info,
         )
 
     except Exception as e:
         logger.error(f"❌ 피드백 데이터 로드 실패: {e}")
-        return None, None, None, None, 0, [], []
+        return empty
+
+
+def complete_sample_info(
+    sample_info: Optional[Dict[str, Any]], count: int, file_keys: List[str]
+) -> Dict[str, Any]:
+    """
+    sample_info 의 빠진 항목을 기본값(가중치 1.0, 명시 피드백)으로 채운다.
+    sample_keys 가 없으면 file_keys 가 샘플과 1:1 일 때만 그대로 쓴다.
+    """
+    info = dict(sample_info or {})
+    if info.get("sample_weights") is None:
+        info["sample_weights"] = np.ones(count, dtype=np.float32)
+    if info.get("sources") is None:
+        info["sources"] = [SOURCE_EXPLICIT] * count
+    if info.get("signal_types") is None:
+        info["signal_types"] = [None] * count
+    if info.get("sample_keys") is None:
+        info["sample_keys"] = list(file_keys) if len(file_keys) == count else []
+    info.setdefault("duplicates_dropped", 0)
+    return info
+
+
+def summarize_samples(
+    sources: List[str],
+    signal_types: List[Optional[str]],
+    indices: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """명시/암묵 샘플 수와 signal_type 별 암묵 샘플 수"""
+    if indices is None:
+        indices = list(range(len(sources)))
+    by_signal: Dict[str, int] = {}
+    explicit = implicit = 0
+    for idx in indices:
+        if sources[idx] == SOURCE_IMPLICIT:
+            implicit += 1
+            name = signal_types[idx] or "unknown"
+            by_signal[name] = by_signal.get(name, 0) + 1
+        else:
+            explicit += 1
+    return {
+        "explicit": explicit,
+        "implicit": implicit,
+        "implicit_by_signal_type": dict(sorted(by_signal.items())),
+    }
 
 
 def get_source_model_key(from_base: bool = False) -> str:
@@ -810,9 +1133,13 @@ def fine_tune_model(
     ground_truths: np.ndarray,
     epochs: int = FINE_TUNE_EPOCHS,
     lr: float = FINE_TUNE_LR,
+    sample_weights: Optional[np.ndarray] = None,
 ) -> Tuple[RecommendationModelV6, Dict[str, Any]]:
     """
     피드백 데이터로 모델 Fine-tuning
+
+    손실은 sample_weight 가중 MSE 다. 가중치는 평균 1 로 정규화되므로
+    (normalize_sample_weights) 전부 1.0 이면 기존 비가중 MSE 와 같다.
 
     Returns:
         (fine_tuned_model, training_stats)
@@ -827,7 +1154,11 @@ def fine_tune_model(
 
     # 데이터셋 및 데이터로더
     dataset = FeedbackDataset(
-        face_features, skin_features, style_embeddings, ground_truths
+        face_features,
+        skin_features,
+        style_embeddings,
+        ground_truths,
+        sample_weights=sample_weights,
     )
     # BatchNorm은 batch size 1에서 실패하므로 마지막 배치를 버린다.
     # (샘플 수가 BATCH_SIZE 이하이면 전부 사용하고, 아래 루프에서 크기 1 배치는 건너뜀)
@@ -838,7 +1169,6 @@ def fine_tune_model(
 
     # 옵티마이저 및 손실 함수
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
-    criterion = nn.MSELoss()
 
     # 학습 기록
     training_stats = {
@@ -846,6 +1176,13 @@ def fine_tune_model(
         "samples": len(dataset),
         "losses": [],
         "batchnorm_frozen": frozen_bn,
+        "weighted_loss": True,
+        "sample_weight_min": (
+            float(dataset.sample_weights.min().item()) if len(dataset) else None
+        ),
+        "sample_weight_max": (
+            float(dataset.sample_weights.max().item()) if len(dataset) else None
+        ),
     }
 
     logger.info(f"🏋️ Fine-tuning 시작: {len(dataset)}개 샘플, {epochs} 에폭")
@@ -858,7 +1195,7 @@ def fine_tune_model(
         total_loss = 0.0
         num_batches = 0
 
-        for face, skin, style, gt in dataloader:
+        for face, skin, style, gt, weight in dataloader:
             if face.size(0) < 2:
                 # BatchNorm은 배치 크기 1에서 예외가 발생하므로 건너뜀
                 logger.warning("⚠️ 배치 크기 1 - BatchNorm 오류 방지를 위해 건너뜀")
@@ -868,10 +1205,11 @@ def fine_tune_model(
             skin = skin.to(device)
             style = style.to(device)
             gt = gt.to(device)
+            weight = weight.to(device)
 
             optimizer.zero_grad()
             pred = model(face, skin, style)
-            loss = criterion(pred, gt)
+            loss = weighted_mse_loss(pred, gt, weight)
             loss.backward()
             optimizer.step()
 
@@ -1216,6 +1554,7 @@ def save_evaluation_report(
     training_stats: Dict[str, Any],
     version: str,
     gate: Optional[Dict[str, Any]] = None,
+    data_summary: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     평가 리포트를 S3에 저장
@@ -1226,11 +1565,14 @@ def save_evaluation_report(
         training_stats: 학습 통계
         version: 모델 버전
         gate: 품질 게이트 판정 결과 (거부 사유 추적용)
+        data_summary: 명시/암묵 샘플 수, signal_type 별 수 (전체/학습/홀드아웃)
 
     Returns:
         성공 여부
     """
     s3 = get_s3_client()
+    before_metrics = before_metrics or {}
+    after_metrics = after_metrics or {}
 
     try:
         # 개선율 계산
@@ -1259,6 +1601,7 @@ def save_evaluation_report(
             "improvements": improvements,
             "training_stats": training_stats,
             "gate": gate,
+            "data_summary": data_summary,
             "model_promoted": bool(gate.get("passed")) if gate else None,
             "summary": {
                 "mse_improved": improvements.get("mse", 0) > 0,
@@ -1444,9 +1787,23 @@ def save_current_model_metadata(
         return False
 
 
+def processed_key_for(pending_key: str, batch_name: str) -> str:
+    """
+    pending 키의 processed 이동 경로. 하위 prefix 구조를 유지한다.
+
+        feedback/pending/x.npz          -> feedback/processed/{batch}/x.npz
+        feedback/pending/implicit/y.npz -> feedback/processed/implicit/{batch}/y.npz
+    """
+    relative = pending_key[len(PENDING_PREFIX) :]
+    subdir, _, filename = relative.rpartition("/")
+    if subdir:
+        return f"{PROCESSED_PREFIX}{subdir}/{batch_name}/{filename}"
+    return f"{PROCESSED_PREFIX}{batch_name}/{filename}"
+
+
 def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
     """
-    pending 파일들을 processed로 이동
+    pending 파일들을 processed로 이동 (하위 prefix 구조 유지 - processed_key_for)
 
     Returns:
         성공 여부
@@ -1460,8 +1817,7 @@ def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
             if not old_key.startswith(PENDING_PREFIX):
                 continue
 
-            filename = old_key.split("/")[-1]
-            new_key = f"feedback/processed/{batch_name}/{filename}"
+            new_key = processed_key_for(old_key, batch_name)
 
             # Copy then delete
             s3.copy_object(
@@ -1480,12 +1836,70 @@ def move_pending_to_processed(file_keys: List[str], batch_name: str) -> bool:
         return False
 
 
+def _event_flag(event: Dict[str, Any], name: str, default: bool) -> bool:
+    """event 에 명시값(None 아님)이 있으면 그 값, 없으면 default"""
+    value = event.get(name)
+    if value is None:
+        return default
+    return bool(value)
+
+
+def resolve_training_flags(event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    이벤트에서 학습 플래그를 확정한다.
+
+    trigger_type == "scheduled" (주간 EventBridge) 이면 from_base / include_processed 의
+    기본값이 True 다: base 모델 + 전체(pending + processed) 데이터로 재학습해
+    홀드아웃을 충분히 확보한다. event 에 명시값이 있으면 그 값이 우선한다.
+    data_threshold / manual 은 기존과 동일하게 둘 다 False 가 기본값이다.
+    """
+    event = event or {}
+    trigger_type = event.get("trigger_type", "unknown")
+    scheduled = trigger_type == "scheduled"
+    return {
+        "trigger_type": trigger_type,
+        "scheduled": scheduled,
+        "force": bool(event.get("force", False)),
+        "skip_gate": bool(event.get("skip_gate", False)),
+        "allow_random_init": bool(event.get("allow_random_init", False)),
+        "from_base": _event_flag(event, "from_base", scheduled),
+        "include_processed": _event_flag(event, "include_processed", scheduled),
+    }
+
+
+def load_baseline_model(
+    from_base: bool,
+) -> Tuple[Optional[RecommendationModelV6], str]:
+    """
+    품질 게이트 기준선 모델 = 지금 서빙 중인 models/current/model.pt.
+
+    from_base 재학습의 시작점(base)은 서빙 모델이 아니므로, base 와 비교해 통과해도
+    current 보다 나쁠 수 있다. 그래서 from_base 일 때는 current 를 따로 로드해
+    같은 홀드아웃에서 비교한다. current 가 없으면(최초 배포) 시작점 모델로 대체한다.
+
+    Returns:
+        (baseline_model 또는 None, baseline_model_key)
+        None 이면 호출측이 시작점 모델을 기준선으로 쓴다.
+    """
+    if not from_base:
+        return None, CURRENT_MODEL_KEY
+
+    model, _ = load_base_model(allow_random_init=False, from_base=False)
+    if model is None:
+        logger.warning(
+            "⚠️ 기준선용 models/current/model.pt 로드 실패 - base 모델을 기준선으로 사용"
+        )
+        return None, BASE_MODEL_KEY
+    return model, CURRENT_MODEL_KEY
+
+
 def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     전체 학습 파이프라인 실행
 
     Args:
         event: Lambda 이벤트
+            - trigger_type: "scheduled" 이면 from_base / include_processed 기본값 True
             - allow_random_init: 기존 모델이 없을 때 랜덤 초기화 허용
             - force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않는다)
             - skip_gate: 품질 게이트 우회 (from_base 전체 재학습처럼 의도적일 때만)
@@ -1495,13 +1909,14 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     Returns:
         결과 딕셔너리
     """
-    event = event or {}
-    allow_random_init = bool(event.get("allow_random_init", False))
-    force_train = bool(event.get("force", False))
+    flags = resolve_training_flags(event)
+    trigger_type = flags["trigger_type"]
+    allow_random_init = flags["allow_random_init"]
+    force_train = flags["force"]
     # force 는 MIN_SAMPLES 만 우회한다. 품질 게이트 우회는 별도 플래그.
-    skip_gate = bool(event.get("skip_gate", False))
-    from_base = bool(event.get("from_base", False))
-    include_processed = bool(event.get("include_processed", False))
+    skip_gate = flags["skip_gate"]
+    from_base = flags["from_base"]
+    include_processed = flags["include_processed"]
     source_model_key = get_source_model_key(from_base)
     timestamp = datetime.now(timezone.utc)
     date_str = timestamp.strftime("%Y%m%d")
@@ -1511,6 +1926,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     result = {
         "success": False,
         "new_version": new_version,
+        "trigger_type": trigger_type,
         "samples_trained": 0,
         "final_loss": None,
         "steps_completed": [],
@@ -1525,28 +1941,51 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
     try:
         # 1. 피드백 데이터 로드
         logger.info(
-            f"📥 Step 1: 피드백 데이터 로드 (include_processed={include_processed})"
+            f"📥 Step 1: 피드백 데이터 로드 (trigger={trigger_type}, "
+            f"include_processed={include_processed})"
         )
-        face, skin, style, gt, count, file_keys, analysis_ids = load_pending_feedbacks(
-            include_processed=include_processed
-        )
+        (
+            face,
+            skin,
+            style,
+            gt,
+            count,
+            file_keys,
+            analysis_ids,
+            sample_info,
+        ) = load_pending_feedbacks(include_processed=include_processed)
 
         if count == 0:
             result["message"] = "No pending feedbacks"
             return result
 
+        sample_info = complete_sample_info(sample_info, count, file_keys)
+        sample_weights = np.asarray(sample_info["sample_weights"], dtype=np.float32)
+        sources = sample_info["sources"]
+        signal_types = sample_info["signal_types"]
+
+        # 새로 들어온 샘플 수 = 중복 제거 후 pending/ 에서 온 샘플 수
+        new_pending_count = sum(
+            1 for k in sample_info["sample_keys"] if k.startswith(PENDING_PREFIX)
+        )
+        result["loaded_count"] = count
+        result["new_pending_count"] = new_pending_count
+
         # 메타데이터의 pending_count가 아니라 "실제로 로드된 샘플 수"로 검증한다.
         # (카운터가 드리프트해도 9개 파일로 학습이 시작되지 않도록)
-        # force=True 이벤트는 기존 동작대로 이 검사를 우회한다.
-        if not force_train and count < MIN_SAMPLES:
-            message = f"Insufficient data: {count}/{MIN_SAMPLES} loaded samples"
+        # 정기 실행은 processed 까지 읽으므로 "새 pending 샘플 수"로 판정한다.
+        # data_threshold / manual 은 기존과 동일하게 로드된 전체 샘플 수로 판정한다.
+        # force=True 이벤트는 이 검사를 우회한다.
+        min_check_count = new_pending_count if flags["scheduled"] else count
+        if not force_train and min_check_count < MIN_SAMPLES:
+            label = "new pending samples" if flags["scheduled"] else "loaded samples"
+            message = f"Insufficient data: {min_check_count}/{MIN_SAMPLES} {label}"
             logger.info(f"⏸️ {message}")
             result["message"] = message
-            result["loaded_count"] = count
+            result["min_samples"] = MIN_SAMPLES
             return result
 
         result["samples_trained"] = count
-        result["loaded_count"] = count
         result["steps_completed"].append("load_feedbacks")
 
         # 평가용 정답 라벨 정규화 (10~95 -> 0~1)
@@ -1566,12 +2005,22 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             f"(총 {count}건)"
         )
 
+        data_summary = {
+            **summarize_samples(sources, signal_types),
+            "duplicates_dropped": int(sample_info.get("duplicates_dropped", 0)),
+            "new_pending": new_pending_count,
+            "train": summarize_samples(sources, signal_types, train_idx),
+            "holdout": summarize_samples(sources, signal_types, holdout_idx),
+        }
+        result["data_summary"] = data_summary
+        logger.info(f"  샘플 구성: {data_summary}")
+
         if not train_idx:
             result["message"] = "No training samples after holdout split"
             return result
 
-        train_face, train_skin, train_style, train_gt = take_indices(
-            (face, skin, style, gt), train_idx
+        train_face, train_skin, train_style, train_gt, train_weights = take_indices(
+            (face, skin, style, gt, sample_weights), train_idx
         )
 
         if holdout_idx:
@@ -1585,7 +2034,10 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
 
         result["steps_completed"].append("holdout_split")
 
-        # 2. 시작점 모델 로드 (from_base=True 이면 models/base/model.pt)
+        # 2. 게이트 기준선 모델 (from_base 이면 현재 서빙 모델을 따로 로드)
+        baseline_model, baseline_model_key = load_baseline_model(from_base)
+
+        # 2.1. 시작점 모델 로드 (from_base=True 이면 models/base/model.pt)
         logger.info(f"📥 Step 2: 시작점 모델 로드 (key={source_model_key})")
         model, config = load_base_model(
             allow_random_init=allow_random_init, from_base=from_base
@@ -1601,14 +2053,17 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             result["message"] = message
             return result
 
+        if baseline_model is None:
+            baseline_model = model
+        result["baseline_model_key"] = baseline_model_key
         result["steps_completed"].append("load_model")
 
-        # 2.5. 학습 전 홀드아웃 평가 (현재 운영 모델의 기준선)
+        # 2.5. 학습 전 홀드아웃 평가 (현재 운영 모델의 기준선, 가중치 없음)
         before_metrics = None
         if holdout_idx:
-            logger.info("📊 Step 2.5: 학습 전 홀드아웃 평가")
+            logger.info(f"📊 Step 2.5: 기준선 홀드아웃 평가 (key={baseline_model_key})")
             before_metrics = evaluate_holdout(
-                model,
+                baseline_model,
                 hold_face,
                 hold_skin,
                 hold_style,
@@ -1618,15 +2073,20 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             result["before_metrics"] = before_metrics
             result["steps_completed"].append("evaluate_before")
 
-        # 3. Fine-tuning (학습 분할만 사용 - 홀드아웃 누수 방지)
+        # 3. Fine-tuning (학습 분할만 사용 - 홀드아웃 누수 방지, sample_weight 가중)
         logger.info("🏋️ Step 3: Fine-tuning")
         model, stats = fine_tune_model(
-            model, train_face, train_skin, train_style, train_gt
+            model,
+            train_face,
+            train_skin,
+            train_style,
+            train_gt,
+            sample_weights=train_weights,
         )
         result["final_loss"] = stats["final_loss"]
         result["steps_completed"].append("fine_tune")
 
-        # 3.5. 학습 후 홀드아웃 평가
+        # 3.5. 학습 후 홀드아웃 평가 (가중치 없음 - 기준선과 같은 방식)
         after_metrics = None
         if holdout_idx:
             logger.info("📊 Step 3.5: 학습 후 홀드아웃 평가")
@@ -1644,12 +2104,17 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # 4. 설정 업데이트
         config["version"] = new_version
         config["fine_tuned_at"] = timestamp.isoformat()
+        config["trigger_type"] = trigger_type
         config["samples_count"] = count
         config["train_samples"] = len(train_idx)
         config["holdout_samples"] = len(holdout_idx)
+        config["explicit_samples"] = data_summary["explicit"]
+        config["implicit_samples"] = data_summary["implicit"]
+        config["implicit_by_signal_type"] = data_summary["implicit_by_signal_type"]
         config["from_base"] = from_base
         config["include_processed"] = include_processed
         config["source_model_key"] = source_model_key
+        config["gate_baseline_model_key"] = baseline_model_key
         # BatchNorm running stats 는 fine-tuning 중 고정된다
         config["batchnorm_frozen"] = True
 
@@ -1661,6 +2126,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             holdout_size=len(holdout_idx),
             skip_gate=skip_gate,
         )
+        gate["baseline_model_key"] = baseline_model_key
         result["gate"] = gate
         result["steps_completed"].append("quality_gate")
 
@@ -1684,7 +2150,12 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             result["steps_completed"].append("update_metadata")
 
             save_evaluation_report(
-                before_metrics, after_metrics, stats, new_version, gate=gate
+                before_metrics,
+                after_metrics,
+                stats,
+                new_version,
+                gate=gate,
+                data_summary=data_summary,
             )
             result["steps_completed"].append("save_evaluation_report")
 
@@ -1703,6 +2174,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         result["steps_completed"].append("save_model")
 
         # 6. pending → processed 이동 (processed/ 에서 읽어온 파일은 그대로 둔다)
+        #    중복 제거로 학습에서 빠진 pending 파일도 함께 옮긴다.
         logger.info("📦 Step 6: 피드백 파일 이동")
         pending_keys = [k for k in file_keys if k.startswith(PENDING_PREFIX)]
         result["pending_files_moved"] = len(pending_keys)
@@ -1717,7 +2189,12 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # 8. 평가 리포트 저장
         logger.info("📊 Step 8: 평가 리포트 저장")
         save_evaluation_report(
-            before_metrics, after_metrics, stats, new_version, gate=gate
+            before_metrics,
+            after_metrics,
+            stats,
+            new_version,
+            gate=gate,
+            data_summary=data_summary,
         )
         result["steps_completed"].append("save_evaluation_report")
 
@@ -1744,8 +2221,10 @@ def lambda_handler(event, context):
             "trigger_type": "scheduled" | "data_threshold" | "manual",
             "force": false,             # true이면 MIN_SAMPLES 무시 (게이트는 유지)
             "skip_gate": false,         # true이면 품질 게이트 우회
-            "from_base": false,         # true이면 models/base/model.pt 에서 재학습
-            "include_processed": false, # true이면 feedback/processed/ 도 학습에 포함
+            "from_base": <trigger별>,   # true이면 models/base/model.pt 에서 재학습
+                                        #   (scheduled 기본 true, 그 외 기본 false)
+            "include_processed": <trigger별>,  # true이면 feedback/processed/ 도 학습에 포함
+                                        #   (scheduled 기본 true, 그 외 기본 false)
             "allow_random_init": false,
             "metadata": {...}
         }
@@ -1765,11 +2244,12 @@ def lambda_handler(event, context):
     logger.info(f"🚀 Trainer Lambda 시작")
     logger.info(f"Event: {json.dumps(event)}")
 
-    trigger_type = event.get("trigger_type", "unknown")
-    force_train = event.get("force", False)
-    skip_gate = bool(event.get("skip_gate", False))
-    from_base = bool(event.get("from_base", False))
-    include_processed = bool(event.get("include_processed", False))
+    flags = resolve_training_flags(event)
+    trigger_type = flags["trigger_type"]
+    force_train = flags["force"]
+    skip_gate = flags["skip_gate"]
+    from_base = flags["from_base"]
+    include_processed = flags["include_processed"]
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # Pending 피드백 수 확인
@@ -1779,7 +2259,10 @@ def lambda_handler(event, context):
     # 최소 샘플 수 1차 확인 (force가 아닐 때)
     # 주의: 여기서 쓰는 pending_count는 metadata.json 카운터이므로 드리프트할 수 있다.
     # 실제 게이트는 run_training_pipeline에서 "로드된 샘플 수"로 다시 검사한다.
-    if not force_train and pending_count < MIN_SAMPLES:
+    # 정기 실행은 이 카운터를 건너뛴다: 카운터는 같은 (analysis, 스타일) 반복 피드백을
+    # 중복으로 세고 암묵 샘플을 세지 않을 수 있으므로, 파이프라인이 실제 pending 을
+    # 로드·중복 제거한 수로 판정한다 (주 1회라 전체 로드 비용은 작다).
+    if not force_train and not flags["scheduled"] and pending_count < MIN_SAMPLES:
         message = f"Insufficient data: {pending_count}/{MIN_SAMPLES} samples"
         logger.info(f"⏸️ {message}")
 
@@ -1792,6 +2275,8 @@ def lambda_handler(event, context):
                     "trigger_type": trigger_type,
                     "pending_count": pending_count,
                     "min_samples": MIN_SAMPLES,
+                    "from_base": from_base,
+                    "include_processed": include_processed,
                     "timestamp": timestamp,
                 }
             ),
@@ -1800,55 +2285,43 @@ def lambda_handler(event, context):
     # 실제 학습 파이프라인 실행
     logger.info(
         f"🏋️ Training triggered with {pending_count} samples "
-        f"(force={force_train}, skip_gate={skip_gate}, from_base={from_base}, "
-        f"include_processed={include_processed})"
+        f"(trigger={trigger_type}, force={force_train}, skip_gate={skip_gate}, "
+        f"from_base={from_base}, include_processed={include_processed})"
     )
 
     try:
         training_result = run_training_pipeline(event)
+        success = bool(training_result["success"])
 
-        if training_result["success"]:
+        if success:
             logger.info(f"✅ 학습 완료: {training_result['new_version']}")
-            return {
-                "statusCode": 200,
-                "body": json.dumps(
-                    {
-                        "success": True,
-                        "message": "Training completed successfully",
-                        "trigger_type": trigger_type,
-                        "pending_count": pending_count,
-                        "from_base": from_base,
-                        "include_processed": include_processed,
-                        "skip_gate": skip_gate,
-                        "source_model_key": training_result.get("source_model_key"),
-                        "gate": training_result.get("gate"),
-                        "model_promoted": training_result.get("model_promoted"),
-                        "training_result": training_result,
-                        "timestamp": timestamp,
-                    }
-                ),
-            }
         else:
             logger.error(f"❌ 학습 실패: {training_result.get('message')}")
-            return {
-                "statusCode": 200,  # Lambda 자체는 성공, 학습만 실패
-                "body": json.dumps(
-                    {
-                        "success": False,
-                        "message": training_result.get("message", "Training failed"),
-                        "trigger_type": trigger_type,
-                        "pending_count": pending_count,
-                        "from_base": from_base,
-                        "include_processed": include_processed,
-                        "skip_gate": skip_gate,
-                        "source_model_key": training_result.get("source_model_key"),
-                        "gate": training_result.get("gate"),
-                        "model_promoted": training_result.get("model_promoted"),
-                        "training_result": training_result,
-                        "timestamp": timestamp,
-                    }
-                ),
-            }
+
+        return {
+            "statusCode": 200,  # 학습만 실패해도 Lambda 자체는 성공
+            "body": json.dumps(
+                {
+                    "success": success,
+                    "message": (
+                        "Training completed successfully"
+                        if success
+                        else training_result.get("message", "Training failed")
+                    ),
+                    "trigger_type": trigger_type,
+                    "pending_count": pending_count,
+                    "from_base": from_base,
+                    "include_processed": include_processed,
+                    "skip_gate": skip_gate,
+                    "source_model_key": training_result.get("source_model_key"),
+                    "gate": training_result.get("gate"),
+                    "model_promoted": training_result.get("model_promoted"),
+                    "training_result": training_result,
+                    "timestamp": timestamp,
+                },
+                default=str,
+            ),
+        }
 
     except Exception as e:
         logger.error(f"❌ Lambda 실행 중 예외 발생: {e}")

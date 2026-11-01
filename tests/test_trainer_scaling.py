@@ -181,7 +181,8 @@ def _fake_feedbacks(count: int):
     gt = np.array([90.0 if i % 2 == 0 else 10.0 for i in range(count)], np.float32)
     keys = [f"feedback/pending/f{i}.npz" for i in range(count)]
     analysis_ids = [f"analysis-{i}" for i in range(count)]
-    return face, skin, style, gt, count, keys, analysis_ids
+    # sample_info=None -> 가중치 1.0 / 명시 피드백 기본값
+    return face, skin, style, gt, count, keys, analysis_ids, None
 
 
 def _patched_pipeline(count, evaluate_spy):
