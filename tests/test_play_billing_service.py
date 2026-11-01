@@ -46,11 +46,28 @@ class TestVerifyProductPurchase:
 
         assert receipt["order_id"] == "GPA.1234-5678"
         assert receipt["acknowledgement_state"] == 0
+        # 계정 연결 이전 결제: 값 없음
+        assert receipt["obfuscated_account_id"] is None
         # 요청 URL에 패키지명/상품ID/토큰이 포함되는지 확인
         url = service._session.get.call_args.args[0]
         assert "com.hairme.app" in url
         assert "credits_10" in url
         assert "token-abc" in url
+
+    def test_obfuscated_account_id_is_returned(self, service):
+        service._session.get.return_value = _response(
+            200,
+            {
+                "purchaseState": 0,
+                "orderId": "GPA.1",
+                "acknowledgementState": 0,
+                "obfuscatedExternalAccountId": "a" * 64,
+            },
+        )
+
+        receipt = service.verify_product_purchase("credits_10", "token-abc")
+
+        assert receipt["obfuscated_account_id"] == "a" * 64
 
     def test_canceled_purchase_rejected(self, service):
         service._session.get.return_value = _response(200, {"purchaseState": 1})

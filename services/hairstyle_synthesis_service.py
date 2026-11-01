@@ -45,6 +45,18 @@ class HairstyleSynthesisService:
     MAX_IMAGE_SIZE = 1024  # API 전송 전 최대 해상도 (비용 절감)
 
     @staticmethod
+    def _generation_config(types, image_size: Optional[str]):
+        """이미지 생성 설정. image_size("512"/"1K")가 비면 모델 기본값(1K)"""
+        kwargs: Dict[str, Any] = {
+            # IMAGE 단독 요청이 TEXT 병행 대비 약 2.6초 빠르고,
+            # "텍스트만 반환 → 재시도" 실패 모드를 제거한다.
+            "response_modalities": ["IMAGE"],
+        }
+        if image_size:
+            kwargs["image_config"] = types.ImageConfig(image_size=image_size)
+        return types.GenerateContentConfig(**kwargs)
+
+    @staticmethod
     def _resize_image(image: Image.Image, max_size: int = 1024) -> Image.Image:
         """큰 이미지를 max_size 이하로 리사이즈 (비율 유지)"""
         w, h = image.size
@@ -61,6 +73,7 @@ class HairstyleSynthesisService:
         hairstyle_name: str,
         gender: str = "male",
         additional_instructions: Optional[str] = None,
+        image_size: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Synthesize a hairstyle on the user's photo
@@ -70,6 +83,7 @@ class HairstyleSynthesisService:
             hairstyle_name: Target hairstyle name (e.g., "투블럭컷", "레이어드컷")
             gender: User's gender ("male" or "female")
             additional_instructions: Extra styling instructions (optional)
+            image_size: 출력 해상도 ("512" 무료 / "1K" 유료, None 이면 모델 기본값)
 
         Returns:
             Dictionary with:
@@ -125,11 +139,7 @@ class HairstyleSynthesisService:
                     response = self.client.models.generate_content(
                         model=settings.GEMINI_IMAGE_MODEL,
                         contents=[prompt, original_image],
-                        config=types.GenerateContentConfig(
-                            # IMAGE 단독 요청이 TEXT 병행 대비 약 2.6초 빠르고,
-                            # "텍스트만 반환 → 재시도" 실패 모드를 제거한다.
-                            response_modalities=["IMAGE"],
-                        ),
+                        config=self._generation_config(types, image_size),
                     )
 
                     # Extract the generated image
@@ -246,7 +256,11 @@ class HairstyleSynthesisService:
             }
 
     def synthesize_with_reference(
-        self, user_image_data: bytes, reference_image_data: bytes, gender: str = "male"
+        self,
+        user_image_data: bytes,
+        reference_image_data: bytes,
+        gender: str = "male",
+        image_size: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Synthesize hairstyle using a reference image
@@ -255,6 +269,7 @@ class HairstyleSynthesisService:
             user_image_data: User's photo as bytes
             reference_image_data: Reference hairstyle image as bytes
             gender: User's gender
+            image_size: 출력 해상도 (synthesize_hairstyle 과 동일)
 
         Returns:
             Same as synthesize_hairstyle() (api_calls 포함)
@@ -293,10 +308,7 @@ class HairstyleSynthesisService:
                     response = self.client.models.generate_content(
                         model=settings.GEMINI_IMAGE_MODEL,
                         contents=[prompt, user_image, reference_image],
-                        config=types.GenerateContentConfig(
-                            # IMAGE 단독 요청 (지연시간 단축 + 텍스트 응답 실패 모드 제거)
-                            response_modalities=["IMAGE"],
-                        ),
+                        config=self._generation_config(types, image_size),
                     )
 
                     # Extract result

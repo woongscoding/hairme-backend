@@ -224,6 +224,7 @@ class HairColorService:
         color_name: str,
         color_hex: str,
         additional_instructions: Optional[str] = None,
+        image_size: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         가상 염색 시뮬레이션
@@ -233,6 +234,7 @@ class HairColorService:
             color_name: 염색 컬러명 (예: "밀크브라운")
             color_hex: HEX 코드 (예: "#C4A484")
             additional_instructions: 추가 요청사항
+            image_size: 출력 해상도 ("512" 무료 / "1K" 유료). None 이면 모델 기본값(1K)
 
         Returns:
             {
@@ -268,6 +270,14 @@ class HairColorService:
 
             logger.info(f"🎨 염색 시뮬레이션 시작: {color_name} ({color_hex})")
 
+            config_kwargs: Dict[str, Any] = {
+                # IMAGE 단독 요청 (지연시간 단축 + 텍스트 응답 실패 모드 제거)
+                "response_modalities": ["IMAGE"],
+            }
+            if image_size:
+                config_kwargs["image_config"] = types.ImageConfig(image_size=image_size)
+            generation_config = types.GenerateContentConfig(**config_kwargs)
+
             # Call Gemini API with retry
             MAX_RETRIES = 3
             RETRY_DELAY = 1.0
@@ -280,10 +290,7 @@ class HairColorService:
                     response = self.gemini_client.models.generate_content(
                         model=settings.GEMINI_IMAGE_MODEL,
                         contents=[prompt, original_image],
-                        config=types.GenerateContentConfig(
-                            # IMAGE 단독 요청 (지연시간 단축 + 텍스트 응답 실패 모드 제거)
-                            response_modalities=["IMAGE"],
-                        ),
+                        config=generation_config,
                     )
 
                     for part in response.candidates[0].content.parts:

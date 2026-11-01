@@ -73,6 +73,38 @@ class Settings(BaseSettings):
     SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
     SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
 
+    # ===== 합성 출력 등급 (무료 / 유료) =====
+    # 유료 = 구매한 크레딧(paid_credits)으로 차감된 합성. 그 밖(비로그인 무료 한도,
+    # 가입 보너스, 보상형 광고 크레딧, 관리자 지급)은 전부 무료 등급이다.
+    # 값은 Gemini ImageConfig.image_size 로 그대로 전달된다 ("512" | "1K" | "2K").
+    # 빈 문자열이면 파라미터를 넣지 않는다 (모델 기본값 1K).
+    FREE_IMAGE_SIZE: str = "512"
+    PAID_IMAGE_SIZE: str = "1K"
+    # 무료 등급 결과 우하단에 워터마크를 넣는다. 공유 이미지에 앱 이름이 남는 효과도 있다.
+    FREE_RESULT_WATERMARK: bool = True
+    RESULT_WATERMARK_TEXT: str = "HairMe"
+
+    # ===== 무료 정책 실험 (수익화 v2.1 Phase 1) =====
+    # 실험군(신규 기기의 TREATMENT_PERCENT%): 비회원 평생 N회 + 가입 보너스 축소
+    #   + 보상형 광고는 크레딧 대신 원가 0원 기능 해제.
+    # 대조군: 기존 정책 그대로 (비회원 매일 DAILY_SYNTHESIS_LIMIT 회, 가입 보너스 5회).
+    #
+    # 기기 코호트는 처음 본 순간 한 번만 정해지고 바뀌지 않는다
+    # (services/free_policy_service.py). START 이전에 처음 본 기기와 START 가
+    # 비어 있을 때 본 기기는 "grandfathered" 로 대조군에 고정된다.
+    # 따라서 실험 전에 이 코드를 먼저 배포해 두면 기존 사용자가 미리 등록된다.
+    #
+    # 원복: ENABLED=False 로 내리면 기록된 코호트와 무관하게 전원 대조군 정책으로 돌아간다.
+    FREE_POLICY_EXPERIMENT_ENABLED: bool = False
+    FREE_POLICY_EXPERIMENT_START: str = ""  # ISO8601 (예: 2026-11-20T00:00:00+09:00)
+    FREE_POLICY_TREATMENT_PERCENT: int = 50
+    FREE_POLICY_SALT: str = "free-policy-2026-11"
+    TREATMENT_GUEST_LIFETIME_LIMIT: int = 1
+    TREATMENT_SIGNUP_BONUS_CREDITS: int = 3
+    # analyze-hybrid data.full_ranking 길이 (보상형 광고 해제 기능 "전체 스타일 랭킹").
+    # 0 이면 랭킹을 계산하지 않는다 (빈 배열).
+    FULL_RANKING_LIMIT: int = 80
+
     # ===== 사진 저장 (S3) =====
     PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화
     PHOTO_URL_EXPIRE_SECONDS: int = 86400  # presigned URL 유효기간 (24시간)
@@ -85,11 +117,15 @@ class Settings(BaseSettings):
         ""  # 서비스 계정 키 JSON (프로덕션: Secrets Manager hairme-play-service-account)
     )
     # 스토어 상품 ID → 지급 크레딧 매핑 (환경변수로 덮어쓸 땐 JSON 문자열)
+    # credits_100 은 공헌이익이 거의 남지 않아 판매하지 않는다 (수익화 v2.1).
+    # starter_5 는 계정당 1회 (api/endpoints/credits.py ONE_PER_ACCOUNT_PRODUCTS).
     CREDIT_PRODUCTS: Dict[str, int] = {
+        "starter_5": 5,
         "credits_10": 10,
         "credits_30": 30,
-        "credits_100": 100,
     }
+    # credits_30 노출 A/B: 이 비율(%)의 회원에게 "추천" 배지를 붙인다 (나머지는 보조 노출)
+    PAYWALL_RECOMMENDED_BADGE_PERCENT: int = 50
 
     # ===== Google Play 환불/취소 회수 (voidedpurchases 폴링) =====
     PLAY_VOID_RECLAIM_ENABLED: bool = (
@@ -107,6 +143,10 @@ class Settings(BaseSettings):
     # 광고 수익을 늘리는 수단이 아니라, 크레딧이 소진된 회원을 앱에 남기는
     # 밸브로만 쓴다.
     REWARD_AD_DAILY_LIMIT: int = 3
+    # True: 보상 1회 = 합성 크레딧 1개 (대조군). False: 크레딧 대신 원가 0원 기능
+    # (퍼스널컬러 상세·전체 랭킹)을 당일 자정까지 해제. 실험군은 이 값과 무관하게
+    # 항상 기능 해제다. 무료 정책 실험이 끝나면 False 로 내려 전체를 전환한다.
+    REWARD_AD_GRANTS_CREDIT: bool = True
     # 우리 앱의 AdMob 리워드 광고 단위 ID 허용목록 (쉼표 구분).
     # SSV 검증 키는 전 퍼블리셔 공용이므로, 비어 있으면 프로덕션에서 콜백을 거부한다.
     ADMOB_REWARD_AD_UNIT_IDS: str = ""

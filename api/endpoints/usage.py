@@ -4,6 +4,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from config.settings import settings
 from core.logging import logger
+from services.free_policy_service import (
+    ARM_TREATMENT,
+    effective_arm,
+    resolve_device_arm,
+    signup_bonus_for,
+)
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
@@ -33,7 +39,14 @@ async def get_usage(
         device_id: 디바이스 고유 식별자
 
     Returns:
-        { "daily_limit": 3, "used": 2, "remaining": 1 }
+        대조군: { "policy": "control", "experiment_arm": "control",
+                  "free_policy": "daily", "signup_bonus": 5,
+                  "daily_limit": 3, "used": 2, "remaining": 1 }
+        실험군: { "policy": "treatment", "experiment_arm": "treatment",
+                  "free_policy": "lifetime", "signup_bonus": 3,
+                  "lifetime_limit": 1, "used": 0, "remaining": 1 }
+
+        experiment_arm 은 policy 와 같은 값이다 (앱 계약 이름, policy 는 하위 호환).
     """
     _reject_if_legacy_flow_disabled()
 
@@ -44,8 +57,25 @@ async def get_usage(
 
     try:
         service = get_usage_limit_service()
+        # 앱 첫 실행 때 호출되므로 코호트 등록 시점으로도 쓴다
+        policy = effective_arm(resolve_device_arm(service, validated_device_id))
+        arm_fields = {
+            "policy": policy,
+            "experiment_arm": policy,
+            "signup_bonus": signup_bonus_for(policy),
+        }
+        if policy == ARM_TREATMENT:
+            limit = settings.TREATMENT_GUEST_LIFETIME_LIMIT
+            used = service.get_lifetime_count(f"lifetime#{validated_device_id}")
+            return {
+                **arm_fields,
+                "free_policy": "lifetime",
+                "lifetime_limit": limit,
+                "used": used,
+                "remaining": max(0, limit - used),
+            }
         usage = service.get_usage(validated_device_id)
-        return usage
+        return {**arm_fields, "free_policy": "daily", **usage}
 
     except Exception as e:
         logger.error(f"Usage query failed: {str(e)}")

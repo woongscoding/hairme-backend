@@ -163,6 +163,14 @@ jobs:
           KAKAO_APP_ID: ${{ vars.KAKAO_APP_ID }}
           PLAY_PACKAGE_NAME: ${{ vars.PLAY_PACKAGE_NAME }}
           ADMOB_REWARD_AD_UNIT_IDS: ${{ vars.ADMOB_REWARD_AD_UNIT_IDS }}
+          # 수익화 v2.1 운영 값 (GitHub vars 미설정이면 Lambda 기존 값 유지)
+          DAILY_SYNTHESIS_BUDGET: ${{ vars.DAILY_SYNTHESIS_BUDGET }}
+          FREE_POLICY_EXPERIMENT_ENABLED: ${{ vars.FREE_POLICY_EXPERIMENT_ENABLED }}
+          FREE_POLICY_EXPERIMENT_START: ${{ vars.FREE_POLICY_EXPERIMENT_START }}
+          REWARD_AD_GRANTS_CREDIT: ${{ vars.REWARD_AD_GRANTS_CREDIT }}
+          # 코호트 해시 솔트 - 코드의 기본값은 공개 저장소에서 보이므로 시크릿으로 덮어쓴다.
+          # 이미 배정된 기기는 그대로이고 새 기기부터 바뀐 솔트로 나뉜다 (실험 시작 전에 설정할 것).
+          FREE_POLICY_SALT: ${{ secrets.FREE_POLICY_SALT }}
         run: |
           echo "Updating Lambda function: $LAMBDA_FUNCTION_NAME"
           echo "New image: $IMAGE_URI"
@@ -202,6 +210,10 @@ jobs:
             --arg kakao_app_id "$KAKAO_APP_ID" \
             --arg play_package_name "$PLAY_PACKAGE_NAME" \
             --arg admob_reward_ad_unit_ids "$ADMOB_REWARD_AD_UNIT_IDS" \
+            --arg daily_synthesis_budget "$DAILY_SYNTHESIS_BUDGET" \
+            --arg free_policy_experiment_enabled "$FREE_POLICY_EXPERIMENT_ENABLED" \
+            --arg free_policy_experiment_start "$FREE_POLICY_EXPERIMENT_START" \
+            --arg reward_ad_grants_credit "$REWARD_AD_GRANTS_CREDIT"             --arg free_policy_salt "$FREE_POLICY_SALT" \
             '{
                USE_DYNAMODB: "true",
                DYNAMODB_TABLE_NAME: "hairme-analysis",
@@ -216,6 +228,11 @@ jobs:
                KAKAO_APP_ID: $kakao_app_id,
                PLAY_PACKAGE_NAME: $play_package_name,
                ADMOB_REWARD_AD_UNIT_IDS: $admob_reward_ad_unit_ids,
+               DAILY_SYNTHESIS_BUDGET: $daily_synthesis_budget,
+               FREE_POLICY_EXPERIMENT_ENABLED: $free_policy_experiment_enabled,
+               FREE_POLICY_EXPERIMENT_START: $free_policy_experiment_start,
+               REWARD_AD_GRANTS_CREDIT: $reward_ad_grants_credit,
+               FREE_POLICY_SALT: $free_policy_salt,
                SENTRY_DSN: $sentry_dsn
              } | with_entries(select(.value != ""))')
 

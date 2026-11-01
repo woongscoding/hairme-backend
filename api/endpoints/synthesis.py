@@ -3,8 +3,14 @@
 과금 정책:
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
 - 비로그인 (레거시): device_id 기반 일일 무료 제한 (구버전 앱 호환용, 단계적 폐기 예정)
-- 캐시 히트 (같은 사진 + 같은 스타일): 과금 없이 즉시 반환 (Gemini 재호출 방지)
+- 캐시 히트 (같은 사진 + 같은 스타일 + 같은 등급): 과금 없이 즉시 반환 (Gemini 재호출 방지)
   회원이면 과금 없이도 결과는 마이페이지에 저장한다
+
+출력 등급 (수익화 v2.1):
+- 유료(구매 크레딧으로 차감): settings.PAID_IMAGE_SIZE(1K), 워터마크 없음
+- 무료(그 밖 전부): settings.FREE_IMAGE_SIZE(512) + 워터마크
+- 캐시 키에 등급이 들어가므로 무료 결과가 유료 요청에 재사용되지 않는다
+  ("이 스타일 고화질로 보기" = 같은 사진·스타일을 유료 등급으로 다시 합성)
 
 보안:
 - 업로드는 확장자 + 매직 바이트 + Pillow 디코딩까지 검증 (core/upload_validation)
@@ -54,12 +60,20 @@ from core.upload_validation import (
     validate_file_extension,
     validate_image_upload,
 )
+from config.settings import settings
 from database.user_repository import get_user_repository
-from services.credit_service import get_credit_service
+from services.credit_service import TIER_FREE, TIER_PAID, get_credit_service
 from services.hairstyle_synthesis_service import get_synthesis_service
 from services.photo_storage_service import get_photo_storage_service
 from services.product_recommendation_service import (
     get_product_recommendation_service,
+)
+from services.result_quality import (
+    charged_tier,
+    finalize_image,
+    image_size_for,
+    is_preview,
+    result_quality,
 )
 from services.usage_limit_service import get_usage_limit_service
 
@@ -90,6 +104,22 @@ def _charge_quota(
         credit_service_factory=get_credit_service,
         usage_service_factory=get_usage_limit_service,
     )
+
+
+def _expected_tier(user_id: Optional[str]) -> str:
+    """과금 전에 예상하는 출력 등급 (캐시 조회용).
+
+    실제 등급은 차감 결과(quota["tier"])로 확정된다. 조회가 실패하면 무료로 본다.
+    """
+    if not user_id:
+        return TIER_FREE
+    try:
+        wallet = get_credit_service().get_wallet(user_id)
+        if wallet["paid_balance"] >= settings.SYNTHESIS_CREDIT_COST:
+            return TIER_PAID
+    except Exception as e:
+        logger.warning(f"출력 등급 조회 실패 (무료로 처리): {str(e)}")
+    return TIER_FREE
 
 
 def _safe_product_recommendations(
@@ -281,17 +311,20 @@ async def synthesize_hairstyle(
 
         # ===== 2. 캐시 확인 (과금 전에 - 히트 시 무료) =====
         storage = get_photo_storage_service()
-        cache_key = storage.build_cache_key(
+        cache_parts = (
             image_data,
             hairstyle_name.encode("utf-8"),
             gender.encode("utf-8"),
             (additional_instructions or "").encode("utf-8"),
         )
+        tier = _expected_tier(user_id)
+        cache_key = storage.build_cache_key(*cache_parts, f"tier:{tier}".encode())
         log_structured(
             "synthesis_start",
             {
                 "endpoint": "synthesize",
                 "mode": _charge_mode(user_id),
+                "tier": tier,
                 "cache_key": cache_key[:16],
                 "hairstyle_name": hairstyle_name,
                 "gender": gender,
@@ -335,6 +368,10 @@ async def synthesize_hairstyle(
                 "cached": True,
                 "result_url": cached_result_url,
                 "quota": None,
+                "quality": result_quality(tier),
+                "is_preview": is_preview(tier),
+                # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
+                "result_id": cache_key[:16],
                 "recommended_products": _safe_product_recommendations(
                     hairstyle_name, gender
                 ),
@@ -405,6 +442,11 @@ async def synthesize_hairstyle(
             )
             return quota_error
 
+        # 실제 등급은 차감 결과로 확정 (조회 후 유료분이 다른 요청에 먼저 쓰였을 수 있다)
+        if charged_tier(quota) != tier:
+            tier = charged_tier(quota)
+            cache_key = storage.build_cache_key(*cache_parts, f"tier:{tier}".encode())
+
         # ===== 6. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
@@ -413,6 +455,7 @@ async def synthesize_hairstyle(
                 hairstyle_name=hairstyle_name,
                 gender=gender,
                 additional_instructions=additional_instructions,
+                image_size=image_size_for(tier),
             )
 
             processing_time = round(time.time() - start_time, 2)
@@ -450,13 +493,16 @@ async def synthesize_hairstyle(
                     },
                 )
 
+            # 무료 등급은 워터마크 (캐시·마이페이지에도 워터마크본이 남는다)
+            image_base64, image_format = finalize_image(result, tier)
+
             # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 image_data,
                 cache_key,
-                result["image_base64"],
-                result["image_format"],
+                image_base64,
+                image_format,
                 hairstyle_name,
             )
         except Exception:
@@ -470,6 +516,8 @@ async def synthesize_hairstyle(
             {
                 "endpoint": "synthesize",
                 "mode": _charge_mode(user_id, quota),
+                "tier": tier,
+                "policy": (quota or {}).get("policy"),
                 "cache_key": cache_key[:16],
                 "hairstyle_name": hairstyle_name,
                 "gender": gender,
@@ -481,13 +529,17 @@ async def synthesize_hairstyle(
         )
         return {
             "success": True,
-            "image_base64": result["image_base64"],
-            "image_format": result["image_format"],
+            "image_base64": image_base64,
+            "image_format": image_format,
             "message": result["message"],
             "processing_time": processing_time,
             "cached": False,
             "result_url": result_url,
             "quota": quota,
+            "quality": result_quality(tier),
+            "is_preview": is_preview(tier),
+            # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
+            "result_id": cache_key[:16],
             "recommended_products": _safe_product_recommendations(
                 hairstyle_name, gender
             ),
@@ -571,17 +623,20 @@ async def synthesize_with_reference(
 
         # ===== 2. 캐시 확인 (과금 전에 - 히트 시 무료) =====
         storage = get_photo_storage_service()
-        cache_key = storage.build_cache_key(
+        cache_parts = (
             user_image_data,
             reference_image_data,
             gender.encode("utf-8"),
             b"reference",
         )
+        tier = _expected_tier(user_id)
+        cache_key = storage.build_cache_key(*cache_parts, f"tier:{tier}".encode())
         log_structured(
             "synthesis_start",
             {
                 "endpoint": "synthesize-with-reference",
                 "mode": _charge_mode(user_id),
+                "tier": tier,
                 "cache_key": cache_key[:16],
                 "gender": gender,
                 "file_size_kb": round(len(user_image_data) / 1024, 2),
@@ -623,6 +678,10 @@ async def synthesize_with_reference(
                 "cached": True,
                 "result_url": cached_result_url,
                 "quota": None,
+                "quality": result_quality(tier),
+                "is_preview": is_preview(tier),
+                # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
+                "result_id": cache_key[:16],
                 "recommended_products": _safe_product_recommendations(None, gender),
                 "disclosure": _safe_disclosure(),
             }
@@ -693,6 +752,11 @@ async def synthesize_with_reference(
             )
             return quota_error
 
+        # 실제 등급은 차감 결과로 확정 (조회 후 유료분이 다른 요청에 먼저 쓰였을 수 있다)
+        if charged_tier(quota) != tier:
+            tier = charged_tier(quota)
+            cache_key = storage.build_cache_key(*cache_parts, f"tier:{tier}".encode())
+
         # ===== 6. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
         try:
             service = get_synthesis_service()
@@ -700,6 +764,7 @@ async def synthesize_with_reference(
                 user_image_data=user_image_data,
                 reference_image_data=reference_image_data,
                 gender=gender,
+                image_size=image_size_for(tier),
             )
 
             processing_time = round(time.time() - start_time, 2)
@@ -737,13 +802,15 @@ async def synthesize_with_reference(
                     },
                 )
 
+            image_base64, image_format = finalize_image(result, tier)
+
             # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
             result_url = _store_result(
                 user_id,
                 user_image_data,
                 cache_key,
-                result["image_base64"],
-                result["image_format"],
+                image_base64,
+                image_format,
                 hairstyle_name=None,
             )
         except Exception:
@@ -757,6 +824,8 @@ async def synthesize_with_reference(
             {
                 "endpoint": "synthesize-with-reference",
                 "mode": _charge_mode(user_id, quota),
+                "tier": tier,
+                "policy": (quota or {}).get("policy"),
                 "cache_key": cache_key[:16],
                 "gender": gender,
                 "api_calls": api_calls,
@@ -767,13 +836,17 @@ async def synthesize_with_reference(
         )
         return {
             "success": True,
-            "image_base64": result["image_base64"],
-            "image_format": result["image_format"],
+            "image_base64": image_base64,
+            "image_format": image_format,
             "message": result["message"],
             "processing_time": processing_time,
             "cached": False,
             "result_url": result_url,
             "quota": quota,
+            "quality": result_quality(tier),
+            "is_preview": is_preview(tier),
+            # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
+            "result_id": cache_key[:16],
             "recommended_products": _safe_product_recommendations(None, gender),
             "disclosure": _safe_disclosure(),
         }

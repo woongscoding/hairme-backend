@@ -96,7 +96,7 @@ class TestKillSwitchDisabled:
 
     def test_logged_in_user_unaffected(self, usage_service):
         credit_service = MagicMock()
-        credit_service.consume.return_value = 9
+        credit_service.consume_for_synthesis.return_value = (9, "free")
 
         error, quota, _refund = charge_synthesis_quota(
             "user-1",
@@ -108,7 +108,7 @@ class TestKillSwitchDisabled:
         )
 
         assert error is None
-        assert quota == {"mode": "credits", "balance": 9}
+        assert quota == {"mode": "credits", "balance": 9, "tier": "free"}
 
     def test_usage_endpoint_returns_410(self, client):
         response = client.get("/api/usage", params={"device_id": DEVICE_ID})
@@ -154,7 +154,7 @@ class TestKillSwitchEnabled:
 
     def test_logged_in_charge_does_not_log_legacy_event(self, usage_service):
         credit_service = MagicMock()
-        credit_service.consume.return_value = 4
+        credit_service.consume_for_synthesis.return_value = (4, "free")
 
         with patch("core.quota.log_structured") as mock_log:
             charge_synthesis_quota(

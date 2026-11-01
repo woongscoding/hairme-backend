@@ -164,7 +164,9 @@ class TestReclaim:
 
         # 잔액 차감에 잔액 조건이 없어야 함 (음수 허용)
         update_kwargs = credits._users_table.update_item.call_args.kwargs
-        assert "credits >=" not in update_kwargs["ConditionExpression"]
+        assert (
+            " credits >=" not in update_kwargs["ConditionExpression"]
+        )  # 총잔액 조건 없음 (paid_credits 조건만)
         assert update_kwargs["ExpressionAttributeValues"][":amt"] == 10
 
         # 회수 멱등 마커

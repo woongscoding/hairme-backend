@@ -60,6 +60,20 @@ def block_real_aws_calls(request):
     if request.node.get_closest_marker("aws"):
         yield
         return
+    if request.node.get_closest_marker("moto"):
+        # moto 는 botocore 의 HTTP 전송 단계에서 가로채므로 _make_api_call 을 막으면
+        # 안 된다. 대신 가짜 자격증명을 강제해 mock_aws 밖으로 새는 호출은 인증에서 실패시킨다.
+        with patch.dict(
+            os.environ,
+            {
+                "AWS_ACCESS_KEY_ID": "testing",
+                "AWS_SECRET_ACCESS_KEY": "testing",
+                "AWS_SESSION_TOKEN": "testing",
+                "AWS_DEFAULT_REGION": "ap-northeast-2",
+            },
+        ):
+            yield
+        return
 
     try:
         import botocore.client

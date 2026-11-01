@@ -2,7 +2,7 @@
 
 import sys
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, call
 import numpy as np
 from PIL import Image
 import io
@@ -293,7 +293,9 @@ class TestHybridRecommender:
 
         assert "recommendations" in result
         # ML recommender should have been called with features
-        service.ml_recommender.recommend_top_k.assert_called_once_with(
+        # (첫 호출이 Top-3, 두 번째는 full_ranking 용 - test_monetization_v21 참고)
+        top3_call = service.ml_recommender.recommend_top_k.call_args_list[0]
+        assert top3_call == call(
             face_shape="계란형",
             skin_tone="봄웜",
             k=3,

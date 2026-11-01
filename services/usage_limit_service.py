@@ -324,6 +324,101 @@ class UsageLimitService:
         except Exception as e:
             logger.error(f"⚠️ 일일 카운터 복구 실패 (무시): key={key}, {str(e)}")
 
+    # ===== 만료 없는 아이템 (무료 정책 실험) =====
+    # 일일 카운터와 같은 테이블을 쓰되 정렬 키에 날짜 대신 고정 값을 넣고
+    # expire_at 을 두지 않는다. 파티션 키는 "lifetime#<device_id>" 처럼
+    # '#' 네임스페이스라 클라이언트 device_id('#' 금지)와 겹치지 않는다.
+    LIFETIME_SORT_KEY = "lifetime"
+    COHORT_SORT_KEY = "cohort"
+
+    def increment_lifetime_counter(self, key: str, limit: int) -> Optional[int]:
+        """평생 카운터 조건부 원자 증가 (만료 없음)
+
+        Returns:
+            증가 후 값 (상한 미달), None (상한 도달 - 증가하지 않음)
+        """
+        try:
+            response = self.table.update_item(
+                Key={"device_id": key, "date": self.LIFETIME_SORT_KEY},
+                UpdateExpression="SET #cnt = if_not_exists(#cnt, :zero) + :inc",
+                ConditionExpression="attribute_not_exists(#cnt) OR #cnt < :limit",
+                ExpressionAttributeNames={"#cnt": "count"},
+                ExpressionAttributeValues={":zero": 0, ":inc": 1, ":limit": limit},
+                ReturnValues="UPDATED_NEW",
+            )
+            return int(response["Attributes"]["count"])
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                logger.info(f"평생 카운터 상한 도달: key={key}")
+                return None
+            logger.error(
+                f"DynamoDB 평생 카운터 업데이트 실패: {e.response['Error']['Message']}"
+            )
+            raise
+
+    def decrement_lifetime_counter(self, key: str) -> None:
+        """평생 카운터 되돌리기 (best effort, decrement_daily_counter 와 같은 정책)"""
+        try:
+            self.table.update_item(
+                Key={"device_id": key, "date": self.LIFETIME_SORT_KEY},
+                UpdateExpression="SET #cnt = #cnt - :dec",
+                ConditionExpression="attribute_exists(#cnt) AND #cnt > :zero",
+                ExpressionAttributeNames={"#cnt": "count"},
+                ExpressionAttributeValues={":dec": 1, ":zero": 0},
+            )
+            logger.info(f"평생 카운터 복구: key={key}")
+        except Exception as e:
+            logger.error(f"⚠️ 평생 카운터 복구 실패 (무시): key={key}, {str(e)}")
+
+    def get_lifetime_count(self, key: str) -> int:
+        response = self.table.get_item(
+            Key={"device_id": key, "date": self.LIFETIME_SORT_KEY}
+        )
+        return int(response.get("Item", {}).get("count", 0))
+
+    def register_cohort(
+        self, key: str, arm_if_new: str, now_iso: str
+    ) -> Dict[str, Any]:
+        """코호트 최초 등록 (이미 있으면 기존 값 유지) 후 저장된 값 반환
+
+        if_not_exists 로 한 번의 원자적 업데이트에서 "처음이면 기록, 아니면 유지"를 한다.
+
+        Returns:
+            {"arm": str, "first_seen": str}  (first_seen == now_iso 면 이번이 첫 등록)
+        """
+        response = self.table.update_item(
+            Key={"device_id": key, "date": self.COHORT_SORT_KEY},
+            UpdateExpression=(
+                "SET arm = if_not_exists(arm, :arm), "
+                "first_seen = if_not_exists(first_seen, :now)"
+            ),
+            ExpressionAttributeValues={":arm": arm_if_new, ":now": now_iso},
+            ReturnValues="ALL_NEW",
+        )
+        attributes = response["Attributes"]
+        return {"arm": str(attributes["arm"]), "first_seen": attributes["first_seen"]}
+
+    def set_daily_flag(self, key: str) -> int:
+        """오늘(KST) 자정까지 유효한 플래그 기록. 만료 epoch 초 반환"""
+        expire_at = self._tomorrow_kst_epoch()
+        self.table.update_item(
+            Key={"device_id": key, "date": self._today_kst()},
+            UpdateExpression="SET #cnt = :one, #ttl = :ttl",
+            ExpressionAttributeNames={"#cnt": "count", "#ttl": "expire_at"},
+            ExpressionAttributeValues={":one": 1, ":ttl": expire_at},
+        )
+        return expire_at
+
+    def get_daily_flag(self, key: str) -> Optional[int]:
+        """오늘 플래그가 있으면 만료 epoch 초, 없으면 None"""
+        response = self.table.get_item(
+            Key={"device_id": key, "date": self._today_kst()}
+        )
+        item = response.get("Item")
+        if not item:
+            return None
+        return int(item.get("expire_at", self._tomorrow_kst_epoch()))
+
     def decrement_usage(self, device_id: str) -> None:
         """
         디바이스 일일 사용량 되돌리기 (best effort)

@@ -15,8 +15,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from config.settings import settings
-from core.logging import logger
+from core.logging import log_structured, logger, mask_user_id
 from core.jwt_auth import (
     TOKEN_TYPE_REFRESH,
     create_access_token,
@@ -32,7 +31,9 @@ from database.user_repository import (
     get_user_repository,
 )
 from services.credit_service import get_credit_service
+from services.free_policy_service import resolve_device_arm, signup_bonus_for
 from services.kakao_auth_service import get_kakao_auth_service
+from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -44,6 +45,10 @@ limiter = Limiter(key_func=get_remote_address)
 class KakaoLoginRequest(BaseModel):
     kakao_access_token: str = Field(
         ..., min_length=1, description="카카오 SDK 액세스 토큰"
+    )
+    device_id: Optional[str] = Field(
+        None,
+        description="비로그인 때 쓰던 디바이스 ID (무료 정책 실험 코호트를 계정에 이어 붙인다)",
     )
 
 
@@ -98,15 +103,31 @@ def _issue_tokens(user_id: str, token_version: int) -> dict:
 
 
 def _public_user(user: dict) -> dict:
-    """응답용 사용자 정보 (내부 필드 제외)"""
+    """응답용 사용자 정보 (내부 필드 제외)
+
+    ad_free: 한 번이라도 결제한 회원은 광고를 보여주지 않는다 (수익화 v2.1).
+    """
     return {
         "user_id": user["user_id"],
         "nickname": user.get("nickname"),
         "email": user.get("email"),
         "credits": int(user.get("credits", 0)),
+        "paid_credits": int(user.get("paid_credits", 0)),
+        "ad_free": bool(user.get("first_purchase_at")),
         "training_consent": bool(user.get("training_consent", False)),
         "created_at": user.get("created_at"),
     }
+
+
+def _signup_arm(device_id: Optional[str]) -> Optional[str]:
+    """가입 기기의 무료 정책 코호트. device_id 가 없거나(구버전 앱) 형식이 틀리면 None"""
+    if not device_id:
+        return None
+    try:
+        validated = validate_device_id(device_id)
+    except ValueError:
+        return None
+    return resolve_device_arm(get_usage_limit_service(), validated)
 
 
 # ========== Endpoints ==========
@@ -137,13 +158,16 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
         user = user_repo.get_by_kakao_id(profile["kakao_id"])
 
         is_new_user = user is None
+        arm: Optional[str] = None
         if is_new_user:
+            arm = _signup_arm(body.device_id)
             try:
                 user = user_repo.create(
                     kakao_id=profile["kakao_id"],
                     nickname=profile["nickname"],
                     email=profile.get("email"),
                     initial_credits=0,
+                    free_policy_arm=arm,
                 )
             except UserAlreadyExistsError:
                 # 동시 요청이 먼저 가입시킴 - 기존 로그인으로 전환 (보너스 없음)
@@ -168,13 +192,19 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
             )
 
         if is_new_user:
-            if settings.SIGNUP_BONUS_CREDITS > 0:
+            # 실험군 기기로 가입하면 보너스가 줄어든다 (free_policy_service 참고)
+            bonus = signup_bonus_for(arm)
+            if bonus > 0:
                 balance = get_credit_service().grant(
                     user["user_id"],
-                    settings.SIGNUP_BONUS_CREDITS,
+                    bonus,
                     reason="signup_bonus",
                 )
                 user["credits"] = balance
+            log_structured(
+                "signup",
+                {"user_id": mask_user_id(user["user_id"]), "arm": arm, "bonus": bonus},
+            )
         else:
             user_repo.update_last_login(user["user_id"])
 

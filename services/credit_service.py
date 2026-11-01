@@ -1,6 +1,9 @@
 """크레딧 서비스 (DynamoDB 기반)
 
 - 잔액: hairme-users 테이블의 credits 속성 (조건부 원자적 업데이트로 차감)
+  - paid_credits: credits 중 구매로 받은 몫 (항상 paid_credits <= credits).
+    합성은 유료분을 먼저 쓰고, 유료분으로 차감된 합성만 유료 등급(1K·워터마크 없음)이다.
+    속성이 없는 기존 회원은 유료분 0 으로 취급한다.
 - 원장: hairme-credit-ledger 테이블에 모든 증감 내역 기록 (감사/CS용)
   - Partition Key: user_id
   - Sort Key: sk (ISO8601 타임스탬프 + 트랜잭션 ID, 시간순 정렬)
@@ -10,7 +13,7 @@ import hashlib
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 try:
     import boto3
@@ -39,6 +42,13 @@ def _mask_ref(ref_key: str) -> str:
     return f"{prefix}#{digest}" if prefix else digest
 
 
+TIER_FREE = "free"
+TIER_PAID = "paid"
+
+# consume_for_synthesis 의 유료→무료 전환 재시도 횟수 (동시 구매/차감 경합 대비)
+_CONSUME_ATTEMPTS = 3
+
+
 class InsufficientCreditsError(Exception):
     """크레딧 잔액 부족"""
 
@@ -50,8 +60,9 @@ class InsufficientCreditsError(Exception):
 class CreditService:
     """크레딧 차감/지급/조회"""
 
-    # 원장 reason 값: signup_bonus | synthesis | refund | purchase | admin_grant
-    #               | reward_ad | void_reclaim
+    # 원장 reason 값: signup_bonus | synthesis | synthesis_paid | refund | purchase
+    #               | admin_grant | reward_ad | void_reclaim
+    # (synthesis_paid = 유료분에서 차감된 합성, refund 는 차감된 쪽으로 되돌린다)
     def __init__(self):
         self._users_table = None
         self._ledger_table = None
@@ -97,6 +108,120 @@ class CreditService:
         if item is None:
             raise ValueError("존재하지 않는 사용자입니다")
         return int(item.get("credits", 0))
+
+    def get_wallet(self, user_id: str) -> Dict[str, Any]:
+        """잔액 + 유료분 + 첫 구매 시각 조회
+
+        Returns:
+            {"balance": int, "paid_balance": int, "first_purchase_at": str | None}
+        """
+        try:
+            response = self.users_table.get_item(
+                Key={"user_id": user_id},
+                ProjectionExpression="credits, paid_credits, first_purchase_at",
+            )
+        except ClientError as e:
+            logger.error(f"잔액 조회 실패: {e.response['Error']['Message']}")
+            raise
+
+        item = response.get("Item")
+        if item is None:
+            raise ValueError("존재하지 않는 사용자입니다")
+        return {
+            "balance": int(item.get("credits", 0)),
+            "paid_balance": int(item.get("paid_credits", 0)),
+            "first_purchase_at": item.get("first_purchase_at"),
+        }
+
+    def consume_for_synthesis(
+        self,
+        user_id: str,
+        amount: int,
+        ref_id: Optional[str] = None,
+    ) -> Tuple[int, str]:
+        """
+        합성 1회분 차감. 유료분(paid_credits)이 있으면 유료분에서, 없으면 무료분에서.
+
+        두 갈래 모두 조건부 원자 업데이트라 paid_credits <= credits 불변식이 깨지지 않는다.
+        - 유료: paid_credits >= amt 일 때 credits, paid_credits 를 함께 차감
+        - 무료: paid_credits < amt (속성 없음 포함) AND credits >= amt 일 때 credits 만 차감
+        유료 조건이 틀린 직후 구매가 끼어들면 무료 조건도 틀리므로 처음부터 다시 시도한다.
+
+        Returns:
+            (차감 후 잔액, TIER_PAID | TIER_FREE)
+
+        Raises:
+            InsufficientCreditsError: 잔액 부족
+            ValueError: 존재하지 않는 사용자
+        """
+        if amount <= 0:
+            raise ValueError("차감 금액은 1 이상이어야 합니다")
+
+        for _ in range(_CONSUME_ATTEMPTS):
+            try:
+                response = self.users_table.update_item(
+                    Key={"user_id": user_id},
+                    UpdateExpression=(
+                        "SET credits = credits - :amt, "
+                        "paid_credits = paid_credits - :amt"
+                    ),
+                    ConditionExpression=(
+                        "attribute_exists(user_id) AND paid_credits >= :amt "
+                        "AND credits >= :amt"
+                    ),
+                    ExpressionAttributeValues={":amt": amount},
+                    ReturnValues="UPDATED_NEW",
+                )
+                tier = TIER_PAID
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    logger.error(f"크레딧 차감 실패: {e.response['Error']['Message']}")
+                    raise
+                try:
+                    response = self.users_table.update_item(
+                        Key={"user_id": user_id},
+                        UpdateExpression="SET credits = credits - :amt",
+                        ConditionExpression=(
+                            "attribute_exists(user_id) AND credits >= :amt AND "
+                            "(attribute_not_exists(paid_credits) OR paid_credits < :amt)"
+                        ),
+                        ExpressionAttributeValues={":amt": amount},
+                        ReturnValues="UPDATED_NEW",
+                    )
+                    tier = TIER_FREE
+                except ClientError as e2:
+                    if (
+                        e2.response["Error"]["Code"]
+                        != "ConditionalCheckFailedException"
+                    ):
+                        logger.error(
+                            f"크레딧 차감 실패: {e2.response['Error']['Message']}"
+                        )
+                        raise
+                    wallet = self._safe_wallet(user_id)
+                    if wallet is None:
+                        raise ValueError("존재하지 않는 사용자입니다")
+                    if wallet["paid_balance"] >= amount:
+                        continue  # 사이에 구매가 들어옴 - 유료분부터 다시
+                    if wallet["balance"] < amount:
+                        logger.info(
+                            f"크레딧 부족: user_id={_mask_user_id(user_id)}, "
+                            f"balance={wallet['balance']}"
+                        )
+                        raise InsufficientCreditsError(wallet["balance"])
+                    continue  # 사이에 다른 차감/지급이 끼어듦 - 다시
+
+            balance_after = int(response["Attributes"]["credits"])
+            reason = "synthesis_paid" if tier == TIER_PAID else "synthesis"
+            self._write_ledger(user_id, -amount, reason, balance_after, ref_id)
+            logger.info(
+                f"크레딧 차감: user_id={user_id}, -{amount} ({reason}), "
+                f"잔액={balance_after}"
+            )
+            return balance_after, tier
+
+        logger.error(f"크레딧 차감 경합 재시도 초과: user_id={_mask_user_id(user_id)}")
+        raise RuntimeError("크레딧 차감 경합 재시도 초과")
 
     def consume(
         self,
@@ -164,19 +289,39 @@ class CreditService:
         if amount <= 0:
             raise ValueError("회수 금액은 1 이상이어야 합니다")
 
+        # 구매분이 아직 남아 있으면 유료분(paid_credits)도 같이 줄인다.
+        # 남은 유료분이 회수량보다 적으면(일부 사용) 유료분은 0 으로 맞춘다.
         try:
             response = self.users_table.update_item(
                 Key={"user_id": user_id},
-                UpdateExpression="SET credits = if_not_exists(credits, :zero) - :amt",
-                ConditionExpression="attribute_exists(user_id)",
+                UpdateExpression=(
+                    "SET credits = if_not_exists(credits, :zero) - :amt, "
+                    "paid_credits = paid_credits - :amt"
+                ),
+                ConditionExpression="attribute_exists(user_id) AND paid_credits >= :amt",
                 ExpressionAttributeValues={":amt": amount, ":zero": 0},
                 ReturnValues="UPDATED_NEW",
             )
         except ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                raise ValueError("존재하지 않는 사용자입니다")
-            logger.error(f"크레딧 회수 실패: {e.response['Error']['Message']}")
-            raise
+            if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                logger.error(f"크레딧 회수 실패: {e.response['Error']['Message']}")
+                raise
+            try:
+                response = self.users_table.update_item(
+                    Key={"user_id": user_id},
+                    UpdateExpression=(
+                        "SET credits = if_not_exists(credits, :zero) - :amt, "
+                        "paid_credits = :zero"
+                    ),
+                    ConditionExpression="attribute_exists(user_id)",
+                    ExpressionAttributeValues={":amt": amount, ":zero": 0},
+                    ReturnValues="UPDATED_NEW",
+                )
+            except ClientError as e2:
+                if e2.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    raise ValueError("존재하지 않는 사용자입니다")
+                logger.error(f"크레딧 회수 실패: {e2.response['Error']['Message']}")
+                raise
 
         balance_after = int(response["Attributes"]["credits"])
         self._write_ledger(user_id, -amount, "void_reclaim", balance_after, ref_id)
@@ -192,9 +337,14 @@ class CreditService:
         amount: int,
         reason: str,
         ref_id: Optional[str] = None,
+        paid: bool = False,
     ) -> int:
         """
         크레딧 지급 (가입 보너스/구매/환불/관리자 지급)
+
+        Args:
+            paid: True 면 유료분(paid_credits)으로도 적립한다 (구매, 유료 합성 실패 환불).
+                  reason="purchase" 면 첫 구매 시각(first_purchase_at)도 남긴다.
 
         Returns:
             지급 후 잔액
@@ -202,12 +352,24 @@ class CreditService:
         if amount <= 0:
             raise ValueError("지급 금액은 1 이상이어야 합니다")
 
+        update_expression = "SET credits = if_not_exists(credits, :zero) + :amt"
+        values: Dict[str, Any] = {":amt": amount, ":zero": 0}
+        if paid:
+            update_expression += (
+                ", paid_credits = if_not_exists(paid_credits, :zero) + :amt"
+            )
+            if reason == "purchase":
+                update_expression += (
+                    ", first_purchase_at = if_not_exists(first_purchase_at, :now)"
+                )
+                values[":now"] = datetime.now(timezone.utc).isoformat()
+
         try:
             response = self.users_table.update_item(
                 Key={"user_id": user_id},
-                UpdateExpression="SET credits = if_not_exists(credits, :zero) + :amt",
+                UpdateExpression=update_expression,
                 ConditionExpression="attribute_exists(user_id)",
-                ExpressionAttributeValues={":amt": amount, ":zero": 0},
+                ExpressionAttributeValues=values,
                 ReturnValues="UPDATED_NEW",
             )
         except ClientError as e:
@@ -356,6 +518,15 @@ class CreditService:
             return self.get_balance(user_id)
         except Exception:
             return 0
+
+    def _safe_wallet(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """잔액 조회. 사용자가 없으면 None, 조회 장애면 잔액 0 으로 본다"""
+        try:
+            return self.get_wallet(user_id)
+        except ValueError:
+            return None
+        except Exception:
+            return {"balance": 0, "paid_balance": 0, "first_purchase_at": None}
 
     def _write_ledger(
         self,

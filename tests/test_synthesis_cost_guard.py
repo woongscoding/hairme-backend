@@ -306,7 +306,7 @@ class TestDuplicateRequestRejected:
         assert body["error"] == "synthesis_in_progress"
         assert body["success"] is False
         # 잠금이 과금보다 앞이므로 크레딧은 건드리지 않는다
-        credit.consume.assert_not_called()
+        credit.consume_for_synthesis.assert_not_called()
         # Gemini 도 호출되지 않는다
         synthesis.synthesize_hairstyle.assert_not_called()
 
@@ -325,7 +325,7 @@ class TestDuplicateRequestRejected:
             response = _post_reference(client, headers=AUTH)
 
         assert response.status_code == 409
-        credit.consume.assert_not_called()
+        credit.consume_for_synthesis.assert_not_called()
         synthesis.synthesize_with_reference.assert_not_called()
 
     def test_duplicate_is_logged(self, client, storage):
@@ -354,10 +354,12 @@ class TestDuplicateRequestRejected:
 class TestLockLifecycle:
     def test_lock_acquired_before_charge_and_released_on_success(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         release = MagicMock()
         order = []
-        credit.consume.side_effect = lambda *a, **k: order.append("charge") or 4
+        credit.consume_for_synthesis.side_effect = lambda *a, **k: order.append(
+            "charge"
+        ) or (4, "free")
 
         def _acquire(*args, **kwargs):
             order.append("lock")
@@ -381,7 +383,7 @@ class TestLockLifecycle:
 
     def test_lock_released_when_synthesis_fails(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         release = MagicMock()
 
         with patch(
@@ -401,7 +403,7 @@ class TestLockLifecycle:
 
     def test_lock_released_when_synthesis_raises(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         release = MagicMock()
         synthesis = MagicMock()
         synthesis.synthesize_hairstyle.side_effect = RuntimeError("Gemini timeout")
@@ -423,7 +425,7 @@ class TestLockLifecycle:
         from services.credit_service import InsufficientCreditsError
 
         credit = MagicMock()
-        credit.consume.side_effect = InsufficientCreditsError(0)
+        credit.consume_for_synthesis.side_effect = InsufficientCreditsError(0)
         release = MagicMock()
 
         with patch(
@@ -454,7 +456,7 @@ class TestCacheHitExcluded:
         assert response.status_code == 200
         assert response.json()["cached"] is True
         mock_acquire.assert_not_called()
-        credit.consume.assert_not_called()
+        credit.consume_for_synthesis.assert_not_called()
 
     def test_cache_hit_success_log_has_no_api_calls(self, client, storage):
         storage.get_cached_result.return_value = {
@@ -483,7 +485,7 @@ class TestCacheHitExcluded:
 class TestApiCallAccounting:
     def test_success_log_carries_api_calls(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch(
             "api.endpoints.synthesis.acquire_synthesis_lock",
@@ -512,7 +514,7 @@ class TestApiCallAccounting:
 
     def test_failure_log_carries_api_calls(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch(
             "api.endpoints.synthesis.acquire_synthesis_lock",

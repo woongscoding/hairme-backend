@@ -118,7 +118,7 @@ class TestHairColorCreditBilling:
 
     def test_logged_in_user_consumes_credit(self, client):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         usage = FakeUsageService()
 
         with patch("core.quota.get_credit_service", return_value=credit), patch(
@@ -130,15 +130,19 @@ class TestHairColorCreditBilling:
             response = _post_hair_color(client, headers=self.AUTH)
 
         assert response.status_code == 200
-        credit.consume.assert_called_once()
+        credit.consume_for_synthesis.assert_called_once()
         credit.grant.assert_not_called()
         # 회원은 device 무료 한도를 소비하지 않는다
         assert usage.device_calls == []
-        assert response.json()["quota"] == {"mode": "credits", "balance": 4}
+        assert response.json()["quota"] == {
+            "mode": "credits",
+            "balance": 4,
+            "tier": "free",
+        }
 
     def test_failed_synthesis_refunds_credit(self, client):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch("core.quota.get_credit_service", return_value=credit), patch(
             "core.quota.get_usage_limit_service", return_value=FakeUsageService()

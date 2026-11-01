@@ -5,8 +5,10 @@
 
 정책:
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
+  유료분(구매 크레딧)이 있으면 유료분부터 쓰고, 그 합성은 유료 등급(quota["tier"]="paid")
 - 비로그인 (레거시): device_id 기반 일일 무료 제한
   + 클라이언트 IP 기준 일일 상한 (device_id 로테이션으로 무제한 사용하는 것 차단)
+  무료 정책 실험군 기기는 일일 제한 대신 평생 N회 (services/free_policy_service.py)
 
 주의:
 - 반드시 모든 입력 검증이 끝난 뒤에 호출할 것 (잘못된 요청으로 과금되지 않도록)
@@ -22,7 +24,17 @@ from fastapi.responses import JSONResponse
 
 from config.settings import settings
 from core.logging import log_structured, logger, mask_user_id as mask_identifier
-from services.credit_service import InsufficientCreditsError, get_credit_service
+from services.credit_service import (
+    TIER_FREE,
+    TIER_PAID,
+    InsufficientCreditsError,
+    get_credit_service,
+)
+from services.free_policy_service import (
+    ARM_TREATMENT,
+    effective_arm,
+    resolve_device_arm,
+)
 from services.usage_limit_service import (
     get_usage_limit_service,
     next_reset_epoch_kst,
@@ -99,10 +111,35 @@ def _device_limit_response(daily_limit: int, used: int) -> JSONResponse:
                 "받고 바로 이어서 합성할 수 있어요."
             ),
             "limit_type": "device",
+            "limit_detail": "daily",
             "daily_limit": daily_limit,
             "used": used,
             "remaining": 0,
             "reset_at": next_reset_epoch_kst(),
+        },
+    )
+
+
+def _device_lifetime_limit_response(lifetime_limit: int) -> JSONResponse:
+    """무료 정책 실험군 비회원의 평생 체험 소진 429 본문.
+
+    일일 한도와 달리 다시 채워지지 않으므로 reset_at 이 없다. 다음 행동은 로그인뿐이다.
+    limit_type 은 일일 한도와 같은 "device" (앱은 이 값일 때만 결제 화면을 띄운다).
+    일일/평생 구분은 limit_detail 로 한다.
+    """
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "free_trial_used",
+            "message": (
+                f"무료 체험 {lifetime_limit}회를 모두 사용했습니다. "
+                f"로그인하면 {settings.TREATMENT_SIGNUP_BONUS_CREDITS}회를 더 "
+                "받고 바로 이어서 합성할 수 있어요."
+            ),
+            "limit_type": "device",
+            "limit_detail": "lifetime",
+            "lifetime_limit": lifetime_limit,
+            "remaining": 0,
         },
     )
 
@@ -167,17 +204,18 @@ def charge_synthesis_quota(
     Returns:
         (error_response, quota, refund)
         - error_response: 과금 불가 시 즉시 반환할 응답 (한도 초과/크레딧 부족)
-        - quota: 과금 정보 {"mode": "credits", "balance"} 또는 {"mode": "device", ...}
+        - quota: 과금 정보 {"mode": "credits", "balance", "tier"} 또는
+                 {"mode": "device", "tier": "free", "policy", ...}
         - refund: 합성 실패 시 호출할 환불 함수
     """
     credit_factory = credit_service_factory or get_credit_service
     usage_factory = usage_service_factory or get_usage_limit_service
 
-    # ===== 회원: 크레딧 차감 =====
+    # ===== 회원: 크레딧 차감 (유료분 우선) =====
     if user_id:
         cost = settings.SYNTHESIS_CREDIT_COST
         try:
-            balance = credit_factory().consume(user_id, cost, reason="synthesis")
+            balance, tier = credit_factory().consume_for_synthesis(user_id, cost)
         except InsufficientCreditsError as e:
             return (
                 _insufficient_credits_response(e.balance),
@@ -194,13 +232,20 @@ def charge_synthesis_quota(
             )
 
         def refund_credits() -> None:
+            # 차감된 쪽(유료/무료)으로 되돌린다 - 유료 합성 실패가 무료분으로 바뀌면 안 된다
             try:
-                credit_factory().grant(user_id, cost, reason="refund")
+                credit_factory().grant(
+                    user_id, cost, reason="refund", paid=(tier == TIER_PAID)
+                )
                 logger.info(f"합성 실패 크레딧 환불: user_id={user_id}, +{cost}")
             except Exception as refund_error:
                 logger.error(f"❌ 크레딧 환불 실패: {str(refund_error)}")
 
-        return None, {"mode": "credits", "balance": balance}, refund_credits
+        return (
+            None,
+            {"mode": "credits", "balance": balance, "tier": tier},
+            refund_credits,
+        )
 
     # ===== 비로그인: 레거시 device_id 일일 제한 =====
     # 킬 스위치: 레거시 흐름을 닫으면 카운터를 건드리기 전에 401 로 끊는다.
@@ -236,6 +281,9 @@ def charge_synthesis_quota(
 
     usage_service = usage_factory()
 
+    # 무료 정책 실험 코호트 (실험이 꺼져 있어도 등록은 한다 - 기존 기기 grandfathering)
+    policy = effective_arm(resolve_device_arm(usage_service, trimmed_device_id))
+
     # (1) IP 일일 상한 - device_id를 매번 새로 만들어도 우회할 수 없도록
     ip_key: Optional[str] = None
     if client_ip:
@@ -253,7 +301,46 @@ def charge_synthesis_quota(
             logger.warning(f"IP 일일 합성 한도 초과: ip={client_ip}")
             return _ip_limit_response(ip_limit), None, NOOP_REFUND
 
-    # (2) device_id 일일 제한
+    # (2a) 실험군: 평생 N회 (일일 한도 대신)
+    if policy == ARM_TREATMENT:
+        lifetime_limit = settings.TREATMENT_GUEST_LIFETIME_LIMIT
+        lifetime_key = f"lifetime#{trimmed_device_id}"
+        try:
+            used = usage_service.increment_lifetime_counter(
+                lifetime_key, lifetime_limit
+            )
+        except Exception as e:
+            if ip_key:
+                usage_service.decrement_daily_counter(ip_key)
+            logger.error(f"평생 체험 한도 확인 실패 (blocking): {str(e)}")
+            raise HTTPException(
+                status_code=503,
+                detail="사용량 확인 서비스에 일시적 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+            )
+        if used is None:
+            if ip_key:
+                usage_service.decrement_daily_counter(ip_key)
+            return _device_lifetime_limit_response(lifetime_limit), None, NOOP_REFUND
+
+        def refund_lifetime_quota() -> None:
+            usage_service.decrement_lifetime_counter(lifetime_key)
+            if ip_key:
+                usage_service.decrement_daily_counter(ip_key)
+
+        return (
+            None,
+            {
+                "mode": "device",
+                "tier": TIER_FREE,
+                "policy": policy,
+                "lifetime_limit": lifetime_limit,
+                "used": used,
+                "remaining": max(0, lifetime_limit - used),
+            },
+            refund_lifetime_quota,
+        )
+
+    # (2b) 대조군: device_id 일일 제한
     try:
         usage_result = usage_service.check_and_increment_usage(trimmed_device_id)
     except Exception as e:
@@ -278,6 +365,8 @@ def charge_synthesis_quota(
 
     quota = {
         "mode": "device",
+        "tier": TIER_FREE,
+        "policy": policy,
         "daily_limit": usage_result["daily_limit"],
         "used": usage_result["used"],
         "remaining": usage_result["remaining"],

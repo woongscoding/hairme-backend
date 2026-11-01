@@ -112,7 +112,12 @@ class PlayBillingService:
         인앱 상품 구매 영수증 검증
 
         Returns:
-            {"order_id": str|None, "purchase_time_millis": str|None}
+            {"order_id": str|None, "purchase_time_millis": str|None,
+             "acknowledgement_state": int,
+             "obfuscated_account_id": str|None}
+
+            obfuscated_account_id: 앱이 BillingFlowParams.setObfuscatedAccountId 로
+            넣은 값 (결제-계정 연결 확인용). 넣지 않은 예전 결제는 None.
 
         Raises:
             InvalidPurchaseError: 토큰이 유효하지 않거나 결제 완료 상태가 아님
@@ -169,6 +174,7 @@ class PlayBillingService:
             "acknowledgement_state": int(
                 data.get("acknowledgementState", ACK_STATE_NOT_ACKNOWLEDGED)
             ),
+            "obfuscated_account_id": data.get("obfuscatedExternalAccountId") or None,
         }
 
     def acknowledge_product_purchase(

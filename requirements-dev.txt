@@ -11,6 +11,9 @@ pytest-timeout==2.3.1
 # HTTP Testing
 httpx==0.27.2
 
+# AWS 가짜 백엔드 (DynamoDB 조건식까지 태우는 결제 통합 테스트)
+moto[dynamodb,s3]==5.0.28
+
 # Code Quality
 black==24.10.0
 flake8==7.1.1

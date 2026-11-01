@@ -29,6 +29,9 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 | `user_id` (PK) | S | UUID |
 | `kakao_id` (GSI: kakao_id-index) | S | 카카오 회원번호 |
 | `credits` | N | 크레딧 잔액 (조건부 업데이트로만 변경) |
+| `paid_credits` | N | `credits` 중 구매분 (항상 ≤ credits, 속성 없으면 0). 합성은 이쪽부터 차감 |
+| `first_purchase_at` | S | 첫 결제 시각 — 있으면 `ad_free` (광고 제거) |
+| `free_policy_arm` | S | 가입 기기의 무료 정책 실험 코호트 (control / treatment / grandfathered) |
 | `training_consent` | BOOL | 원본 사진 AI 학습 활용 동의 (기본 false, 별도 opt-in) |
 | `status` | S | `active` / `suspended` (속성이 없으면 active 로 취급) |
 | `token_version` | N | 리프레시 토큰 세대 번호 (기본 1, 속성이 없으면 1로 취급) |
@@ -40,7 +43,7 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 | `user_id` (PK) | S | |
 | `sk` (SK) | S | `{ISO8601}#{txid}` — 시간순 정렬 |
 | `amount` | N | 증감량 (+지급/-차감) |
-| `reason` | S | signup_bonus / synthesis / refund / purchase / admin_grant |
+| `reason` | S | signup_bonus / synthesis / synthesis_paid / refund / purchase / admin_grant / reward_ad / void_reclaim |
 | `balance_after` | N | 처리 후 잔액 |
 
 ### S3 버킷 (PHOTO_S3_BUCKET)
@@ -49,6 +52,7 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 | `cache/{sha256}` | 합성 결과 캐시 — 같은 사진+스타일 재요청 시 Gemini 재호출 방지 (비용 절감 핵심) | 90일 |
 | `results/{user_id}/` | 회원별 합성 결과 (presigned URL로 재열람) | 180일 |
 | `originals/{user_id}/` | AI 학습용 원본 (training_consent=true 회원만) | 무기한 |
+| `reports/{date}/` | AI 생성 이미지 신고 (이미지 없이 사유만) | 미설정 (개인정보처리방침과 같은 값으로 수명주기 설정 필요) |
 
 퍼블릭 액세스 전면 차단, presigned URL로만 접근.
 
@@ -62,15 +66,77 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 | GET | `/api/auth/me` | JWT | 프로필 + 크레딧 조회 |
 | PATCH | `/api/auth/me/consent` | JWT | 학습 활용 동의 변경 |
 | GET | `/api/credits` | JWT | 잔액 + 최근 내역 |
-| POST | `/api/credits/purchase` | JWT | 인앱결제 (Google Play 영수증 검증, purchase_token 멱등성) |
-| GET | `/api/credits/reward-callback` | ECDSA 서명 | AdMob 리워드 광고 SSV 콜백 (+1 크레딧, 일일 상한) |
+| GET | `/api/credits/products` | JWT | 결제 화면용 상품 목록 + starter 구매 가능 여부 + `ad_free` + credits_30 배지 A/B |
+| POST | `/api/credits/purchase` | JWT | 인앱결제 (Google Play 영수증 검증, purchase_token 멱등성, starter_5 계정당 1회) |
+| GET | `/api/credits/reward-callback` | ECDSA 서명 | AdMob 리워드 광고 SSV 콜백 (크레딧 1 또는 기능 해제, 일일 상한) |
+| GET | `/api/rewards/unlocks` | JWT 또는 `device_id` | 광고로 해제된 기능 + 지금 광고 보상 방식(`reward_mode`) |
 | GET | `/api/me/results` | JWT | 합성 결과 히스토리 (최신순, presigned URL, 페이지네이션) |
+| POST | `/api/results/report` | 선택 | AI 생성 이미지 신고 (`result_id` = 합성 응답의 `result_id`) |
 | POST | `/api/admin/credits/grant` | Admin Key | 수동 크레딧 지급 |
 | POST | `/api/admin/users/{user_id}/suspend` | Admin Key | 계정 정지 (status=suspended + token_version 증가) |
 | POST | `/api/admin/users/{user_id}/reactivate` | Admin Key | 계정 정지 해제 (status=active) |
 
 `/api/v2/synthesize`, `/api/v2/synthesize-with-reference`: JWT 있으면 크레딧 차감,
 없으면 기존 device_id 일일 제한 (구버전 앱 호환, 단계적 폐기 예정 - 아래 킬 스위치 참고).
+
+## 수익화 v2.1 (2026-11) — 앱이 알아야 할 것
+
+앱 쪽 계약 원본은 hairme_frontend 저장소의 [docs/APP_SERVER_CONTRACT_v2.1.md](https://github.com/woongscoding/hairme_frontend/blob/main/docs/APP_SERVER_CONTRACT_v2.1.md).
+
+**출력 등급.** 구매 크레딧(`paid_credits`)으로 차감된 합성만 유료(1K, 워터마크 없음),
+나머지(비회원 무료·가입 보너스·광고 크레딧)는 무료(512px + 우하단 워터마크).
+스타일 합성(`/synthesize`, `/synthesize-with-reference`)과 염색 합성(`/hair-color/synthesize`,
+`/hair-color/synthesize-by-personal-color`) 모두 같다. 합성 성공 응답에 추가된 필드:
+
+```json
+"quota":      {"mode": "credits", "balance": 14, "tier": "paid"},
+"quality":    {"tier": "paid", "image_size": "1K", "watermarked": false},
+"is_preview": false,
+"result_id":  "3f9c0a7b12d45e60"
+```
+
+`result_id` 는 스타일 합성에만 있다 (염색은 캐시·저장을 하지 않음).
+
+- `is_preview=true`(무료 등급) 결과 위에 "이 스타일 고화질로 보기" → 결제 후 같은 사진·스타일로
+  다시 `/synthesize` 를 부르면 유료 등급으로 새로 합성된다 (캐시 키에 등급이 들어가 있음).
+- `result_id` 는 신고(`POST /api/results/report`)에 그대로 넘긴다.
+
+**무료 정책 실험** (`FREE_POLICY_EXPERIMENT_ENABLED`, 기본 꺼짐). 신규 기기 50%가 실험군.
+
+| | 대조군 | 실험군 |
+|---|---|---|
+| 비회원 합성 | 매일 3회 | 평생 1회 — 소진 시 429 `error: "free_trial_used"`, `limit_type: "device"`, `limit_detail: "lifetime"` (reset_at 없음) |
+| 가입 보너스 | 5회 | 3회 — **로그인 요청에 `device_id` 를 같이 보내야** 코호트가 이어진다 |
+| 보상형 광고 | 크레딧 1 | 당일 자정까지 `personal_color_detail`, `full_style_ranking` 해제 |
+
+- 대조군 일일 한도 429 도 `limit_type: "device"` 에 `limit_detail: "daily"` 가 붙는다.
+  앱은 `limit_type == "device"` 일 때만 결제 화면을 띄운다.
+- `GET /api/usage?device_id=` 응답: `experiment_arm`(`control`|`treatment`, `policy` 와 같은 값),
+  `free_policy`(`daily`|`lifetime`), `signup_bonus`(대조군 5 / 실험군 3).
+  대조군은 `daily_limit/used/remaining`, 실험군은 `lifetime_limit/used/remaining`.
+- `POST /api/v2/analyze-hybrid` 의 `data.full_ranking`: 성별 필터·다양성 필터를 거친
+  ML 점수순 `[{style_name, score}]` (최대 `FULL_RANKING_LIMIT`=80, score 는 0-1).
+  항상 내려가며, 잠금 해제 여부에 따라 보여줄지는 앱이 정한다.
+- 비회원도 광고로 기능을 해제하려면 SSV `user_id` 를 `device:<device_id>` 로 설정한다.
+- 광고 문구는 `GET /api/rewards/unlocks` 의 `reward_mode`(credit/unlock)로 고른다.
+- 코호트는 기기를 처음 본 순간 한 번 정해진다. `FREE_POLICY_EXPERIMENT_START` 이전에 본
+  기기는 `grandfathered`(대조군 고정)라서, **실험 전에 서버를 먼저 배포**해 두면 기존 사용자가
+  미리 등록된다. 플래그를 내리면 전원 대조군으로 즉시 원복된다.
+
+**상품.** `starter_5`(5회, 계정당 1회) / `credits_10`(기본 선택) / `credits_30`.
+`credits_100` 은 판매 중단(구매 시 400). starter 를 두 번째로 사면 **422**
+`error: "one_per_account_used"` 이고 승인하지 않으므로 Google 이 3일 안에 자동 환불한다.
+409 가 아닌 이유: 앱은 409 를 "이미 지급된 구매"로 보고 consume 하는데, consume 된 구매는
+자동 환불되지 않는다. 422 에서는 consume 하지 말 것.
+`GET /api/credits/products` 의 `available` 로 노출 여부를 정한다.
+결제-계정 연결: 앱은 결제 때 `setObfuscatedAccountId(sha256(user_id) 소문자 hex)` 를 넣는다.
+영수증의 `obfuscatedExternalAccountId` 가 있는데 로그인 계정과 다르면 **403**
+`error: "purchase_account_mismatch"` 이고, 승인하지 않으므로 자동 환불된다 (첫 구매 마커도 잡지 않음).
+값이 없는 예전 결제는 그대로 통과한다.
+`GET /api/credits` 의 `has_purchased` 는 `first_purchase_at` 기준(그 전 결제자는 최근 내역으로 보완).
+
+**광고 제거.** `GET /api/auth/me` 의 `user.ad_free`, `GET /api/credits/products` 의
+`ad_free` 가 true 면 배너·전면 광고를 띄우지 않는다.
 
 ## 세션 무효화 (token_version)
 

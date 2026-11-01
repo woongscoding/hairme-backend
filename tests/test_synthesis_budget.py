@@ -301,7 +301,7 @@ class TestBudgetBlocksAnonymousOnly:
 
     def test_member_passes_even_when_budget_exhausted(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         synthesis = _synthesis_service()
         budget_check = MagicMock(return_value=True)
 
@@ -404,7 +404,7 @@ class TestBudgetBlocksAnonymousOnly:
 class TestApiCallsAreAggregated:
     def test_success_records_api_calls(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch(
             "api.endpoints.synthesis.acquire_synthesis_lock",
@@ -428,7 +428,7 @@ class TestApiCallsAreAggregated:
 
     def test_failed_synthesis_still_records_cost(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch(
             "api.endpoints.synthesis.acquire_synthesis_lock",
@@ -473,7 +473,7 @@ class TestApiCallsAreAggregated:
         self, client, storage
     ):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
 
         with patch(
             "api.endpoints.synthesis.acquire_synthesis_lock",
@@ -521,7 +521,7 @@ class TestBudgetStoreFailureDoesNotBlock:
 
     def test_record_failure_does_not_break_the_response(self, client, storage):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         usage = FakeUsageService()
         usage.table.update_item.side_effect = Exception("DynamoDB down")
 
@@ -641,7 +641,7 @@ class TestAggregationRunsAtZeroBudget:
         self, client, storage, poster, endpoint_name, success, api_calls, anonymous
     ):
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         usage = FakeUsageService()
 
         with patch(
@@ -678,7 +678,7 @@ class TestAggregationRunsAtZeroBudget:
     ):
         """호출 전에 실패하면 0 이 넘어오고, 저장소는 아무것도 쓰지 않는다"""
         credit = MagicMock()
-        credit.consume.return_value = 4
+        credit.consume_for_synthesis.return_value = (4, "free")
         table = MagicMock()
 
         with patch(

@@ -170,7 +170,7 @@ def _post_reference(client, headers=None):
 
 def _member_credit(balance=4):
     credit = MagicMock()
-    credit.consume.return_value = balance
+    credit.consume_for_synthesis.return_value = (balance, "free")
     return credit
 
 
@@ -399,7 +399,7 @@ class TestQuotaDeniedMessages:
         from services.credit_service import InsufficientCreditsError
 
         credit = MagicMock()
-        credit.consume.side_effect = InsufficientCreditsError(0)
+        credit.consume_for_synthesis.side_effect = InsufficientCreditsError(0)
 
         with patch("api.endpoints.synthesis.get_credit_service", return_value=credit):
             response = _post_synthesize(client, headers=AUTH)

@@ -188,7 +188,9 @@ class TestConsumeForReclaim:
         assert balance == -7
         call_kwargs = service._users_table.update_item.call_args.kwargs
         # 잔액 조건이 없어야 한다 (일반 consume 과의 차이)
-        assert "credits >=" not in call_kwargs["ConditionExpression"]
+        assert (
+            " credits >=" not in call_kwargs["ConditionExpression"]
+        )  # 총잔액 조건 없음 (paid_credits 조건만)
         assert "attribute_exists(user_id)" in call_kwargs["ConditionExpression"]
 
         ledger_item = service._ledger_table.put_item.call_args.kwargs["Item"]

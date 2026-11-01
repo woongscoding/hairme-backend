@@ -1090,6 +1090,7 @@ class MLHairstyleRecommender:
         face_features: List[float] = None,
         skin_features: List[float] = None,
         gender: str = None,
+        log_selection: bool = True,
     ) -> List[Dict[str, any]]:
         """
         Top-K 헤어스타일 추천 (성별 필터링 적용)
@@ -1101,6 +1102,8 @@ class MLHairstyleRecommender:
             face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
             skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
             gender: 성별 ("male", "female", "neutral") - MediaPipe로 추론된 값
+            log_selection: False 면 스타일별 선택 로그와 k개 미달 경고를 생략
+                (전체 랭킹처럼 k가 큰 호출용 - 요청마다 수십 줄이 찍히는 것 방지)
 
         Returns:
             추천 리스트 [{"hairstyle": "...", "score": 85.3}, ...]
@@ -1305,13 +1308,14 @@ class MLHairstyleRecommender:
 
             if not is_duplicate:
                 top_k_recommendations.append(candidate)
-                logger.info(
-                    f"[DIVERSITY] 선택 ({len(top_k_recommendations)}/{k}): "
-                    f"'{candidate_style}' (점수: {candidate['score']:.2f})"
-                )
+                if log_selection:
+                    logger.info(
+                        f"[DIVERSITY] 선택 ({len(top_k_recommendations)}/{k}): "
+                        f"'{candidate_style}' (점수: {candidate['score']:.2f})"
+                    )
 
         # k개를 채우지 못한 경우 경고
-        if len(top_k_recommendations) < k:
+        if log_selection and len(top_k_recommendations) < k:
             logger.warning(
                 f"[DIVERSITY] 다양한 스타일 {k}개를 찾지 못함 "
                 f"(실제: {len(top_k_recommendations)}개). "

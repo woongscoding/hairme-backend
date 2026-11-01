@@ -9,6 +9,8 @@ Phase 3: 염색 추천 + 합성 API
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
 - 비로그인: device_id 일일 무료 제한 + 클라이언트 IP 일일 상한
 - 모든 입력 검증은 과금보다 먼저 수행
+- 화질 등급은 스타일 합성과 같다 (services.result_quality):
+  구매 크레딧으로 차감되면 1K, 그 외는 512px + 워터마크 (is_preview=true)
 """
 
 import re
@@ -28,6 +30,13 @@ from core.quota import (
     charge_synthesis_quota,
     client_ip_from_request,
     refunded_balance,
+)
+from services.result_quality import (
+    charged_tier,
+    finalize_image,
+    image_size_for,
+    is_preview,
+    result_quality,
 )
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
@@ -98,6 +107,12 @@ class SynthesisResponse(BaseModel):
     processing_time: float = Field(..., description="처리 시간 (초)")
     quota: Optional[Dict[str, Any]] = Field(
         None, description="과금 정보 (크레딧 잔액 또는 무료 잔여 횟수)"
+    )
+    quality: Optional[Dict[str, Any]] = Field(
+        None, description="화질 등급 (tier, image_size, watermarked)"
+    )
+    is_preview: Optional[bool] = Field(
+        None, description="무료 미리보기(512px + 워터마크) 여부"
     )
 
 
@@ -297,6 +312,8 @@ async def synthesize_hair_color(
         if quota_error is not None:
             return quota_error
 
+        tier = charged_tier(quota)
+
         # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
         try:
             log_structured(
@@ -313,7 +330,12 @@ async def synthesize_hair_color(
                 color_name=color_name,
                 color_hex=color_hex,
                 additional_instructions=additional_instructions,
+                image_size=image_size_for(tier),
             )
+            if result["success"]:
+                result["image_base64"], result["image_format"] = finalize_image(
+                    result, tier
+                )
         except Exception:
             refund()
             raise
@@ -323,7 +345,11 @@ async def synthesize_hair_color(
         if result["success"]:
             log_structured(
                 "hair_color_synthesis_success",
-                {"color_name": color_name, "processing_time": processing_time},
+                {
+                    "color_name": color_name,
+                    "processing_time": processing_time,
+                    "tier": tier,
+                },
             )
 
             return SynthesisResponse(
@@ -335,6 +361,8 @@ async def synthesize_hair_color(
                 color_hex=color_hex,
                 processing_time=processing_time,
                 quota=quota,
+                quality=result_quality(tier),
+                is_preview=is_preview(tier),
             )
         else:
             refund()
@@ -455,13 +483,21 @@ async def synthesize_recommended_color(
         if quota_error is not None:
             return quota_error
 
+        tier = charged_tier(quota)
+
         # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
         try:
             synthesis_result = service.synthesize_hair_color(
                 image_data=image_data,
                 color_name=selected_color.name,
                 color_hex=selected_color.hex,
+                image_size=image_size_for(tier),
             )
+            if synthesis_result["success"]:
+                (
+                    synthesis_result["image_base64"],
+                    synthesis_result["image_format"],
+                ) = finalize_image(synthesis_result, tier)
         except Exception:
             refund()
             raise
@@ -483,6 +519,8 @@ async def synthesize_recommended_color(
                 },
                 "processing_time": processing_time,
                 "quota": quota,
+                "quality": result_quality(tier),
+                "is_preview": is_preview(tier),
             }
         else:
             refund()

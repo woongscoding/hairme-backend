@@ -55,7 +55,7 @@ def _png_bytes() -> bytes:
 def synthesis_mocks():
     """크레딧 소비 성공 + 스토리지 비활성(캐시 미스) 상태로 모킹"""
     credit = MagicMock()
-    credit.consume.return_value = 4
+    credit.consume_for_synthesis.return_value = (4, "free")
 
     storage = MagicMock()
     storage.enabled = False
@@ -101,7 +101,7 @@ class TestSynthesisRefundOnException:
         response = self._post(client)
 
         assert response.status_code == 500
-        synthesis_mocks["credit"].consume.assert_called_once()
+        synthesis_mocks["credit"].consume_for_synthesis.assert_called_once()
         # 환불 = grant(user, cost, reason="refund")
         refund_call = synthesis_mocks["credit"].grant.call_args
         assert refund_call is not None, "예외 경로에서 환불이 호출되지 않음"

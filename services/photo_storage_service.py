@@ -4,12 +4,14 @@
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
 - originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
+- reports/{YYYY-MM-DD}/{id}.json AI 생성 이미지 신고 (결과 이미지 자체는 저장하지 않음)
 
 PHOTO_S3_BUCKET 미설정 시 모든 기능이 조용히 비활성화됨 (합성 자체는 정상 동작).
 """
 
 import base64
 import hashlib
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -258,6 +260,31 @@ class PhotoStorageService:
             return key
         except Exception as e:
             logger.warning(f"원본 저장 실패 (무시): {str(e)}")
+            return None
+
+    # ========== AI 생성 이미지 신고 ==========
+
+    def save_report(self, report: Dict[str, Any]) -> Optional[str]:
+        """신고 1건을 JSON 으로 저장. 저장된 S3 key (비활성/실패 시 None)"""
+        if not self.enabled:
+            return None
+
+        now = datetime.now(timezone.utc)
+        key = (
+            f"reports/{now.strftime('%Y-%m-%d')}/"
+            f"{now.strftime('%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+        )
+        body = {**report, "created_at": now.isoformat()}
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+                ContentType="application/json",
+            )
+            return key
+        except Exception as e:
+            logger.warning(f"신고 저장 실패: {str(e)}")
             return None
 
     def presigned_url(self, key: str) -> Optional[str]:

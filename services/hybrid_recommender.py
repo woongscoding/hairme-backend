@@ -18,6 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import settings
 from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,60 @@ class MLRecommendationService:
 
         return result
 
+    def _full_ranking(
+        self,
+        face_shape: str,
+        skin_tone: str,
+        face_features: Optional[List[float]],
+        skin_features: Optional[List[float]],
+        gender: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """전체 스타일 랭킹 [{style_name, score}] 점수순 (보상형 광고 해제 기능)
+
+        Top-3 호출과 별도로 k=FULL_RANKING_LIMIT 로 한 번 더 점수를 매긴다.
+        같은 호출로 합치면 Top-3 결과가 달라질 수 있다 - 후보 폴백(allowed < k)과
+        v4 모델의 Top-K 내 정규화가 k 에 의존하기 때문.
+        score 는 recommendations 와 같은 0-1 스케일이다. 실패하면 빈 배열.
+        """
+        limit = settings.FULL_RANKING_LIMIT
+        if limit <= 0 or not (self.ml_available and self.ml_recommender):
+            return []
+
+        # 노이즈 제외 후보보다 k 가 크면 recommend_top_k 가 전체 후보로 폴백하므로 맞춘다
+        allowed = getattr(self.ml_recommender, "allowed_indices", None)
+        if isinstance(allowed, list) and allowed:
+            limit = min(limit, len(allowed))
+
+        try:
+            ranked = self.ml_recommender.recommend_top_k(
+                face_shape=face_shape,
+                skin_tone=skin_tone,
+                k=limit,
+                face_features=face_features,
+                skin_features=skin_features,
+                gender=gender,
+                log_selection=False,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ 전체 랭킹 계산 실패: {str(e)}")
+            return []
+
+        ranking: List[Dict[str, Any]] = []
+        seen = set()
+        for rec in ranked:
+            style_name = (rec.get("hairstyle") or "").strip()
+            normalized = normalize_style_name(style_name) if style_name else ""
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            ranking.append(
+                {
+                    "style_name": style_name,
+                    "score": round(float(rec.get("score", 0.0)) / 100.0, 2),
+                }
+            )
+        return ranking
+
     def recommend(
         self,
         image_data: bytes,
@@ -228,6 +283,9 @@ class MLRecommendationService:
                 "features": "ML 모델 기반 분석",
             },
             "recommendations": recommendations,
+            "full_ranking": self._full_ranking(
+                face_shape, skin_tone, face_features, skin_features, gender
+            ),
             "meta": {
                 "total_count": len(recommendations),
                 "ml_count": len(recommendations) - trending_count,
