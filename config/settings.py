@@ -105,6 +105,17 @@ class Settings(BaseSettings):
     # 0 이면 랭킹을 계산하지 않는다 (빈 배열).
     FULL_RANKING_LIMIT: int = 80
 
+    # ===== 추천 Top-3 동점권 탐색 (services/rec_exploration.py) =====
+    # 켜면 analyze-hybrid 가 Top-POOL 을 받아 top - MARGIN(원점수) 이상인 동점권에서
+    # softmax(score / TEMPERATURE) 로 3개를 뽑는다. 사용자(없으면 image_hash) 해시
+    # 버킷이 RATIO 미만이면 실험군, 나머지는 대조군(결정적 Top-3, 노출 메타만 기록).
+    # 끄면 기존 k=3 호출 그대로. full_ranking 은 어느 쪽이든 결정적 순서.
+    REC_EXPLORE_ENABLED: bool = False
+    REC_EXPLORE_RATIO: float = 0.5
+    REC_EXPLORE_POOL: int = 20
+    REC_EXPLORE_MARGIN: float = 3.0
+    REC_EXPLORE_TEMPERATURE: float = 1.5
+
     # ===== 사진 저장 (S3) =====
     PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화
     PHOTO_URL_EXPIRE_SECONDS: int = 86400  # presigned URL 유효기간 (24시간)

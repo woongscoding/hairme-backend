@@ -56,6 +56,9 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
                 "opencv_gemini_agreement": mediapipe_agreement,
                 # 품질 전후 비교용 - 값이 없으면 dynamodb_connection 이 "unknown" 으로 채운다
                 "model_version": model_version,
+                # 추천 실험 배정 (없으면 dynamodb_connection 이 저장하지 않는다)
+                "experiment_id": analysis_result.get("experiment_id"),
+                "ab_variant": analysis_result.get("ab_variant"),
             }
 
             # 성별은 요청에 있을 때만 저장 (분석 결과의 추정값이 있으면 그것을 우선)

@@ -24,6 +24,7 @@ from core.exceptions import (
 from core.cache import calculate_image_hash, get_cached_result, save_to_cache
 from core.jwt_auth import get_optional_user_id
 from core.upload_validation import validate_file_extension, validate_image_upload
+from services.rec_exploration import EXPERIMENT_ID
 
 # NOTE: models.ml_recommender / models.mediapipe_analyzer 를 top-level 에서
 # import 하면 torch 가 따라들어와 Lambda init 에 약 3초가 추가된다.
@@ -418,6 +419,9 @@ async def analyze_face_hybrid(
             face_features=face_features,
             skin_features=skin_features,
             gender=gender,
+            # 동점권 탐색 시드·실험 배정 (REC_EXPLORE_ENABLED 일 때만 쓰인다)
+            image_hash=image_hash,
+            user_id=user_id,
         )
         ml_time = time_module.time() - ml_start
         logger.info(f"[TIMING] ML recommendation: {ml_time:.2f}s")
@@ -471,6 +475,11 @@ async def analyze_face_hybrid(
         meta = recommendation_result.get("meta") or {}
         model_version = str(meta.get("model_version") or "unknown")
 
+        # 동점권 탐색 실험군/대조군 (플래그 꺼짐이면 저장하지 않는다)
+        if meta.get("experiment_arm"):
+            analysis_result_for_db["experiment_id"] = EXPERIMENT_ID
+            analysis_result_for_db["ab_variant"] = meta["experiment_arm"]
+
         analysis_id = save_to_database(
             image_hash=image_hash,
             analysis_result=analysis_result_for_db,
@@ -516,6 +525,13 @@ async def analyze_face_hybrid(
                 "top_style": top_style,
                 "top_score": meta.get("top_score"),
                 "score_stddev": meta.get("score_stddev"),
+                # 동점권 탐색 실험 (플래그 꺼짐이면 deterministic / None)
+                "rec_policy": meta.get("rec_policy"),
+                "experiment_arm": meta.get("experiment_arm"),
+                "tie_band_size": meta.get("tie_band_size"),
+                "top_ml_rank": (
+                    recommendations[0].get("ml_rank") if recommendations else None
+                ),
                 "authenticated": user_id is not None,
                 "processing_time": total_time,
                 "analysis_id": analysis_id,

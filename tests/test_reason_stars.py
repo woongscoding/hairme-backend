@@ -143,6 +143,7 @@ class TestResponseSchemaUnchanged:
         shown = self._recommendation(monkeypatch, True)
 
         assert set(hidden) == set(shown)
+        # 기존 필드 + 노출 메타(동점권 탐색, 앱은 모르는 필드를 무시)
         assert set(hidden) == {
             "hairstyle_id",
             "style_name",
@@ -150,6 +151,9 @@ class TestResponseSchemaUnchanged:
             "source",
             "score",
             "rank",
+            "raw_score",
+            "ml_rank",
+            "propensity",
         }
         for key in hidden:
             assert type(hidden[key]) is type(shown[key])

@@ -10,7 +10,7 @@ Version: 2.0.0 (ML-only mode)
 
 import logging
 import statistics
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 import sys
 from pathlib import Path
 
@@ -19,9 +19,16 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.settings import settings
+from services import rec_exploration
 from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
+
+
+def _raw_score(rec: Dict[str, Any]) -> float:
+    """정규화·반올림 전 원점수 (10~95). 없으면 score"""
+    raw = rec.get("original_score")
+    return float(raw if raw is not None else rec.get("score", 0.0))
 
 
 class MLRecommendationService:
@@ -82,7 +89,11 @@ class MLRecommendationService:
         }
 
     def _build_recommendations(
-        self, ml_recommendations: List[Dict[str, Any]], face_shape: str, skin_tone: str
+        self,
+        ml_recommendations: List[Dict[str, Any]],
+        face_shape: str,
+        skin_tone: str,
+        exposure: Optional[List[Tuple[int, float]]] = None,
     ) -> List[Dict[str, Any]]:
         """
         ML 추천 결과를 응답 형식으로 변환
@@ -91,6 +102,8 @@ class MLRecommendationService:
             ml_recommendations: ML 추천 리스트
             face_shape: 얼굴형
             skin_tone: 피부톤
+            exposure: ml_recommendations 와 같은 순서의 (ml_rank, propensity).
+                None 이면 결정적 노출 (ml_rank = 순서, propensity = 1.0)
 
         Returns:
             추천 리스트
@@ -98,7 +111,7 @@ class MLRecommendationService:
         result = []
         seen_styles = set()
 
-        for rec in ml_recommendations:
+        for position, rec in enumerate(ml_recommendations):
             hairstyle_id = rec.get("hairstyle_id")
             style_name = rec.get("hairstyle", "").strip()
             ml_score = rec.get("score", 0.0)
@@ -111,6 +124,10 @@ class MLRecommendationService:
 
             if normalized_name in seen_styles:
                 continue
+
+            ml_rank, propensity = (
+                exposure[position] if exposure is not None else (position + 1, 1.0)
+            )
 
             # 템플릿 기반 이유 생성
             if self.reason_generator:
@@ -134,6 +151,11 @@ class MLRecommendationService:
                         ml_score / 100.0, 2
                     ),  # 0-1 범위로 변환 (안드로이드 호환)
                     "rank": len(result) + 1,
+                    # 노출 메타 (재학습 순위 편향 보정용). score 는 1점 해상도라
+                    # 원점수를 따로 남기고, 표시 순위 rank 와 풀 안 순위를 구분한다.
+                    "raw_score": round(_raw_score(rec), 2),
+                    "ml_rank": ml_rank,
+                    "propensity": propensity,
                 }
             )
 
@@ -197,6 +219,89 @@ class MLRecommendationService:
             )
         return ranking
 
+    def _explore_top3(
+        self,
+        face_shape: str,
+        skin_tone: str,
+        face_features: Optional[List[float]],
+        skin_features: Optional[List[float]],
+        gender: Optional[str],
+        image_hash: str,
+        experiment_arm: str,
+    ) -> Tuple[List[Dict[str, Any]], List[Tuple[int, float]], Dict[str, Any]]:
+        """동점권 탐색 Top-3 (REC_EXPLORE_ENABLED 일 때만)
+
+        실험군·대조군 모두 Top-POOL 풀을 받아 동점권 크기를 잰다. 대조군은 풀 상위
+        3개를 그대로 쓴다 - 다양성 필터가 위에서부터 탐욕적으로 고르므로 k=3 호출
+        결과와 같다 (v5+ 정규화 모델 기준).
+
+        Returns:
+            (표시할 ML 추천, 같은 순서의 (ml_rank, propensity), 노출 meta)
+        """
+        pool_size = settings.REC_EXPLORE_POOL
+        # 노이즈 제외 후보보다 k 가 크면 recommend_top_k 가 전체 후보로 폴백하므로 맞춘다
+        allowed = getattr(self.ml_recommender, "allowed_indices", None)
+        if isinstance(allowed, list) and allowed:
+            pool_size = min(pool_size, len(allowed))
+
+        ranked = self.ml_recommender.recommend_top_k(
+            face_shape=face_shape,
+            skin_tone=skin_tone,
+            k=max(pool_size, 3),
+            face_features=face_features,
+            skin_features=skin_features,
+            gender=gender,
+            log_selection=False,
+        )
+
+        # 띄어쓰기 중복은 _build_recommendations 가 버리므로 풀에서 미리 뺀다 (3장 유지)
+        pool: List[Dict[str, Any]] = []
+        seen = set()
+        for rec in ranked:
+            name = (rec.get("hairstyle") or "").strip()
+            normalized = normalize_style_name(name) if name else ""
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            pool.append(rec)
+        pool.sort(key=_raw_score, reverse=True)  # 안정 정렬 - 동점은 모델 순서 유지
+        scores = [_raw_score(rec) for rec in pool]
+
+        margin = settings.REC_EXPLORE_MARGIN
+        temperature = settings.REC_EXPLORE_TEMPERATURE
+        if experiment_arm == rec_exploration.ARM_EXPLORE:
+            selection = rec_exploration.explore_select(
+                scores,
+                k=3,
+                margin=margin,
+                temperature=temperature,
+                seed=rec_exploration.selection_seed(image_hash, self.model_version),
+            )
+            indices = selection.indices
+            propensities = selection.propensities
+            band_size = selection.band_size
+            policy = rec_exploration.POLICY_EXPLORE
+        else:
+            indices = list(range(min(3, len(pool))))
+            propensities = [1.0] * len(indices)
+            band_size = rec_exploration.tie_band_size(scores, margin, 3)
+            policy = rec_exploration.POLICY_DETERMINISTIC
+
+        selected = [pool[i] for i in indices]
+        logger.info(
+            f"[EXPLORE] arm={experiment_arm} band={band_size}/{len(pool)} "
+            f"선택: {[(r.get('hairstyle'), round(_raw_score(r), 2)) for r in selected]}"
+        )
+        exposure = [(i + 1, p) for i, p in zip(indices, propensities)]
+        meta = {
+            "rec_policy": policy,
+            "experiment_arm": experiment_arm,
+            "tie_band_size": band_size,
+            "margin": margin,
+            "temperature": temperature,
+        }
+        return selected, exposure, meta
+
     def recommend(
         self,
         image_data: bytes,
@@ -205,6 +310,8 @@ class MLRecommendationService:
         face_features: List[float] = None,
         skin_features: List[float] = None,
         gender: str = None,
+        image_hash: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         ML 기반 헤어스타일 추천
@@ -216,6 +323,9 @@ class MLRecommendationService:
             face_features: MediaPipe 얼굴 측정값 [face_ratio, forehead_width, cheekbone_width, jaw_width, forehead_ratio, jaw_ratio] (6차원)
             skin_features: MediaPipe 피부 측정값 [ITA_value, hue_value] (2차원)
             gender: 성별 ("male", "female", "neutral")
+            image_hash: 이미지 sha256. 동점권 탐색의 시드·배정에 쓴다
+                (없으면 REC_EXPLORE_ENABLED 여도 결정적 Top-3)
+            user_id: 로그인 사용자 ID. 있으면 실험 배정 기준
 
         Returns:
             추천 결과 딕셔너리
@@ -230,9 +340,39 @@ class MLRecommendationService:
                 "⚠️ 실제 측정값(face_features, skin_features)을 전달하는 것을 권장합니다."
             )
 
+        explore_enabled = bool(settings.REC_EXPLORE_ENABLED and image_hash)
+        experiment_arm = (
+            rec_exploration.assign_arm(user_id, image_hash, settings.REC_EXPLORE_RATIO)
+            if explore_enabled
+            else None
+        )
+        exposure_meta: Dict[str, Any] = {
+            "rec_policy": rec_exploration.POLICY_DETERMINISTIC,
+            "experiment_arm": experiment_arm,
+            "tie_band_size": None,
+            "margin": None,
+            "temperature": None,
+        }
+        exposure: Optional[List[Tuple[int, float]]] = None
+
         # ML 추천 (Top-3, 성별 필터링 적용)
         ml_recommendations = []
-        if self.ml_available and self.ml_recommender:
+        if self.ml_available and self.ml_recommender and explore_enabled:
+            try:
+                ml_recommendations, exposure, exposure_meta = self._explore_top3(
+                    face_shape,
+                    skin_tone,
+                    face_features,
+                    skin_features,
+                    gender,
+                    image_hash,
+                    experiment_arm,
+                )
+            except Exception as e:
+                # 탐색 경로 오류로 추천이 비지 않도록 결정적 Top-3 로 내려간다
+                logger.error(f"❌ 동점권 탐색 실패 - 결정적 Top-3 로 폴백: {str(e)}")
+                explore_enabled = False
+        if self.ml_available and self.ml_recommender and not explore_enabled:
             try:
                 ml_recommendations = self.ml_recommender.recommend_top_k(
                     face_shape=face_shape,
@@ -248,7 +388,7 @@ class MLRecommendationService:
 
         # 추천 결과 변환
         recommendations = self._build_recommendations(
-            ml_recommendations, face_shape, skin_tone
+            ml_recommendations, face_shape, skin_tone, exposure
         )
 
         # rank 재조정 (1, 2, 3)
@@ -294,6 +434,8 @@ class MLRecommendationService:
                 "model_version": self.model_version,
                 # 반올림 전 원점수 기준 (계측용, 기존 필드는 그대로 유지)
                 **self._score_stats(ml_recommendations),
+                # 노출 정책 (rec_policy / experiment_arm / tie_band_size / margin / temperature)
+                **exposure_meta,
             },
         }
 
