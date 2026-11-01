@@ -39,7 +39,6 @@ import sys
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -51,6 +50,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import services.mlops.s3_feedback_store as sfs  # noqa: E402
+from services.mlops.feedback_features import (  # noqa: E402,F401 - 기존 이름 유지
+    FACE_FEATURE_FIELDS,
+    SKIN_FEATURE_FIELDS,
+    extract_features,
+    extract_hairstyle_id,
+    to_float,
+)
 
 logger = logging.getLogger("backfill_feedback")
 
@@ -72,20 +78,7 @@ GROUND_TRUTH_BAD = 10.0
 POSITIVE_FEEDBACKS = {"good", "like"}
 NEGATIVE_FEEDBACKS = {"bad", "dislike"}
 
-# database/dynamodb_connection.py 와 동일한 순서
-FACE_FEATURE_FIELDS: Tuple[str, ...] = (
-    "mediapipe_face_ratio",
-    "mediapipe_forehead_width",
-    "mediapipe_cheekbone_width",
-    "mediapipe_jaw_width",
-    "mediapipe_forehead_ratio",
-    "mediapipe_jaw_ratio",
-)
-SKIN_FEATURE_FIELDS: Tuple[str, ...] = (
-    "mediapipe_ITA_value",
-    "mediapipe_hue_value",
-)
-
+# 측정값 필드 순서·추출 규칙은 services/mlops/feedback_features.py 와 공유한다
 PROJECTION_FIELDS: Tuple[str, ...] = (
     ("analysis_id", "created_at", "face_shape", "personal_color", "recommended_styles")
     + tuple(f"style_{k}_feedback" for k in STYLE_INDEXES)
@@ -95,22 +88,6 @@ PROJECTION_FIELDS: Tuple[str, ...] = (
 
 
 # ========== 값 변환 유틸 ==========
-def to_float(value: Any) -> Optional[float]:
-    """DynamoDB Decimal / 문자열 값을 float 로 변환 (실패 시 None)"""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value))
-    except (TypeError, ValueError):
-        return None
-
-
 def normalize_feedback(value: Any) -> Optional[str]:
     """
     피드백 값을 store 가 쓰는 'good' / 'bad' 로 정규화
@@ -146,50 +123,6 @@ def parse_created_at(value: Any) -> Optional[datetime]:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
-
-
-def extract_features(item: Dict[str, Any]) -> Optional[Tuple[List[float], List[float]]]:
-    """
-    mediapipe 8개 필드가 모두 존재할 때만 (face 6차원, skin 2차원) 반환
-
-    순서는 database/dynamodb_connection.py 와 동일하다.
-    """
-    face: List[float] = []
-    for field in FACE_FEATURE_FIELDS:
-        value = to_float(item.get(field))
-        if value is None:
-            return None
-        face.append(value)
-
-    skin: List[float] = []
-    for field in SKIN_FEATURE_FIELDS:
-        value = to_float(item.get(field))
-        if value is None:
-            return None
-        skin.append(value)
-
-    return face, skin
-
-
-def extract_hairstyle_id(item: Dict[str, Any], style_index: int) -> Optional[int]:
-    """recommended_styles[k-1].hairstyle_id (트렌드 스타일은 None -> 스킵)"""
-    styles = item.get("recommended_styles") or []
-    if not isinstance(styles, (list, tuple)):
-        return None
-    if style_index > len(styles):
-        return None
-
-    style_data = styles[style_index - 1]
-    if not isinstance(style_data, dict):
-        return None
-
-    raw_id = style_data.get("hairstyle_id")
-    if raw_id is None:
-        return None
-    try:
-        return int(raw_id)
-    except (TypeError, ValueError):
-        return None
 
 
 # ========== NPZ 빌더 (save_feedback 과 동일 레이아웃) ==========

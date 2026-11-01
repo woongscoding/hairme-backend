@@ -29,7 +29,16 @@
 import time
 from typing import Callable, Optional
 
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -64,6 +73,13 @@ from config.settings import settings
 from database.user_repository import get_user_repository
 from services.credit_service import TIER_FREE, TIER_PAID, get_credit_service
 from services.hairstyle_synthesis_service import get_synthesis_service
+from services.mlops.implicit_signals import (
+    SIGNAL_SYNTHESIZE,
+    parse_analysis_id,
+    parse_hairstyle_id,
+    parse_rec_rank,
+    record_style_signal,
+)
 from services.photo_storage_service import get_photo_storage_service
 from services.product_recommendation_service import (
     get_product_recommendation_service,
@@ -224,10 +240,41 @@ def _store_result(
     return result_url
 
 
+class _SignalContext:
+    """합성 요청에 딸려 온 추천 카드 정보 (선택 필드 - 구버전 앱은 보내지 않는다)
+
+    잘못된 값은 거절하지 않고 None 으로 무시한다.
+    """
+
+    def __init__(self, analysis_id, rec_rank, hairstyle_id):
+        self.analysis_id = parse_analysis_id(analysis_id)
+        self.rec_rank = parse_rec_rank(rec_rank)
+        self.hairstyle_id = parse_hairstyle_id(hairstyle_id)
+
+    def log_fields(self) -> dict:
+        return {"analysis_id": self.analysis_id, "rec_rank": self.rec_rank}
+
+    def schedule(
+        self, background_tasks: BackgroundTasks, style_name: Optional[str]
+    ) -> None:
+        """합성 성공 후 암묵 피드백 기록을 응답 뒤로 미룬다 (실패해도 응답과 무관)"""
+        if not self.analysis_id:
+            return
+        background_tasks.add_task(
+            record_style_signal,
+            self.analysis_id,
+            SIGNAL_SYNTHESIZE,
+            hairstyle_id=self.hairstyle_id,
+            style_name=style_name,
+            rec_rank=self.rec_rank,
+        )
+
+
 @router.post("/synthesize")
 @limiter.limit("5/minute")  # 분당 5회 제한 (이미지 생성은 비용이 높음)
 async def synthesize_hairstyle(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="사용자 얼굴 사진"),
     hairstyle_name: str = Form(
         ..., description="적용할 헤어스타일 이름 (예: 투블럭컷)"
@@ -238,6 +285,16 @@ async def synthesize_hairstyle(
     ),
     additional_instructions: Optional[str] = Form(
         None, description="추가 스타일링 요청 (선택)"
+    ),
+    # 정수 필드도 str 로 받는다 - 잘못된 값이 422 가 되지 않고 무시되도록
+    analysis_id: Optional[str] = Form(
+        None, description="합성한 추천 카드의 분석 ID (선택, 암묵 피드백용)"
+    ),
+    rec_rank: Optional[str] = Form(
+        None, description="화면에 표시된 카드 순위 1~5 (선택)"
+    ),
+    hairstyle_id: Optional[str] = Form(
+        None, description="추천 카드의 hairstyle_id (선택)"
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
 ):
@@ -277,6 +334,7 @@ async def synthesize_hairstyle(
     start_time = time.time()
     # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
     release_lock: Callable[[], None] = NOOP_RELEASE
+    signal = _SignalContext(analysis_id, rec_rank, hairstyle_id)
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -356,8 +414,10 @@ async def synthesize_hairstyle(
                     "processing_time": cached_time,
                     "authenticated": user_id is not None,
                     "result_saved": cached_result_url is not None,
+                    **signal.log_fields(),
                 },
             )
+            signal.schedule(background_tasks, hairstyle_name)
 
             return {
                 "success": True,
@@ -525,8 +585,10 @@ async def synthesize_hairstyle(
                 "processing_time": processing_time,
                 "authenticated": user_id is not None,
                 "result_saved": result_url is not None,
+                **signal.log_fields(),
             },
         )
+        signal.schedule(background_tasks, hairstyle_name)
         return {
             "success": True,
             "image_base64": image_base64,
@@ -584,11 +646,21 @@ async def synthesize_hairstyle(
 @limiter.limit("3/minute")  # 레퍼런스 기반은 더 제한적
 async def synthesize_with_reference(
     request: Request,
+    background_tasks: BackgroundTasks,
     user_photo: UploadFile = File(..., description="사용자 얼굴 사진"),
     reference_photo: UploadFile = File(..., description="참고할 헤어스타일 사진"),
     gender: str = Form("male", description="성별 (male/female)"),
     device_id: Optional[str] = Form(
         None, description="디바이스 고유 ID (비로그인 레거시 흐름용)"
+    ),
+    analysis_id: Optional[str] = Form(
+        None, description="합성한 추천 카드의 분석 ID (선택, 암묵 피드백용)"
+    ),
+    rec_rank: Optional[str] = Form(
+        None, description="화면에 표시된 카드 순위 1~5 (선택)"
+    ),
+    hairstyle_id: Optional[str] = Form(
+        None, description="추천 카드의 hairstyle_id (선택)"
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
 ):
@@ -601,6 +673,7 @@ async def synthesize_with_reference(
     start_time = time.time()
     # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
     release_lock: Callable[[], None] = NOOP_RELEASE
+    signal = _SignalContext(analysis_id, rec_rank, hairstyle_id)
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -666,8 +739,10 @@ async def synthesize_with_reference(
                     "processing_time": cached_time,
                     "authenticated": user_id is not None,
                     "result_saved": cached_result_url is not None,
+                    **signal.log_fields(),
                 },
             )
+            signal.schedule(background_tasks, None)
 
             return {
                 "success": True,
@@ -832,8 +907,10 @@ async def synthesize_with_reference(
                 "processing_time": processing_time,
                 "authenticated": user_id is not None,
                 "result_saved": result_url is not None,
+                **signal.log_fields(),
             },
         )
+        signal.schedule(background_tasks, None)
         return {
             "success": True,
             "image_base64": image_base64,
