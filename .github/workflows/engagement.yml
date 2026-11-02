@@ -23,7 +23,7 @@ on:
       write:
         description: "S3 에 업로드 (false 면 dry-run)"
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: build-style-engagement
@@ -53,7 +53,7 @@ jobs:
         # 집계는 boto3 + numpy 만 쓴다 (torch 등 모델 의존성 불필요)
         run: |
           python -m pip install --upgrade pip
-          pip install boto3 "numpy<2"
+          pip install boto3==1.35.0 numpy==1.26.3  # requirements.txt 와 같은 버전
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -62,6 +62,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # 업로드 전 가드(npz 읽기 오류 > 5%, 노출 < 500, mu <= 0, 빈 styles)에 걸리면
+      # 업로드하지 않고 종료 코드 2 -> 이 job 이 실패로 보인다
       - name: Build engagement
         env:
           WRITE: ${{ github.event_name == 'schedule' || inputs.write }}
@@ -70,7 +72,9 @@ jobs:
           if [ "$WRITE" = "true" ]; then ARGS="$ARGS --write"; fi
           python scripts/build_style_engagement.py $ARGS
 
+      # 가드 실패(종료 코드 2)여도 로컬 JSON 은 남겨 원인을 볼 수 있게 한다
       - name: Upload summary artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: engagement-current
