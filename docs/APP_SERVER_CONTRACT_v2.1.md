@@ -67,7 +67,7 @@
 ```
 
 - `action`: `"save"` | `"share"` (앱은 공유 시트를 연 시점에 share 를 보낸다 — 취소 포함)
-- `hairstyle_id`, `result_id`, `device_id` 는 null 가능
+- `hairstyle_id`, `device_id` 는 null 가능. `result_id` 는 스키마상 null 가능하지만 **없으면 학습 샘플로 기록되지 않는다** — 합성 응답의 `result_id` 를 그대로 보낼 것
 - 응답: 기록 성공 여부와 무관하게 **200 `{"success": true}`**. 스키마 위반(필수 필드 누락, 알 수 없는 action 등)만 422. 토큰이 만료·손상돼도 401 을 내지 않는다.
 - 헤어컬러 합성 결과에는 호출하지 않는다.
 
@@ -75,6 +75,7 @@
 
 - 학습 샘플: `s3://hairme-mlops/feedback/pending/implicit/{analysis_id}_{hairstyle_id}.npz` — 명시 피드백 npz 와 같은 레이아웃 + `sample_weight`, metadata 에 `source:"implicit"`, `signal_type`, `rec_rank`, `ml_rank`, `propensity`
 - 라벨/가중치: share 85·1.0, save 80·1.0, synthesize 55·0.7, shown_not_chosen 40·0.3. `sample_weight = base × clip(1/propensity, 1, 5)` (propensity 없으면 1.0)
+- save/share 는 서버가 그 분석×스타일을 실제로 합성했고(쌍 표식 `feedback/implicit_markers/pairs/{analysis_id}_{hairstyle_id}`), 요청의 `result_id` 가 그 합성의 result_id(최근 8개) 중 하나일 때만 기록한다. 아니면 생략하고 로그 `implicit_signal` 에 reason(`no_synthesis_marker` / `result_id_missing` / `result_id_mismatch`)
 - 같은 분석×스타일은 더 강한 신호일 때만 덮어쓴다 (share > save > synthesize > shown_not_chosen)
 - 한 분석의 첫 synthesize 때, 나머지 ML 카드에 `shown_not_chosen` 샘플을 만든다(이미 있으면 그대로). 트렌드 카드는 샘플을 만들지 않는다.
 - 카드 매칭: `hairstyle_id` → 없거나 안 맞으면 `style_name`(띄어쓰기 무시) → 그래도 없으면 기록 생략

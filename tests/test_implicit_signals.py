@@ -8,6 +8,7 @@
 - 새 샘플만 metadata.json 의 pending_count / total 을 올린다
 - MLOPS 꺼짐 / 분석 없음 / 측정값 없음 / 카드 없음은 조용히 생략
 - POST /api/events/style-action 422/200, 합성 선택 필드(구버전 요청 동일 동작)
+- save/share 는 합성 쌍 표식 + 같은 result_id 가 있을 때만 승격 (오염 방지)
 
 S3 는 moto(@pytest.mark.moto), 엔드포인트는 mock. 운영 버킷/테이블에 쓰지 않는다.
 """
@@ -43,6 +44,8 @@ REGION = "ap-northeast-2"
 ANALYSIS_ID = "11111111-2222-3333-4444-555555555555"
 EMBED_DIM = 384
 N_STYLES = 12
+# 합성 응답의 result_id (cache_key 앞 16자)
+RESULT_ID = "abcdef0123456789"
 
 
 def _analysis(**overrides):
@@ -79,9 +82,24 @@ def _analysis(**overrides):
                 "propensity": 0.8,
             },
             # 탐색 꺼짐 시절 카드: ml_rank / propensity 없음
-            {"hairstyle_id": 7.0, "style_name": "웨이브 펌", "source": "ml", "rank": 3.0},
-            {"hairstyle_id": None, "style_name": "트렌드A", "source": "trending", "rank": 4.0},
-            {"hairstyle_id": None, "style_name": "트렌드B", "source": "trending", "rank": 5.0},
+            {
+                "hairstyle_id": 7.0,
+                "style_name": "웨이브 펌",
+                "source": "ml",
+                "rank": 3.0,
+            },
+            {
+                "hairstyle_id": None,
+                "style_name": "트렌드A",
+                "source": "trending",
+                "rank": 4.0,
+            },
+            {
+                "hairstyle_id": None,
+                "style_name": "트렌드B",
+                "source": "trending",
+                "rank": 5.0,
+            },
         ],
     }
     item.update(overrides)
@@ -135,6 +153,10 @@ class TestSampleWeight:
         assert isig.parse_analysis_id("../../etc") is None
         assert isig.parse_analysis_id("a" * 65) is None
         assert isig.parse_analysis_id(None) is None
+        assert isig.parse_result_id("ABCDEF0123456789") == "abcdef0123456789"
+        assert isig.parse_result_id("abcdef012345678") is None  # 15자
+        assert isig.parse_result_id("ghijkl0123456789") is None
+        assert isig.parse_result_id(None) is None
 
 
 # ========== S3 (moto) ==========
@@ -143,11 +165,13 @@ class TestSampleWeight:
 @pytest.fixture
 def mlops_env(monkeypatch, tmp_path):
     monkeypatch.setenv("MLOPS_ENABLED", "true")
-    embeddings = np.random.default_rng(0).random((N_STYLES, EMBED_DIM)).astype(
-        np.float32
+    embeddings = (
+        np.random.default_rng(0).random((N_STYLES, EMBED_DIM)).astype(np.float32)
     )
     path = tmp_path / "style_embeddings.npz"
-    np.savez(path, styles=np.array([f"s{i}" for i in range(N_STYLES)]), embeddings=embeddings)
+    np.savez(
+        path, styles=np.array([f"s{i}" for i in range(N_STYLES)]), embeddings=embeddings
+    )
     monkeypatch.setattr(sfs, "LOCAL_EMBEDDINGS_PATH", str(path))
     return embeddings
 
@@ -169,6 +193,7 @@ def s3_store(mlops_env):
 
 def _record(store, signal, analysis=None, **kwargs):
     item = _analysis() if analysis is None else analysis
+    kwargs.setdefault("result_id", RESULT_ID)
     return record_style_signal(
         ANALYSIS_ID,
         signal,
@@ -176,6 +201,12 @@ def _record(store, signal, analysis=None, **kwargs):
         analysis_getter=lambda _id: item,
         **kwargs,
     )
+
+
+def _mark(store, hairstyle_id, result_id=RESULT_ID):
+    """그 쌍이 합성된 것처럼 표식만 남긴다 (샘플은 만들지 않는다)"""
+    recorder = isig.ImplicitSignalRecorder(store, lambda _id: None)
+    recorder._mark_pair(ANALYSIS_ID, hairstyle_id, result_id)
 
 
 def _implicit_keys(store):
@@ -206,7 +237,9 @@ def _counts(store):
 
 @pytest.mark.moto
 class TestRecording:
-    def test_first_synthesize_creates_chosen_and_shown_not_chosen(self, s3_store, mlops_env):
+    def test_first_synthesize_creates_chosen_and_shown_not_chosen(
+        self, s3_store, mlops_env
+    ):
         result = _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3, rec_rank=1)
 
         assert result["recorded"] is True
@@ -284,6 +317,7 @@ class TestRecording:
             allow_pickle=False,
         )
 
+        _mark(s3_store, 3)
         _record(s3_store, SIGNAL_SAVE, hairstyle_id=3)
         data, _ = _load(s3_store, 3)
 
@@ -305,11 +339,14 @@ class TestRecording:
         assert data["sample_weight"][0] == pytest.approx(1.0 * 4)
         assert _head_signal(s3_store, 3) == "save"
 
-        assert _record(s3_store, SIGNAL_SHARE, hairstyle_id=3)["reason"] == "overwritten"
+        assert (
+            _record(s3_store, SIGNAL_SHARE, hairstyle_id=3)["reason"] == "overwritten"
+        )
         assert _head_signal(s3_store, 3) == "share"
         assert _counts(s3_store) == (3, 3)
 
     def test_weaker_or_equal_signal_is_skipped(self, s3_store):
+        _mark(s3_store, 3)
         _record(s3_store, SIGNAL_SHARE, hairstyle_id=3)
         assert _counts(s3_store) == (1, 1)
 
@@ -347,6 +384,7 @@ class TestRecording:
         assert _implicit_keys(s3_store) == [implicit_key(ANALYSIS_ID, 5)]
 
     def test_shown_not_chosen_does_not_touch_existing(self, s3_store):
+        _mark(s3_store, 5)
         _record(s3_store, SIGNAL_SAVE, hairstyle_id=5)  # 저장이 먼저 기록된 카드
         result = _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3)
 
@@ -355,11 +393,13 @@ class TestRecording:
         assert _counts(s3_store) == (3, 3)
 
     def test_save_or_share_does_not_create_shown_not_chosen(self, s3_store):
+        _mark(s3_store, 3)
         result = _record(s3_store, SIGNAL_SHARE, hairstyle_id=3)
         assert result["shown_not_chosen"] == 0
         assert _implicit_keys(s3_store) == [implicit_key(ANALYSIS_ID, 3)]
 
     def test_match_by_style_name_when_id_missing(self, s3_store):
+        _mark(s3_store, 3)
         result = _record(s3_store, SIGNAL_SAVE, style_name="레이어드컷")
         assert result["recorded"] is True
         assert result["hairstyle_id"] == 3
@@ -392,10 +432,113 @@ class TestRecording:
 
         no_features = _analysis()
         del no_features["mediapipe_ITA_value"]
-        assert _record(s3_store, SIGNAL_SAVE, analysis=no_features, hairstyle_id=3)[
-            "reason"
-        ] == "no_features"
+        assert (
+            _record(s3_store, SIGNAL_SAVE, analysis=no_features, hairstyle_id=3)[
+                "reason"
+            ]
+            == "no_features"
+        )
         assert _implicit_keys(s3_store) == []
+
+    # ----- save/share 승격 조건 (합성 쌍 표식 + result_id) -----
+
+    def test_save_without_marker_is_rejected(self, s3_store):
+        for signal in (SIGNAL_SAVE, SIGNAL_SHARE):
+            result = _record(s3_store, signal, hairstyle_id=3)
+            assert result == {
+                "recorded": False,
+                "reason": "no_synthesis_marker",
+                "hairstyle_id": 3,
+            }
+        assert _implicit_keys(s3_store) == []
+        assert _counts(s3_store) == (0, 0)
+
+    def test_result_id_missing_or_mismatch_is_rejected(self, s3_store):
+        _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3)
+        assert (
+            _record(s3_store, SIGNAL_SAVE, hairstyle_id=3, result_id=None)["reason"]
+            == "result_id_missing"
+        )
+        # 형식이 틀린 값도 없는 것과 같다
+        assert (
+            _record(s3_store, SIGNAL_SAVE, hairstyle_id=3, result_id="../x")["reason"]
+            == "result_id_missing"
+        )
+        assert (
+            _record(
+                s3_store, SIGNAL_SHARE, hairstyle_id=3, result_id="0123456789abcdef"
+            )["reason"]
+            == "result_id_mismatch"
+        )
+        # 다른 쌍의 표식으로는 승격되지 않는다 (5 는 shown_not_chosen 만 있음)
+        assert _record(s3_store, SIGNAL_SAVE, hairstyle_id=5)["reason"] == (
+            "no_synthesis_marker"
+        )
+        _, meta = _load(s3_store, 3)
+        assert meta["signal_type"] == "synthesize"
+
+    def test_rejection_is_logged_with_reason(self, s3_store):
+        with patch.object(isig, "log_structured") as log:
+            _record(s3_store, SIGNAL_SAVE, hairstyle_id=3)
+        event, fields = log.call_args.args
+        assert event == "implicit_signal"
+        assert fields["reason"] == "no_synthesis_marker"
+        assert fields["recorded"] is False
+        assert fields["has_result_id"] is True
+
+    def test_synthesis_marker_promotes_save(self, s3_store):
+        _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3)
+        head = s3_store.s3_client.head_object(
+            Bucket=BUCKET, Key=isig.pair_marker_key(ANALYSIS_ID, 3)
+        )
+        assert head["Metadata"]["result-ids"] == RESULT_ID
+        result = _record(
+            s3_store, SIGNAL_SAVE, hairstyle_id=3, result_id=RESULT_ID.upper()
+        )
+        assert result["reason"] == "overwritten"
+        assert _head_signal(s3_store, 3) == "save"
+
+    def test_promotion_after_move_to_processed(self, s3_store):
+        _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3)
+        # 학습 후 pending -> processed 이동 (표식은 pending 밖이라 남는다)
+        for key in _implicit_keys(s3_store):
+            s3_store.s3_client.copy_object(
+                Bucket=BUCKET,
+                CopySource={"Bucket": BUCKET, "Key": key},
+                Key=key.replace("feedback/pending/implicit/", "feedback/processed/b1/"),
+            )
+            s3_store.s3_client.delete_object(Bucket=BUCKET, Key=key)
+
+        result = _record(s3_store, SIGNAL_SHARE, hairstyle_id=3)
+        assert result["reason"] == "created"
+        _, meta = _load(s3_store, 3)
+        assert meta["signal_type"] == "share"
+
+    def test_marker_keeps_recent_result_ids(self, s3_store):
+        ids = [f"{i:016x}" for i in range(isig.MAX_RESULT_IDS + 2)]
+        for rid in ids:
+            _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3, result_id=rid)
+        assert (
+            _record(s3_store, SIGNAL_SAVE, hairstyle_id=3, result_id=ids[0])["reason"]
+            == "result_id_mismatch"
+        )
+        assert (
+            _record(s3_store, SIGNAL_SAVE, hairstyle_id=3, result_id=ids[-1])["reason"]
+            == "overwritten"
+        )
+
+    def test_marker_paths_do_not_overlap(self, s3_store):
+        _record(s3_store, SIGNAL_SYNTHESIZE, hairstyle_id=3)
+        keys = sorted(
+            obj["Key"]
+            for obj in s3_store.s3_client.list_objects_v2(
+                Bucket=BUCKET, Prefix="feedback/implicit_markers/"
+            )["Contents"]
+        )
+        assert keys == [
+            f"feedback/implicit_markers/first_synthesize/{ANALYSIS_ID}",
+            f"feedback/implicit_markers/pairs/{ANALYSIS_ID}_3",
+        ]
 
     def test_falls_back_to_head_then_put_without_conditional_put(self, s3_store):
         from botocore.exceptions import ParamValidationError
@@ -425,7 +568,11 @@ class TestSkips:
         store = MagicMock()
         getter = MagicMock()
         result = record_style_signal(
-            ANALYSIS_ID, SIGNAL_SAVE, hairstyle_id=3, store=store, analysis_getter=getter
+            ANALYSIS_ID,
+            SIGNAL_SAVE,
+            hairstyle_id=3,
+            store=store,
+            analysis_getter=getter,
         )
         assert result["reason"] == "mlops_disabled"
         getter.assert_not_called()
@@ -456,13 +603,17 @@ class TestSkips:
     def test_invalid_inputs(self, monkeypatch):
         monkeypatch.setenv("MLOPS_ENABLED", "true")
         getter = MagicMock()
-        assert record_style_signal("../x", SIGNAL_SAVE, analysis_getter=getter)[
-            "reason"
-        ] == "invalid_analysis_id"
+        assert (
+            record_style_signal("../x", SIGNAL_SAVE, analysis_getter=getter)["reason"]
+            == "invalid_analysis_id"
+        )
         # shown_not_chosen 은 외부에서 들어올 수 없다
-        assert record_style_signal(
-            ANALYSIS_ID, SIGNAL_SHOWN_NOT_CHOSEN, analysis_getter=getter
-        )["reason"] == "invalid_signal"
+        assert (
+            record_style_signal(
+                ANALYSIS_ID, SIGNAL_SHOWN_NOT_CHOSEN, analysis_getter=getter
+            )["reason"]
+            == "invalid_signal"
+        )
         getter.assert_not_called()
 
 
@@ -513,7 +664,11 @@ class TestStyleActionEndpoint:
         assert response.status_code == 200
         assert response.json() == {"success": True}
         record.assert_called_once_with(
-            ANALYSIS_ID, "share", hairstyle_id=3, style_name="레이어드 컷"
+            ANALYSIS_ID,
+            "share",
+            hairstyle_id=3,
+            style_name="레이어드 컷",
+            result_id="abcdef0123456789",
         )
 
     def test_v2_prefix_is_not_mounted(self, client):
@@ -554,7 +709,9 @@ class TestStyleActionEndpoint:
 
     def test_unknown_analysis_id_format_still_200(self, client, monkeypatch):
         monkeypatch.setenv("MLOPS_ENABLED", "true")
-        response = client.post(STYLE_ACTION_URL, json=_style_action(analysis_id="x/../y"))
+        response = client.post(
+            STYLE_ACTION_URL, json=_style_action(analysis_id="x/../y")
+        )
         assert response.status_code == 200
 
     def test_broken_token_is_not_401(self, client):
@@ -692,6 +849,7 @@ class TestSynthesisSignalFields:
             hairstyle_id=5,
             style_name="레이어드 컷",
             rec_rank=2,
+            result_id=CACHE_KEY[:16],
         )
         log = _success_logs(synthesis_mocks["log"])[-1]
         assert log["analysis_id"] == ANALYSIS_ID
@@ -728,6 +886,10 @@ class TestSynthesisSignalFields:
         assert response.status_code == 200
         assert response.json()["cached"] is True
         synthesis_mocks["record"].assert_called_once()
+        # 캐시 히트도 응답과 같은 result_id 로 표식을 남긴다
+        assert synthesis_mocks["record"].call_args.kwargs["result_id"] == (
+            response.json()["result_id"]
+        )
         assert _success_logs(synthesis_mocks["log"])[-1]["analysis_id"] == ANALYSIS_ID
 
     def test_failed_synthesis_is_not_recorded(self, client, synthesis_mocks):
@@ -768,7 +930,12 @@ class TestSynthesisSignalFields:
         )
         assert response.status_code == 200
         synthesis_mocks["record"].assert_called_once_with(
-            ANALYSIS_ID, "synthesize", hairstyle_id=3, style_name=None, rec_rank=None
+            ANALYSIS_ID,
+            "synthesize",
+            hairstyle_id=3,
+            style_name=None,
+            rec_rank=None,
+            result_id=CACHE_KEY[:16],
         )
 
 

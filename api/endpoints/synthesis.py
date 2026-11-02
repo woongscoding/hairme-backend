@@ -255,9 +255,16 @@ class _SignalContext:
         return {"analysis_id": self.analysis_id, "rec_rank": self.rec_rank}
 
     def schedule(
-        self, background_tasks: BackgroundTasks, style_name: Optional[str]
+        self,
+        background_tasks: BackgroundTasks,
+        style_name: Optional[str],
+        result_id: Optional[str] = None,
     ) -> None:
-        """합성 성공 후 암묵 피드백 기록을 응답 뒤로 미룬다 (실패해도 응답과 무관)"""
+        """합성 성공 후 암묵 피드백 기록을 응답 뒤로 미룬다 (실패해도 응답과 무관)
+
+        result_id(응답과 같은 cache_key[:16])는 쌍 표식에 남아, 이후 이 결과의
+        save/share 이벤트만 학습 샘플로 승격되게 한다.
+        """
         if not self.analysis_id:
             return
         background_tasks.add_task(
@@ -267,6 +274,7 @@ class _SignalContext:
             hairstyle_id=self.hairstyle_id,
             style_name=style_name,
             rec_rank=self.rec_rank,
+            result_id=result_id,
         )
 
 
@@ -417,7 +425,7 @@ async def synthesize_hairstyle(
                     **signal.log_fields(),
                 },
             )
-            signal.schedule(background_tasks, hairstyle_name)
+            signal.schedule(background_tasks, hairstyle_name, cache_key[:16])
 
             return {
                 "success": True,
@@ -588,7 +596,7 @@ async def synthesize_hairstyle(
                 **signal.log_fields(),
             },
         )
-        signal.schedule(background_tasks, hairstyle_name)
+        signal.schedule(background_tasks, hairstyle_name, cache_key[:16])
         return {
             "success": True,
             "image_base64": image_base64,
@@ -742,7 +750,7 @@ async def synthesize_with_reference(
                     **signal.log_fields(),
                 },
             )
-            signal.schedule(background_tasks, None)
+            signal.schedule(background_tasks, None, cache_key[:16])
 
             return {
                 "success": True,
@@ -910,7 +918,7 @@ async def synthesize_with_reference(
                 **signal.log_fields(),
             },
         )
-        signal.schedule(background_tasks, None)
+        signal.schedule(background_tasks, None, cache_key[:16])
         return {
             "success": True,
             "image_base64": image_base64,

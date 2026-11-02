@@ -23,9 +23,19 @@ shown_not_chosen). 기존 객체의 signal_type 은 S3 사용자 메타데이터
 
 shown_not_chosen 은 한 분석에 처음 synthesize 신호가 들어올 때만, 그 분석의 다른 ML
 카드 중 아직 객체가 없는 것에 대해 만든다. "처음" 여부는 pending 밖의 표식 객체
-(feedback/implicit_markers/{analysis_id}) 를 조건부 생성해서 판정한다 - 학습 후
-pending 이 processed 로 옮겨져도 같은 분석에서 다시 만들어지지 않는다.
+(feedback/implicit_markers/first_synthesize/{analysis_id}) 를 조건부 생성해서 판정한다 -
+학습 후 pending 이 processed 로 옮겨져도 같은 분석에서 다시 만들어지지 않는다.
 트렌드 카드(source != "ml")는 노출 확률이 없어 샘플을 만들지 않는다.
+
+save / share 는 서버가 실제로 합성해 준 쌍만 받는다 (학습 데이터 오염 방지).
+/api/v2/analyze-hybrid 는 비인증이고 매번 새 analysis_id 를 주므로, 이벤트 API 만
+두드려 아무 쌍에나 save/share 를 만들 수 없게 한다:
+    - synthesize 신호를 기록할 때 쌍 표식
+      feedback/implicit_markers/pairs/{analysis_id}_{hairstyle_id} 를 남기고
+      x-amz-meta-result-ids 에 그 합성의 result_id(= cache_key[:16]) 를 둔다
+      (최근 MAX_RESULT_IDS 개). pending 밖이라 processed 이동과 무관하게 남는다.
+    - save / share 는 표식이 있고, 요청의 result_id 가 표식에 있을 때만 기록한다.
+      result_id 가 없거나 다르면 기록하지 않고 implicit_signal 로그에 reason 을 남긴다.
 
 이 모듈은 요청 경로 밖(백그라운드)에서 호출되며 어떤 실패도 밖으로 던지지 않는다.
 새 샘플은 feedback/metadata.json 의 pending_count / total_feedback_count 를 올리지만
@@ -96,7 +106,13 @@ IPS_MIN = 1.0
 IPS_MAX = 5.0
 
 IMPLICIT_PREFIX = f"{S3_FEEDBACK_PREFIX}implicit/"
-FIRST_SYNTHESIZE_MARKER_PREFIX = "feedback/implicit_markers/"
+# 두 표식은 서로 다른 하위 경로 (analysis_id 에 "/" 가 없으므로 겹치지 않는다)
+FIRST_SYNTHESIZE_MARKER_PREFIX = "feedback/implicit_markers/first_synthesize/"
+PAIR_MARKER_PREFIX = "feedback/implicit_markers/pairs/"
+# x-amz-meta-result-ids: 쉼표로 이은 result_id (합성 응답의 cache_key[:16])
+RESULT_IDS_META_KEY = "result-ids"
+MAX_RESULT_IDS = 8
+RESULT_ID_LENGTH = 16
 # x-amz-meta-signal-type (boto3 Metadata 키는 접두사 없이 소문자로 저장된다)
 SIGNAL_META_KEY = "signal-type"
 
@@ -105,6 +121,7 @@ CARD_SOURCE_ML = "ml"
 
 # analysis_id 는 UUID. S3 키에 들어가므로 안전한 문자만 허용한다
 _ANALYSIS_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+_RESULT_ID_RE = re.compile(r"^[0-9a-f]+$")
 
 REC_RANK_MIN = 1
 REC_RANK_MAX = 5
@@ -167,6 +184,20 @@ def sample_weight(signal_type: str, propensity: Any) -> float:
     _, base_weight = SIGNAL_SPECS[signal_type]
     ips = 1.0 / normalize_propensity(propensity)
     return base_weight * min(max(ips, IPS_MIN), IPS_MAX)
+
+
+def parse_result_id(value: Any) -> Optional[str]:
+    """합성 응답의 result_id (cache_key 앞 16자, 16진수). 형식이 틀리면 None"""
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower()
+    if len(text) != RESULT_ID_LENGTH or not _RESULT_ID_RE.match(text):
+        return None
+    return text
+
+
+def pair_marker_key(analysis_id: str, hairstyle_id: int) -> str:
+    return f"{PAIR_MARKER_PREFIX}{analysis_id}_{int(hairstyle_id)}"
 
 
 def implicit_key(analysis_id: str, hairstyle_id: int) -> str:
@@ -362,6 +393,49 @@ class ImplicitSignalRecorder:
             f"{FIRST_SYNTHESIZE_MARKER_PREFIX}{analysis_id}", b"", None
         )
 
+    def _pair_result_ids(
+        self, analysis_id: str, hairstyle_id: int
+    ) -> Optional[List[str]]:
+        """쌍 표식의 result_id 목록. 표식이 없으면 None"""
+        try:
+            response = self.s3.head_object(
+                Bucket=self.bucket, Key=pair_marker_key(analysis_id, hairstyle_id)
+            )
+        except ClientError as e:
+            if _error_code(e) in ("404", "NoSuchKey", "NotFound"):
+                return None
+            raise
+        raw = (response.get("Metadata") or {}).get(RESULT_IDS_META_KEY) or ""
+        return [rid for rid in raw.split(",") if rid]
+
+    def _mark_pair(
+        self, analysis_id: str, hairstyle_id: int, result_id: Optional[str]
+    ) -> None:
+        """합성한 쌍 표식을 남기고 result_id 를 덧붙인다 (최근 MAX_RESULT_IDS 개)"""
+        ids = self._pair_result_ids(analysis_id, hairstyle_id) or []
+        if result_id and result_id not in ids:
+            ids = (ids + [result_id])[-MAX_RESULT_IDS:]
+        self.s3.put_object(
+            Bucket=self.bucket,
+            Key=pair_marker_key(analysis_id, hairstyle_id),
+            Body=b"",
+            ContentType="application/octet-stream",
+            Metadata={RESULT_IDS_META_KEY: ",".join(ids)},
+        )
+
+    def _promotion_block(
+        self, analysis_id: str, hairstyle_id: int, result_id: Optional[str]
+    ) -> Optional[str]:
+        """save/share 를 막을 이유 (통과면 None)"""
+        if not result_id:
+            return "result_id_missing"
+        ids = self._pair_result_ids(analysis_id, hairstyle_id)
+        if ids is None:
+            return "no_synthesis_marker"
+        if result_id not in ids:
+            return "result_id_mismatch"
+        return None
+
     def _bump_metadata(self, created: int) -> None:
         """save_feedback 과 같은 방식으로 카운터 갱신 (재학습 트리거는 하지 않는다)"""
         metadata = self.store._get_metadata()
@@ -380,6 +454,7 @@ class ImplicitSignalRecorder:
         hairstyle_id: Optional[int] = None,
         style_name: Optional[str] = None,
         rec_rank: Optional[int] = None,
+        result_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         analysis = self.get_analysis(analysis_id)
         if not analysis:
@@ -398,6 +473,10 @@ class ImplicitSignalRecorder:
             return {"recorded": False, "reason": "not_ml_card"}
 
         chosen_id = card_hairstyle_id(card)
+        if signal_type in (SIGNAL_SAVE, SIGNAL_SHARE):
+            blocked = self._promotion_block(analysis_id, chosen_id, result_id)
+            if blocked:
+                return {"recorded": False, "reason": blocked, "hairstyle_id": chosen_id}
         timestamp = datetime.now(timezone.utc)
         created = 0
 
@@ -417,12 +496,17 @@ class ImplicitSignalRecorder:
                 rec_rank=rank,
                 timestamp=timestamp,
             )
-            return self._write_sample(implicit_key(analysis_id, target_id), body, signal)
+            return self._write_sample(
+                implicit_key(analysis_id, target_id), body, signal
+            )
 
         chosen_rank = rec_rank if rec_rank is not None else _card_rank(card)
         result = _write(card, chosen_id, signal_type, chosen_rank)
         if result == CREATED:
             created += 1
+        if signal_type == SIGNAL_SYNTHESIZE:
+            # 샘플이 이미 더 강한 신호여서 건너뛰었어도 합성은 실제로 일어났다
+            self._mark_pair(analysis_id, chosen_id, result_id)
 
         not_chosen = 0
         if signal_type == SIGNAL_SYNTHESIZE and self._claim_first_synthesize(
@@ -462,6 +546,7 @@ def record_style_signal(
     hairstyle_id: Any = None,
     style_name: Optional[str] = None,
     rec_rank: Any = None,
+    result_id: Any = None,
     store=None,
     analysis_getter: Optional[Callable[[str], Optional[Dict]]] = None,
 ) -> Dict[str, Any]:
@@ -492,6 +577,7 @@ def record_style_signal(
                     hairstyle_id=parse_hairstyle_id(hairstyle_id),
                     style_name=style_name,
                     rec_rank=parse_rec_rank(rec_rank),
+                    result_id=parse_result_id(result_id),
                 )
     except Exception as e:
         logger.warning(f"암묵 피드백 기록 실패 (무시): {e}")
@@ -503,6 +589,7 @@ def record_style_signal(
             "analysis_id": parsed_id,
             "signal_type": signal_type,
             "rec_rank": parse_rec_rank(rec_rank),
+            "has_result_id": parse_result_id(result_id) is not None,
             **summary,
         },
     )

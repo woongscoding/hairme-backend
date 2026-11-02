@@ -31,7 +31,9 @@ class StyleActionRequest(BaseModel):
     result_id: Optional[str] = Field(
         None, max_length=128, description="합성 응답의 result_id"
     )
-    device_id: Optional[str] = Field(None, max_length=256, description="비로그인 식별자")
+    device_id: Optional[str] = Field(
+        None, max_length=256, description="비로그인 식별자"
+    )
 
 
 def _optional_user_id(request: Request) -> Optional[str]:
@@ -74,5 +76,7 @@ async def style_action(
         body.action,
         hairstyle_id=body.hairstyle_id,
         style_name=body.style_name,
+        # 합성한 결과의 result_id 가 서버 표식과 맞을 때만 학습 샘플로 승격된다
+        result_id=body.result_id,
     )
     return {"success": True}
