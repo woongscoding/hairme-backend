@@ -298,7 +298,9 @@ def test_load_feedbacks_uses_paginator_and_pending_only_by_default():
     )
 
     with patch.object(lf, "get_s3_client", return_value=fake_s3):
-        face, skin, style, gt, count, keys, analysis_ids = lf.load_pending_feedbacks()
+        face, skin, style, gt, count, keys, analysis_ids, info = (
+            lf.load_pending_feedbacks()
+        )
 
     assert fake_s3.list_objects_v2_calls == 0
     assert count == 5
@@ -323,8 +325,8 @@ def test_load_feedbacks_include_processed():
     )
 
     with patch.object(lf, "get_s3_client", return_value=fake_s3):
-        face, skin, style, gt, count, keys, analysis_ids = lf.load_pending_feedbacks(
-            include_processed=True
+        face, skin, style, gt, count, keys, analysis_ids, info = (
+            lf.load_pending_feedbacks(include_processed=True)
         )
 
     assert count == 8
@@ -367,7 +369,8 @@ def _fake_feedbacks(pending_count: int, processed_count: int = 0):
         f"feedback/processed/batch_a/g{i}.npz" for i in range(processed_count)
     ]
     analysis_ids = [f"analysis-{i}" for i in range(total)]
-    return face, skin, style, gt, total, keys, analysis_ids
+    # sample_info=None -> 가중치 1.0 / 명시 피드백 기본값
+    return face, skin, style, gt, total, keys, analysis_ids, None
 
 
 def _patched_pipeline(pending_count, processed_count=0, saved=None):
@@ -395,6 +398,8 @@ def _patched_pipeline(pending_count, processed_count=0, saved=None):
         patch.object(lf, "move_pending_to_processed", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
         patch.object(lf, "save_evaluation_report", return_value=True),
+        # 기준선 학습 시각 미상 -> 해시 홀드아웃 (fresh 홀드아웃은 별도 테스트)
+        patch.object(lf, "get_baseline_trained_at", return_value=(None, None)),
     ]
 
 
@@ -445,13 +450,14 @@ def test_pipeline_from_base_records_flags_and_moves_pending_only():
     assert saved["config"]["batchnorm_frozen"] is True
 
 
-def test_pipeline_defaults_are_current_model():
-    """플래그가 없으면 기존과 동일하게 models/current/model.pt 사용"""
+@pytest.mark.parametrize("trigger_type", ["data_threshold", "manual"])
+def test_pipeline_defaults_are_current_model(trigger_type):
+    """정기 실행이 아니면 플래그가 없을 때 기존과 동일하게 models/current/model.pt 사용"""
     patches = _patched_pipeline(200)
     for p in patches:
         p.start()
     try:
-        result = lf.run_training_pipeline({"trigger_type": "scheduled"})
+        result = lf.run_training_pipeline({"trigger_type": trigger_type})
         _, kwargs = lf.load_base_model.call_args
         assert kwargs["from_base"] is False
         _, load_kwargs = lf.load_pending_feedbacks.call_args
@@ -554,12 +560,12 @@ def test_no_direct_list_objects_v2_in_trainer():
 
 @pytest.mark.parametrize("flag", ["from_base", "include_processed"])
 def test_flags_default_false(flag):
-    """이벤트에 플래그가 없으면 False 로 동작"""
+    """정기 실행이 아니고 이벤트에 플래그가 없으면 False 로 동작"""
     patches = _patched_pipeline(200)
     for p in patches:
         p.start()
     try:
-        result = lf.run_training_pipeline({"trigger_type": "scheduled"})
+        result = lf.run_training_pipeline({"trigger_type": "data_threshold"})
     finally:
         for p in patches:
             p.stop()
