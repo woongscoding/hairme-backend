@@ -39,9 +39,26 @@ MODEL_VERSION = "v6_feedback_20260909"
 
 # 9월 실측처럼 1위 근처가 촘촘한 풀 (원점수, 내림차순)
 TIGHT_SCORES = [
-    62.4, 62.1, 61.9, 61.7, 61.2, 60.8, 60.5, 60.1,
-    59.6, 59.0, 58.2, 57.5, 56.9, 56.0, 55.1, 54.3,
-    53.0, 52.2, 51.0, 50.0,
+    62.4,
+    62.1,
+    61.9,
+    61.7,
+    61.2,
+    60.8,
+    60.5,
+    60.1,
+    59.6,
+    59.0,
+    58.2,
+    57.5,
+    56.9,
+    56.0,
+    55.1,
+    54.3,
+    53.0,
+    52.2,
+    51.0,
+    50.0,
 ]
 
 
@@ -443,13 +460,17 @@ class TestServiceExplore:
 
             assert [r["style_name"] for r in ranking[:3]] == shown
             rest = [r["style_name"] for r in ranking[3:]]
-            assert rest == [r["hairstyle"] for r in ranked if r["hairstyle"] not in shown]
+            assert rest == [
+                r["hairstyle"] for r in ranked if r["hairstyle"] not in shown
+            ]
             assert len(ranking) == len(ranked)
             # 점수는 전체 랭킹 값 그대로 유지
             by_name = {r["hairstyle"]: round(r["score"] / 100.0, 2) for r in ranked}
             assert all(r["score"] == by_name[r["style_name"]] for r in ranking)
 
-    def test_full_ranking_empty_stays_empty_in_explore_arm(self, explore_on, monkeypatch):
+    def test_full_ranking_empty_stays_empty_in_explore_arm(
+        self, explore_on, monkeypatch
+    ):
         monkeypatch.setattr(settings, "FULL_RANKING_LIMIT", 0)
         assert _recommend(_service(_ranked(TIGHT_SCORES)))["full_ranking"] == []
 
@@ -546,7 +567,9 @@ class TestEndpoint:
         assert response.status_code == 200, response.text
         data = response.json()["data"]
         cards = _ml_cards(data)
-        assert all("propensity" in c and "ml_rank" in c and "raw_score" in c for c in cards)
+        assert all(
+            "propensity" in c and "ml_rank" in c and "raw_score" in c for c in cards
+        )
 
         saved = save.call_args.kwargs["analysis_result"]["recommendations"]
         assert [c["propensity"] for c in _ml_cards({"recommendations": saved})] == [
@@ -598,4 +621,3 @@ class TestEndpoint:
         data = save.call_args.args[0]
         assert data["experiment_id"] == "rec_explore_v1"
         assert data["ab_variant"] == ARM_CONTROL
-
