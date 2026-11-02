@@ -491,6 +491,9 @@ async def analyze_face_hybrid(
             analysis_result_for_db["engagement_version"] = engagement_assignment.get(
                 "engagement_version"
             )
+            analysis_result_for_db["engagement_applied"] = bool(
+                engagement_assignment.get("engagement_applied")
+            )
 
         analysis_id = save_to_database(
             image_hash=image_hash,
@@ -547,6 +550,7 @@ async def analyze_face_hybrid(
                 # 반응률 보너스 실험 (실험 밖이면 None)
                 "engagement_arm": engagement_assignment.get("engagement_arm"),
                 "engagement_version": engagement_assignment.get("engagement_version"),
+                "engagement_applied": engagement_assignment.get("engagement_applied"),
                 "authenticated": user_id is not None,
                 "processing_time": total_time,
                 "analysis_id": analysis_id,

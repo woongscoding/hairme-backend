@@ -10,6 +10,9 @@
 
 기본은 dry-run: 로컬 파일로만 쓰고 요약을 출력한다. --write 일 때만
 engagement/current.json 과 engagement/archive/{YYYY-MM-DD}.json 을 올린다.
+--write 전 가드: npz 읽기 오류 비율 > --max-read-error-ratio(5%), 노출 <
+--min-exposures, mu <= 0, styles 비어 있음 중 하나라도 걸리면 업로드하지 않고
+종료 코드 2 로 끝난다 (서빙은 이전 테이블을 신선도 한도까지 계속 쓴다).
 
 필요 권한 (GitHub Actions 사용자 / 로컬 실행자):
     dynamodb:Scan                          on table/hairme-analysis
@@ -18,22 +21,24 @@ engagement/current.json 과 engagement/archive/{YYYY-MM-DD}.json 을 올린다.
     s3:PutObject (--write 일 때만)          on hairme-mlops/engagement/*
 
 기본 파라미터 근거 (2026-11-02 시뮬레이션: 운영 모델로 재현한 9/17~ 분석 849건의 점수 풀
-+ 가상 반응, 월 분석 640 / 합성 500, 매일 60일 창 재집계, 시드 5개 평균)
-    a1 = a2 = 20 (반응 가중치 단위, m = a / mu). mu ~ 0.5 에서 m ~ 40 노출.
-        a=5~10 은 반응 2배 스타일을 1주 빨리 잡지만 효과가 없을 때 잡음 보너스가
-        평균 0.5 / p90 1.0 점으로 커진다. a=40 은 잡음 0.3 이지만 작은 그룹이 6주 이상.
-        a=20, BETA=3 에서 잡음 보너스 평균 0.40 / p90 0.76 점 (상한 3의 1/4 수준).
-        mu 에 비례하는 사전이라 명시 피드백만 있는 지금(mu 0.01)도 좋아요 몇 개로
-        보너스가 상한에 붙지 않는다 (실데이터 최대 1.15 점).
-    BETA = 3, CAP = 3 (서빙, config/settings.py): lift +1(반응 2배)을 상한 3점에 대응.
-        CAP 은 탐색 동점권 폭 REC_EXPLORE_MARGIN(3점)과 같게 해서 보너스만으로
-        동점권을 넘는 순위 역전은 하지 않는다.
-    위치 보정 사전 강도 20: 1위/3위 반응 차이가 실제로 있을 때 수백 건이면 반영.
++ 가상 반응, 월 분석 640 / 합성 500, 합성 중 저장 30% / 공유 10%, 매일 60일 창
+재집계, 시드 8개 평균)
+    a1 = a2 = ag = 20 (반응 가중치 단위, m = a / mu). mu ~ 0.5 에서 m ~ 40 노출.
+        a=40 은 효과 없을 때 잡음 보너스가 0.69 -> 0.61 점으로 조금 줄지만 스타일별
+        효과 차이(sd 0.3) 세계의 기대 반응 개선이 +4.0% -> +2.8% 로 줄고 탐지가 느려진다.
+        mu 에 비례하는 사전이라 명시 피드백만 있는 지금(mu 0.012)도 좋아요 몇 개로
+        보너스가 상한에 붙지 않는다 (실데이터 최대 |1.09| 점).
+    BETA = 3, CAP = 1.5 (서빙, config/settings.py): CAP 1.5 와 3 은 탐지 속도·기대
+        반응이 거의 같았다 (BETA 3 에서 상한에 닿는 셀이 드묾). 1.5 = 동점권 폭/2 라서
+        보너스만으로 원점수 3점 넘게 차이 나는 두 스타일의 순서는 바뀌지 않는다.
+    share = save = 3: 앱은 공유 시트를 연 시점(취소 포함)에 share 를 보낸다.
+    위치 보정 기본 꺼짐: 탐색이 꺼진 지금은 같은 스타일이 여러 순위에 나오는 일이
+        드물어 위치·품질 효과를 나눠 추정할 수 없다. --position-adjust 로만 켠다.
 
 사용법:
     python scripts/build_style_engagement.py                 # dry-run (읽기만)
     python scripts/build_style_engagement.py --days 30 --no-explicit
-    python scripts/build_style_engagement.py --write         # S3 업로드 (운영)
+    python scripts/build_style_engagement.py --write         # S3 업로드 (운영, 가드 통과 시만)
 """
 
 from __future__ import annotations
@@ -66,6 +71,7 @@ CURRENT_KEY = "engagement/current.json"
 ARCHIVE_PREFIX = "engagement/archive/"
 
 # 노출 집계에 필요한 필드만 읽는다 (user_id / device_id 는 읽지 않는다)
+# image_hash / user_id 는 주체당 기여 상한에만 쓰고 해시로만 메모리에 남긴다 (출력 없음)
 PROJECTION_FIELDS = (
     "analysis_id",
     "created_at",
@@ -73,7 +79,10 @@ PROJECTION_FIELDS = (
     "face_shape",
     "recommended_styles",
     "recommendations",
+    "image_hash",
+    "user_id",
 )
+EXIT_GUARD_FAILED = 2
 
 
 # ========== 인자 ==========
@@ -117,10 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-explicit", action="store_true", help="명시 피드백 제외")
     parser.add_argument("--a1", type=float, default=eng.DEFAULT_A1)
     parser.add_argument("--a2", type=float, default=eng.DEFAULT_A2)
+    parser.add_argument("--ag", type=float, default=eng.DEFAULT_AG)
     parser.add_argument(
         "--position-prior", type=float, default=eng.DEFAULT_POSITION_PRIOR
     )
-    parser.add_argument("--no-position-adjust", action="store_true")
+    parser.add_argument(
+        "--position-adjust",
+        action="store_true",
+        help="위치 보정 켜기 (여러 순위에 노출된 스타일로만 추정, 기본 꺼짐)",
+    )
+    parser.add_argument("--min-exposures", type=int, default=500)
+    parser.add_argument("--max-read-error-ratio", type=float, default=0.05)
     parser.add_argument(
         "--table", default=os.getenv("DYNAMODB_TABLE_NAME", DEFAULT_TABLE)
     )
@@ -199,6 +215,31 @@ def load_samples(
     return samples, stats
 
 
+# ========== 가드 ==========
+def write_guard(
+    payload: Dict[str, Any],
+    *,
+    read_errors: int,
+    keys_total: int,
+    min_exposures: int,
+    max_read_error_ratio: float,
+) -> List[str]:
+    """업로드하면 안 되는 이유 목록 (비어 있으면 통과)"""
+    problems: List[str] = []
+    if keys_total > 0 and read_errors / keys_total > max_read_error_ratio:
+        problems.append(
+            f"npz 읽기 오류 {read_errors}/{keys_total} > {max_read_error_ratio:.0%}"
+        )
+    exposures = int(payload.get("summary", {}).get("exposures", 0))
+    if exposures < min_exposures:
+        problems.append(f"노출 {exposures} < {min_exposures}")
+    if not payload.get("mu") or payload["mu"] <= 0:
+        problems.append(f"mu {payload.get('mu')} <= 0")
+    if not payload.get("styles"):
+        problems.append("styles 비어 있음")
+    return problems
+
+
 # ========== 요약 ==========
 def summarize(
     payload: Dict[str, Any],
@@ -213,6 +254,7 @@ def summarize(
         payload["group_totals"].items(), key=lambda kv: -kv[1]["exposures"]
     ):
         entries = payload["groups"][gkey]
+        base = totals.get("mean_rate") or mu
         best = max(entries.items(), key=lambda kv: kv[1]["rate"], default=None)
         groups.append(
             {
@@ -224,8 +266,14 @@ def summarize(
                     1 for e in entries.values() if e["exposures"] >= 30
                 ),
                 "top_style": best[0] if best else None,
+                "mean_rate": totals.get("mean_rate"),
                 "top_lift": (
-                    round((best[1]["rate"] - mu) / mu, 3) if best and mu > 0 else None
+                    round((best[1]["rate"] - base) / base, 3)
+                    if best and base > 0
+                    else None
+                ),
+                "max_save_share_subjects": max(
+                    (e.get("subjects", 0) for e in entries.values()), default=0
                 ),
             }
         )
@@ -235,6 +283,7 @@ def summarize(
         "mu": mu,
         "m1": payload["params"]["m1"],
         "m2": payload["params"]["m2"],
+        "mg": payload["params"]["mg"],
         "position_factors": payload["params"]["position_factors"],
         "exposures": exposure_stats.as_dict(),
         "npz_objects": keys_total,
@@ -284,7 +333,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         include_explicit=include_explicit,
         a1=args.a1,
         a2=args.a2,
-        position_adjust=not args.no_position_adjust,
+        ag=args.ag,
+        position_adjust=args.position_adjust,
         position_prior=args.position_prior,
         face_shape_since=args.face_shape_since,
     )
@@ -297,9 +347,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     logger.info(f"로컬 출력: {args.output} ({len(body):,} bytes)")
 
+    problems = write_guard(
+        payload,
+        read_errors=sample_stats.get("read_error", 0),
+        keys_total=len(keys),
+        min_exposures=args.min_exposures,
+        max_read_error_ratio=args.max_read_error_ratio,
+    )
+    for problem in problems:
+        logger.error(f"가드: {problem}")
+
     if not args.write:
         logger.info("dry-run - S3 에 쓰지 않음 (--write 로 업로드)")
         return 0
+
+    if problems:
+        logger.error("가드 실패 - S3 에 쓰지 않음")
+        return EXIT_GUARD_FAILED
 
     archive_key = f"{ARCHIVE_PREFIX}{until.strftime('%Y-%m-%d')}.json"
     for key in (archive_key, CURRENT_KEY):

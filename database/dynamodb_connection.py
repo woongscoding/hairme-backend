@@ -310,6 +310,9 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             item["engagement_arm"] = data.get("engagement_arm")
         if data.get("engagement_version"):
             item["engagement_version"] = data.get("engagement_version")
+        if data.get("engagement_arm") and data.get("engagement_applied") is not None:
+            # 실험군이어도 풀 경로 실패로 보너스가 안 붙었으면 False (ITT 분석용)
+            item["engagement_applied"] = bool(data.get("engagement_applied"))
 
         # 스타일별 점수 저장 (A/B 테스트 평가용)
         for i in range(1, 6):

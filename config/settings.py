@@ -120,23 +120,26 @@ class Settings(BaseSettings):
     # 켜면 s3://{MLOPS_S3_BUCKET}/{REC_ENGAGEMENT_S3_KEY} (scripts/build_style_engagement.py
     # 가 매일 만든 "성별 x 얼굴형 그룹의 스타일 반응률")를 읽어, 실험군(사용자/image_hash
     # 해시 버킷 < RATIO, 탐색 실험과 독립 배정)의 원점수에
-    #   clip(BETA * (그룹 반응률 - mu) / mu, -CAP, +CAP)  점수 포인트를 더한다.
+    #   clip(BETA * (셀 반응률 - 그룹 평균) / 그룹 평균, -CAP, +CAP)  점수 포인트를 더한다.
     # 보너스는 탐색(동점권) 선택 전에 더해져 순위·동점권 모두에 영향을 준다.
     # 꺼짐 / 대조군 / 테이블 없음은 응답이 기존과 같다 (새 필드 없음).
     REC_ENGAGEMENT_ENABLED: bool = False
     REC_ENGAGEMENT_RATIO: float = 0.5
-    REC_ENGAGEMENT_BETA: float = 3.0  # lift +1 (반응 2배) -> +3점
-    # 보너스 절대 상한(점). 탐색 동점권 폭(REC_EXPLORE_MARGIN)과 같게 - 근거는
-    # scripts/build_style_engagement.py 머리말
-    REC_ENGAGEMENT_CAP: float = 3.0
+    REC_ENGAGEMENT_BETA: float = 3.0  # lift +1 (반응 2배) -> +3점 (CAP 에서 잘린다)
+    # 보너스 절대 상한(점). 두 스타일의 상대 순서는 최대 2*CAP 까지 움직이므로
+    # CAP = REC_EXPLORE_MARGIN / 2 이면 보너스만으로는 원점수 차이가 동점권 폭(3점)
+    # 이내인 스타일끼리만 순서가 바뀐다. 근거는 scripts/build_style_engagement.py 머리말
+    REC_ENGAGEMENT_CAP: float = 1.5
     REC_ENGAGEMENT_S3_KEY: str = "engagement/current.json"
     REC_ENGAGEMENT_CACHE_TTL_SECONDS: int = 3600
-    # 실험군 사유 문구 교체 조건: 그룹 반응률(축소 후)이 mu 보다 MIN_LIFT 이상 높고
-    # 그룹 노출 >= MIN_EXPOSURES, 그룹 반응 가중치 합 >= MIN_REACTIONS ("많이 저장한"
-    # 이라고 말할 만큼 실제 반응이 있을 때만 - 명시 좋아요 3개로는 나가지 않게)
+    # generated_at 이 이 일수보다 오래된 테이블은 쓰지 않는다 (매일 집계가 멈춘 경우)
+    REC_ENGAGEMENT_MAX_AGE_DAYS: float = 3.0
+    # 실험군 사유 문구 교체 조건: 셀 lift(그룹 평균 기준) >= MIN_LIFT, 셀 노출 >=
+    # MIN_EXPOSURES, save/share 한 고유 주체 수 >= MIN_SUBJECTS ("많이 저장한" 의 근거.
+    # 합성·좋아요만으로는 나가지 않는다)
     REC_ENGAGEMENT_REASON_MIN_LIFT: float = 0.3
     REC_ENGAGEMENT_REASON_MIN_EXPOSURES: int = 50
-    REC_ENGAGEMENT_REASON_MIN_REACTIONS: float = 15.0
+    REC_ENGAGEMENT_REASON_MIN_SUBJECTS: int = 15
 
     # ===== 사진 저장 (S3) =====
     PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화

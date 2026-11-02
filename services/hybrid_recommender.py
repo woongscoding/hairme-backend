@@ -215,6 +215,10 @@ class MLRecommendationService:
             if bonus is not None:
                 # 반응률 보너스 실험군만 (raw_score 는 보너스 전 모델 점수)
                 card["engagement_bonus"] = round(bonus, 2)
+            if engagement_reason:
+                # 사회적 증거 문구가 붙은 카드 - 집계에서 빼서 문구가 반응을 키우는
+                # 루프를 막는다 (services/mlops/engagement.py)
+                card["engagement_reason"] = True
             result.append(card)
 
             seen_styles.add(normalized_name)
@@ -239,6 +243,10 @@ class MLRecommendationService:
         v4 모델의 Top-K 내 정규화가 k 에 의존하기 때문.
         score 는 recommendations 와 같은 0-1 스케일이다. 실패하면 빈 배열.
         engagement(반응률 보너스 실험군)가 있으면 보너스를 더한 점수로 다시 정렬한다.
+        보너스는 화면 Top-3 를 고르는 풀과 같은 범위(모델 점수 상위 REC_EXPLORE_POOL)
+        에만 더한다 - 풀 밖 후보는 화면에 나올 수 없으므로 전체 랭킹에서만 보너스로
+        올라와 화면과 어긋나지 않게 한다 (다양성 필터가 위에서부터 탐욕적으로 고르므로
+        k=FULL_RANKING_LIMIT 결과의 앞 POOL 개가 풀과 같다).
         """
         limit = settings.FULL_RANKING_LIMIT
         if limit <= 0 or not (self.ml_available and self.ml_recommender):
@@ -264,11 +272,17 @@ class MLRecommendationService:
             return []
 
         if engagement is not None:
+            pool_size = settings.REC_EXPLORE_POOL
             adjusted = [
                 _adjusted_score(
-                    rec.get("score", 0.0), engagement.bonus(rec.get("hairstyle_id"))
+                    rec.get("score", 0.0),
+                    (
+                        engagement.bonus(rec.get("hairstyle_id"))
+                        if index < pool_size
+                        else 0.0
+                    ),
                 )
-                for rec in ranked
+                for index, rec in enumerate(ranked)
             ]
             order = sorted(range(len(ranked)), key=lambda i: -adjusted[i])  # 안정 정렬
             ranked = [dict(ranked[i], score=adjusted[i]) for i in order]
@@ -450,8 +464,10 @@ class MLRecommendationService:
                 (없으면 REC_EXPLORE_ENABLED 여도 결정적 Top-3)
             user_id: 로그인 사용자 ID. 있으면 실험 배정 기준
             engagement_out: 넘기면 반응률 보너스 실험 배정을 채워 준다
-                ({"engagement_arm", "engagement_version"}, 실험 밖이면 비워 둔다).
-                대조군은 응답에 아무 필드도 더하지 않으므로 저장·로그용 배정은 여기로만 나간다.
+                ({"engagement_arm", "engagement_version", "engagement_applied"},
+                실험 밖이면 비워 둔다). 대조군은 응답에 아무 필드도 더하지 않으므로
+                저장·로그용 배정은 여기로만 나간다. 배정 기준 분석(ITT)을 위해 풀 경로가
+                실패해 보너스를 못 붙인 실험군도 arm 은 남기고 applied=False 로 표시한다.
 
         분기 (탐색 = REC_EXPLORE_ENABLED, 보너스 = REC_ENGAGEMENT_ENABLED 의 실험군):
             탐색 X, 보너스 X(꺼짐·대조군·테이블 없음) -> 기존 k=3 호출
@@ -510,13 +526,12 @@ class MLRecommendationService:
                 )
             except Exception as e:
                 # 풀 경로 오류로 추천이 비지 않도록 결정적 Top-3 로 내려간다.
-                # 보너스도 적용되지 않았으므로 반응률 실험 배정에서도 뺀다.
+                # 보너스는 적용되지 않는다 (배정은 남기고 applied=False)
                 logger.error(
                     f"❌ 풀 경로(탐색/보너스) 실패 - 결정적 Top-3 로 폴백: {str(e)}"
                 )
                 use_pool = False
-                if bonus_plan is not None:
-                    engagement = bonus_plan = None
+                bonus_plan = None
         if self.ml_available and self.ml_recommender and not use_pool:
             try:
                 ml_recommendations = self.ml_recommender.recommend_top_k(
@@ -580,8 +595,11 @@ class MLRecommendationService:
                 "engagement_version": engagement.table.version,
             }
             if engagement_out is not None:
-                engagement_out.update(assignment)
+                engagement_out.update(
+                    assignment, engagement_applied=bonus_plan is not None
+                )
             if bonus_plan is not None:
+                # 응답에는 보너스가 실제로 붙은 실험군만 (대조군·폴백은 기존과 동일)
                 engagement_meta = assignment
 
         # 결과 구성
