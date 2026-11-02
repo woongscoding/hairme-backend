@@ -1,0 +1,78 @@
+name: Build style engagement
+
+# 추천 반응률 보너스(services/rec_engagement.py)가 읽는 집계를 매일 한 번 만든다.
+#   python scripts/build_style_engagement.py --write
+#   -> s3://hairme-mlops/engagement/current.json (+ engagement/archive/YYYY-MM-DD.json)
+#
+# 인증은 deploy.yml 과 같은 secrets.AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+# 그 IAM 사용자에게 필요한 권한:
+#   dynamodb:Scan     arn:aws:dynamodb:ap-northeast-2:<account>:table/hairme-analysis
+#   s3:ListBucket     arn:aws:s3:::hairme-mlops            (prefix feedback/)
+#   s3:GetObject      arn:aws:s3:::hairme-mlops/feedback/*
+#   s3:PutObject      arn:aws:s3:::hairme-mlops/engagement/*
+#
+# 서빙(Lambda hairme-analyze)은 s3:GetObject on hairme-mlops/engagement/current.json 이
+# 필요하다 (hairme-lambda-role 은 2026-11-02 기준 AmazonS3FullAccess 로 이미 충족).
+# REC_ENGAGEMENT_ENABLED 가 꺼져 있으면 이 파일은 읽히지 않는다.
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 매일 03:30 KST (트래픽 적은 시간, 트레이너 03:00 이후)
+  workflow_dispatch:
+    inputs:
+      write:
+        description: "S3 에 업로드 (false 면 dry-run)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: build-style-engagement
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        # 집계는 boto3 + numpy 만 쓴다 (torch 등 모델 의존성 불필요)
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3 "numpy<2"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build engagement
+        env:
+          WRITE: ${{ github.event_name == 'schedule' || inputs.write }}
+        run: |
+          ARGS="--output engagement_current.json"
+          if [ "$WRITE" = "true" ]; then ARGS="$ARGS --write"; fi
+          python scripts/build_style_engagement.py $ARGS
+
+      - name: Upload summary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engagement-current
+          path: engagement_current.json
+          retention-days: 14

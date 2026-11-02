@@ -1,0 +1,452 @@
+{
+ "explore_arm": {
+  "analysis": {
+   "face_shape": "둥근형",
+   "features": "ML 모델 기반 분석",
+   "personal_color": "봄웜"
+  },
+  "full_ranking": [
+   {
+    "score": 0.62,
+    "style_name": "스타일00"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일03"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일08"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일01"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일02"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일04"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일05"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일06"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일07"
+   },
+   {
+    "score": 0.59,
+    "style_name": "스타일09"
+   },
+   {
+    "score": 0.58,
+    "style_name": "스타일10"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일11"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일12"
+   },
+   {
+    "score": 0.56,
+    "style_name": "스타일13"
+   },
+   {
+    "score": 0.55,
+    "style_name": "스타일14"
+   },
+   {
+    "score": 0.54,
+    "style_name": "스타일15"
+   },
+   {
+    "score": 0.53,
+    "style_name": "스타일16"
+   },
+   {
+    "score": 0.52,
+    "style_name": "스타일17"
+   },
+   {
+    "score": 0.51,
+    "style_name": "스타일18"
+   },
+   {
+    "score": 0.5,
+    "style_name": "스타일19"
+   }
+  ],
+  "meta": {
+   "experiment_arm": "explore",
+   "margin": 3.0,
+   "method": "ml",
+   "ml_count": 3,
+   "model_version": "v6_feedback_20260909",
+   "rec_policy": "explore_v1",
+   "score_stddev": 1.19,
+   "temperature": 1.5,
+   "tie_band_size": 9,
+   "top_score": 62.4,
+   "total_count": 5,
+   "trending_count": 2
+  },
+  "recommendations": [
+   {
+    "hairstyle_id": 100,
+    "ml_rank": 1,
+    "propensity": 0.5945,
+    "rank": 1,
+    "raw_score": 62.4,
+    "reason": "ML 모델 추천 (점수: 62.4)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일00"
+   },
+   {
+    "hairstyle_id": 103,
+    "ml_rank": 4,
+    "propensity": 0.405,
+    "rank": 2,
+    "raw_score": 61.7,
+    "reason": "ML 모델 추천 (점수: 61.7)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일03"
+   },
+   {
+    "hairstyle_id": 108,
+    "ml_rank": 9,
+    "propensity": 0.1115,
+    "rank": 3,
+    "raw_score": 59.6,
+    "reason": "ML 모델 추천 (점수: 59.6)",
+    "score": 0.6,
+    "source": "ml",
+    "style_name": "스타일08"
+   },
+   {
+    "rank": 4,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드A"
+   },
+   {
+    "rank": 5,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드B"
+   }
+  ]
+ },
+ "explore_control": {
+  "analysis": {
+   "face_shape": "둥근형",
+   "features": "ML 모델 기반 분석",
+   "personal_color": "봄웜"
+  },
+  "full_ranking": [
+   {
+    "score": 0.62,
+    "style_name": "스타일00"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일01"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일02"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일03"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일04"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일05"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일06"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일07"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일08"
+   },
+   {
+    "score": 0.59,
+    "style_name": "스타일09"
+   },
+   {
+    "score": 0.58,
+    "style_name": "스타일10"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일11"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일12"
+   },
+   {
+    "score": 0.56,
+    "style_name": "스타일13"
+   },
+   {
+    "score": 0.55,
+    "style_name": "스타일14"
+   },
+   {
+    "score": 0.54,
+    "style_name": "스타일15"
+   },
+   {
+    "score": 0.53,
+    "style_name": "스타일16"
+   },
+   {
+    "score": 0.52,
+    "style_name": "스타일17"
+   },
+   {
+    "score": 0.51,
+    "style_name": "스타일18"
+   },
+   {
+    "score": 0.5,
+    "style_name": "스타일19"
+   }
+  ],
+  "meta": {
+   "experiment_arm": "control",
+   "margin": 3.0,
+   "method": "ml",
+   "ml_count": 3,
+   "model_version": "v6_feedback_20260909",
+   "rec_policy": "deterministic",
+   "score_stddev": 0.205,
+   "temperature": 1.5,
+   "tie_band_size": 9,
+   "top_score": 62.4,
+   "total_count": 5,
+   "trending_count": 2
+  },
+  "recommendations": [
+   {
+    "hairstyle_id": 100,
+    "ml_rank": 1,
+    "propensity": 1.0,
+    "rank": 1,
+    "raw_score": 62.4,
+    "reason": "ML 모델 추천 (점수: 62.4)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일00"
+   },
+   {
+    "hairstyle_id": 101,
+    "ml_rank": 2,
+    "propensity": 1.0,
+    "rank": 2,
+    "raw_score": 62.1,
+    "reason": "ML 모델 추천 (점수: 62.1)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일01"
+   },
+   {
+    "hairstyle_id": 102,
+    "ml_rank": 3,
+    "propensity": 1.0,
+    "rank": 3,
+    "raw_score": 61.9,
+    "reason": "ML 모델 추천 (점수: 61.9)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일02"
+   },
+   {
+    "rank": 4,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드A"
+   },
+   {
+    "rank": 5,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드B"
+   }
+  ]
+ },
+ "explore_off": {
+  "analysis": {
+   "face_shape": "둥근형",
+   "features": "ML 모델 기반 분석",
+   "personal_color": "봄웜"
+  },
+  "full_ranking": [
+   {
+    "score": 0.62,
+    "style_name": "스타일00"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일01"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일02"
+   },
+   {
+    "score": 0.62,
+    "style_name": "스타일03"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일04"
+   },
+   {
+    "score": 0.61,
+    "style_name": "스타일05"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일06"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일07"
+   },
+   {
+    "score": 0.6,
+    "style_name": "스타일08"
+   },
+   {
+    "score": 0.59,
+    "style_name": "스타일09"
+   },
+   {
+    "score": 0.58,
+    "style_name": "스타일10"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일11"
+   },
+   {
+    "score": 0.57,
+    "style_name": "스타일12"
+   },
+   {
+    "score": 0.56,
+    "style_name": "스타일13"
+   },
+   {
+    "score": 0.55,
+    "style_name": "스타일14"
+   },
+   {
+    "score": 0.54,
+    "style_name": "스타일15"
+   },
+   {
+    "score": 0.53,
+    "style_name": "스타일16"
+   },
+   {
+    "score": 0.52,
+    "style_name": "스타일17"
+   },
+   {
+    "score": 0.51,
+    "style_name": "스타일18"
+   },
+   {
+    "score": 0.5,
+    "style_name": "스타일19"
+   }
+  ],
+  "meta": {
+   "experiment_arm": null,
+   "margin": null,
+   "method": "ml",
+   "ml_count": 3,
+   "model_version": "v6_feedback_20260909",
+   "rec_policy": "deterministic",
+   "score_stddev": 0.205,
+   "temperature": null,
+   "tie_band_size": null,
+   "top_score": 62.4,
+   "total_count": 5,
+   "trending_count": 2
+  },
+  "recommendations": [
+   {
+    "hairstyle_id": 100,
+    "ml_rank": 1,
+    "propensity": 1.0,
+    "rank": 1,
+    "raw_score": 62.4,
+    "reason": "ML 모델 추천 (점수: 62.4)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일00"
+   },
+   {
+    "hairstyle_id": 101,
+    "ml_rank": 2,
+    "propensity": 1.0,
+    "rank": 2,
+    "raw_score": 62.1,
+    "reason": "ML 모델 추천 (점수: 62.1)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일01"
+   },
+   {
+    "hairstyle_id": 102,
+    "ml_rank": 3,
+    "propensity": 1.0,
+    "rank": 3,
+    "raw_score": 61.9,
+    "reason": "ML 모델 추천 (점수: 61.9)",
+    "score": 0.62,
+    "source": "ml",
+    "style_name": "스타일02"
+   },
+   {
+    "rank": 4,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드A"
+   },
+   {
+    "rank": 5,
+    "reason": "요즘 인기",
+    "source": "trending",
+    "style_name": "트렌드B"
+   }
+  ]
+ }
+}

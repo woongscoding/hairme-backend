@@ -59,6 +59,9 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
                 # 추천 실험 배정 (없으면 dynamodb_connection 이 저장하지 않는다)
                 "experiment_id": analysis_result.get("experiment_id"),
                 "ab_variant": analysis_result.get("ab_variant"),
+                # 반응률 보너스 실험 배정 (탐색 실험과 별도 필드, 없으면 저장하지 않는다)
+                "engagement_arm": analysis_result.get("engagement_arm"),
+                "engagement_version": analysis_result.get("engagement_version"),
             }
 
             # 성별은 요청에 있을 때만 저장 (분석 결과의 추정값이 있으면 그것을 우선)

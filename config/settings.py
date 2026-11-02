@@ -116,6 +116,28 @@ class Settings(BaseSettings):
     REC_EXPLORE_MARGIN: float = 3.0
     REC_EXPLORE_TEMPERATURE: float = 1.5
 
+    # ===== 추천 반응률 보너스 (services/rec_engagement.py) =====
+    # 켜면 s3://{MLOPS_S3_BUCKET}/{REC_ENGAGEMENT_S3_KEY} (scripts/build_style_engagement.py
+    # 가 매일 만든 "성별 x 얼굴형 그룹의 스타일 반응률")를 읽어, 실험군(사용자/image_hash
+    # 해시 버킷 < RATIO, 탐색 실험과 독립 배정)의 원점수에
+    #   clip(BETA * (그룹 반응률 - mu) / mu, -CAP, +CAP)  점수 포인트를 더한다.
+    # 보너스는 탐색(동점권) 선택 전에 더해져 순위·동점권 모두에 영향을 준다.
+    # 꺼짐 / 대조군 / 테이블 없음은 응답이 기존과 같다 (새 필드 없음).
+    REC_ENGAGEMENT_ENABLED: bool = False
+    REC_ENGAGEMENT_RATIO: float = 0.5
+    REC_ENGAGEMENT_BETA: float = 3.0  # lift +1 (반응 2배) -> +3점
+    # 보너스 절대 상한(점). 탐색 동점권 폭(REC_EXPLORE_MARGIN)과 같게 - 근거는
+    # scripts/build_style_engagement.py 머리말
+    REC_ENGAGEMENT_CAP: float = 3.0
+    REC_ENGAGEMENT_S3_KEY: str = "engagement/current.json"
+    REC_ENGAGEMENT_CACHE_TTL_SECONDS: int = 3600
+    # 실험군 사유 문구 교체 조건: 그룹 반응률(축소 후)이 mu 보다 MIN_LIFT 이상 높고
+    # 그룹 노출 >= MIN_EXPOSURES, 그룹 반응 가중치 합 >= MIN_REACTIONS ("많이 저장한"
+    # 이라고 말할 만큼 실제 반응이 있을 때만 - 명시 좋아요 3개로는 나가지 않게)
+    REC_ENGAGEMENT_REASON_MIN_LIFT: float = 0.3
+    REC_ENGAGEMENT_REASON_MIN_EXPOSURES: int = 50
+    REC_ENGAGEMENT_REASON_MIN_REACTIONS: float = 15.0
+
     # ===== 사진 저장 (S3) =====
     PHOTO_S3_BUCKET: str = ""  # 비어있으면 사진 저장/결과 캐싱 비활성화
     PHOTO_URL_EXPIRE_SECONDS: int = 86400  # presigned URL 유효기간 (24시간)

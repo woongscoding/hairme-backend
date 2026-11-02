@@ -305,6 +305,12 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
         if data.get("ab_variant"):
             item["ab_variant"] = data.get("ab_variant")
 
+        # 반응률 보너스 실험 (탐색 실험의 experiment_id / ab_variant 와 별도 필드)
+        if data.get("engagement_arm"):
+            item["engagement_arm"] = data.get("engagement_arm")
+        if data.get("engagement_version"):
+            item["engagement_version"] = data.get("engagement_version")
+
         # 스타일별 점수 저장 (A/B 테스트 평가용)
         for i in range(1, 6):
             score_key = f"style_{i}_score"

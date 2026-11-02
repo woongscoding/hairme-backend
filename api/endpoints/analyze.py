@@ -412,6 +412,7 @@ async def analyze_face_hybrid(
 
         # 2. ML recommendation using injected service
         ml_start = time_module.time()
+        engagement_assignment: Dict[str, Any] = {}
         recommendation_result = ml_recommender.recommend(
             image_data=image_data,
             face_shape=face_shape,
@@ -422,6 +423,8 @@ async def analyze_face_hybrid(
             # 동점권 탐색 시드·실험 배정 (REC_EXPLORE_ENABLED 일 때만 쓰인다)
             image_hash=image_hash,
             user_id=user_id,
+            # 반응률 보너스 실험 배정 (대조군은 응답에 안 나가므로 여기로만 받는다)
+            engagement_out=engagement_assignment,
         )
         ml_time = time_module.time() - ml_start
         logger.info(f"[TIMING] ML recommendation: {ml_time:.2f}s")
@@ -480,6 +483,15 @@ async def analyze_face_hybrid(
             analysis_result_for_db["experiment_id"] = EXPERIMENT_ID
             analysis_result_for_db["ab_variant"] = meta["experiment_arm"]
 
+        # 반응률 보너스 실험군/대조군 (탐색 실험과 별도 필드, 실험 밖이면 저장하지 않는다)
+        if engagement_assignment.get("engagement_arm"):
+            analysis_result_for_db["engagement_arm"] = engagement_assignment[
+                "engagement_arm"
+            ]
+            analysis_result_for_db["engagement_version"] = engagement_assignment.get(
+                "engagement_version"
+            )
+
         analysis_id = save_to_database(
             image_hash=image_hash,
             analysis_result=analysis_result_for_db,
@@ -532,6 +544,9 @@ async def analyze_face_hybrid(
                 "top_ml_rank": (
                     recommendations[0].get("ml_rank") if recommendations else None
                 ),
+                # 반응률 보너스 실험 (실험 밖이면 None)
+                "engagement_arm": engagement_assignment.get("engagement_arm"),
+                "engagement_version": engagement_assignment.get("engagement_version"),
                 "authenticated": user_id is not None,
                 "processing_time": total_time,
                 "analysis_id": analysis_id,
