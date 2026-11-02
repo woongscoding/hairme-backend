@@ -135,8 +135,9 @@ class Settings(BaseSettings):
     # generated_at 이 이 일수보다 오래된 테이블은 쓰지 않는다 (매일 집계가 멈춘 경우)
     REC_ENGAGEMENT_MAX_AGE_DAYS: float = 3.0
     # 실험군 사유 문구 교체 조건: 셀 lift(그룹 평균 기준) >= MIN_LIFT, 셀 노출 >=
-    # MIN_EXPOSURES, save/share 한 고유 주체 수 >= MIN_SUBJECTS ("많이 저장한" 의 근거.
-    # 합성·좋아요만으로는 나가지 않는다)
+    # MIN_EXPOSURES, save/share 한 **로그인 사용자** 수 >= MIN_SUBJECTS ("많이 저장한" 의
+    # 근거. 합성·좋아요만으로는 나가지 않고, 비로그인은 사진만 바꾸면 새 주체가 되어
+    # 위조가 쉬우므로 세지 않는다)
     REC_ENGAGEMENT_REASON_MIN_LIFT: float = 0.3
     REC_ENGAGEMENT_REASON_MIN_EXPOSURES: int = 50
     REC_ENGAGEMENT_REASON_MIN_SUBJECTS: int = 15

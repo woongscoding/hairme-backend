@@ -63,6 +63,8 @@
 
 출력 JSON 에는 hairstyle_id·그룹 키·숫자만 넣는다 (user_id / device_id / analysis_id /
 image_hash 없음). subjects 는 save/share 한 고유 주체 "수" 다.
+auth_subjects 는 그중 로그인 사용자 수다. 비로그인 주체(image_hash)는 사진만 바꾸면
+새 주체가 되므로, "많이 저장한" 사유 문구 조건은 auth_subjects 로만 판단한다.
 """
 
 from __future__ import annotations
@@ -137,6 +139,9 @@ CARD_SOURCE_ML = "ml"
 
 # 주체 해시 솔트 (메모리 안에서만 쓴다 - 출력에 남지 않는다)
 _SUBJECT_SALT = b"hairme-engagement-subject"
+# 주체 종류 접두사 (로그인 사용자 / 비로그인 사진). 해시 앞에 붙어 메모리에서만 쓰인다
+AUTH_SUBJECT_PREFIX = "u:"
+IMAGE_SUBJECT_PREFIX = "i:"
 
 
 # ========== 값 정리 ==========
@@ -158,13 +163,19 @@ def subject_of(item: Mapping[str, Any]) -> Optional[str]:
     """기여 상한 단위. 로그인 user_id 우선, 없으면 image_hash. 해시만 돌려준다"""
     user_id = item.get("user_id")
     if isinstance(user_id, str) and user_id and user_id != ANONYMOUS_USER:
-        raw = f"user:{user_id}"
+        prefix, raw = AUTH_SUBJECT_PREFIX, f"user:{user_id}"
     else:
         image_hash = item.get("image_hash")
         if not isinstance(image_hash, str) or not image_hash:
             return None
-        raw = f"image:{image_hash}"
-    return hashlib.sha256(_SUBJECT_SALT + raw.encode("utf-8")).hexdigest()[:20]
+        prefix, raw = IMAGE_SUBJECT_PREFIX, f"image:{image_hash}"
+    digest = hashlib.sha256(_SUBJECT_SALT + raw.encode("utf-8")).hexdigest()[:20]
+    return prefix + digest
+
+
+def is_auth_subject(subject: Optional[str]) -> bool:
+    """로그인 사용자 주체인지 (subject_of 가 만든 접두사로 판단)"""
+    return isinstance(subject, str) and subject.startswith(AUTH_SUBJECT_PREFIX)
 
 
 def parse_timestamp(value: Any) -> Optional[datetime]:
@@ -593,6 +604,7 @@ def compute_engagement(
             "effective_exposures": _round(style_n[hid], 3),
             "reactions": _round(style_r[hid], 3),
             "subjects": len(style_subjects[hid]),
+            "auth_subjects": sum(map(is_auth_subject, style_subjects[hid])),
         }
 
     groups: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -622,6 +634,7 @@ def compute_engagement(
                 "effective_exposures": _round(cell_n[gkey][hid], 3),
                 "reactions": _round(cell_r[gkey][hid], 3),
                 "subjects": len(cell_subjects[gkey][hid]),
+                "auth_subjects": sum(map(is_auth_subject, cell_subjects[gkey][hid])),
             }
         groups[gkey] = entries
         group_totals[gkey] = {

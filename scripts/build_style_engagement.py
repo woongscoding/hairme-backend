@@ -275,6 +275,9 @@ def summarize(
                 "max_save_share_subjects": max(
                     (e.get("subjects", 0) for e in entries.values()), default=0
                 ),
+                "max_save_share_auth_subjects": max(
+                    (e.get("auth_subjects", 0) for e in entries.values()), default=0
+                ),
             }
         )
     return {

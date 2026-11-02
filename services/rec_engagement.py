@@ -114,8 +114,11 @@ class RateEntry:
     rate: float
     exposures: int
     reactions: float = 0.0  # 반응 가중치 합
-    subjects: int = 0  # save/share 한 고유 주체 수 (사유 문구 조건)
+    subjects: int = 0  # save/share 한 고유 주체 수
     base: Optional[float] = None  # lift 기준선 (이 스타일을 뺀 그룹 평균)
+    # save/share 한 로그인 사용자 수 (사유 문구 조건). 비로그인 주체는 사진만 바꾸면
+    # 늘어나므로 "많이 저장한" 근거로 쓰지 않는다. 필드가 없는 예전 테이블은 0
+    auth_subjects: int = 0
 
 
 def _parse_entries(raw: Any) -> Dict[int, RateEntry]:
@@ -132,6 +135,7 @@ def _parse_entries(raw: Any) -> Dict[int, RateEntry]:
             raise ValueError(f"entry {key} has invalid rate/exposures")
         reactions = _finite(value.get("reactions")) or 0.0
         subjects = _finite(value.get("subjects")) or 0.0
+        auth_subjects = _finite(value.get("auth_subjects")) or 0.0
         base = _finite(value.get("base"))
         entries[hairstyle_id] = RateEntry(
             rate,
@@ -139,6 +143,7 @@ def _parse_entries(raw: Any) -> Dict[int, RateEntry]:
             max(reactions, 0.0),
             max(int(subjects), 0),
             base if base is not None and base > 0 else None,
+            max(int(auth_subjects), 0),
         )
     return entries
 
@@ -424,7 +429,7 @@ class EngagementPlan:
         return compute_bonus(self.table.lift(self.group, hid), self.beta, self.cap)
 
     def reason(self, hairstyle_id: Any) -> Optional[str]:
-        """셀 lift 가 의미 있게 높고 노출·save/share 고유 주체가 충분할 때만 사유 문구"""
+        """셀 lift 가 의미 있게 높고 노출·save/share 로그인 사용자가 충분할 때만 사유 문구"""
         if not self.face_shape:
             return None
         try:
@@ -434,7 +439,7 @@ class EngagementPlan:
         entry = self.table.groups.get(self.group, {}).get(hid)
         if entry is None or entry.exposures < self.reason_min_exposures:
             return None
-        if entry.subjects < self.reason_min_subjects:
+        if entry.auth_subjects < self.reason_min_subjects:
             return None
         if self.table.lift(self.group, hid) < self.reason_min_lift:
             return None

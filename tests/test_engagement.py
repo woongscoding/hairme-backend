@@ -137,12 +137,13 @@ def _payload(
     return payload
 
 
-def _entry(rate, exposures=100, reactions=0.0, subjects=0):
+def _entry(rate, exposures=100, reactions=0.0, subjects=0, auth_subjects=0):
     return {
         "rate": rate,
         "exposures": exposures,
         "reactions": reactions,
         "subjects": subjects,
+        "auth_subjects": auth_subjects,
     }
 
 
@@ -189,7 +190,7 @@ BOOST_PAYLOAD = _payload(
     groups={
         G: {
             "100": _entry(0.2, 300),  # lift -0.6 -> -1.8
-            "105": _entry(1.0, 120, 60.0, 20),  # lift +1.0 -> +3.0 (상한)
+            "105": _entry(1.0, 120, 60.0, 20, 20),  # lift +1.0 -> +3.0 (상한)
         }
     },
 )
@@ -508,6 +509,32 @@ class TestSubjectCap:
         assert anon == eng.subject_of({"image_hash": "h1"})
         assert "u-1" not in logged_in and "h1" not in anon
         assert eng.subject_of({"user_id": "anonymous"}) is None
+        assert eng.is_auth_subject(logged_in)
+        assert not eng.is_auth_subject(anon)
+
+    def test_auth_subjects_count_only_logged_in_save_share(self):
+        rows = [
+            {"user_id": "u-1", "image_hash": "h1"},
+            {"user_id": "u-2", "image_hash": "h2"},
+            {"image_hash": "h3"},
+            {"image_hash": "h4"},
+            {"user_id": "u-3", "image_hash": "h5"},  # 합성만 -> 세지 않음
+        ]
+        exposures = [
+            _exp(f"a{i}", 1, subject=eng.subject_of(r)) for i, r in enumerate(rows)
+        ]
+        reactions = {
+            ("a0", 1): (3.0, "save"),
+            ("a1", 1): (3.0, "share"),
+            ("a2", 1): (3.0, "save"),
+            ("a3", 1): (3.0, "share"),
+            ("a4", 1): (1.0, "synthesize"),
+        }
+        result = eng.compute_engagement(exposures, reactions)
+        cell = result["groups"][G]["1"]
+        assert cell["subjects"] == 4
+        assert cell["auth_subjects"] == 2
+        assert result["styles"]["1"]["auth_subjects"] == 2
 
     def test_social_proof_exposures_are_excluded(self):
         exposures = [
@@ -1222,14 +1249,35 @@ class TestReason:
         payload = _payload(
             groups={
                 G: {
-                    "1": _entry(1.0, 100, 40.0, 14),
-                    "2": _entry(1.0, 100, 40.0, 15),
+                    "1": _entry(1.0, 100, 40.0, 14, 14),
+                    "2": _entry(1.0, 100, 40.0, 15, 15),
                 }
             }
         )
         plan = self._plan(payload, subjects=15)
         assert plan.reason(1) is None
         assert plan.reason(2) is not None
+
+    def test_anonymous_subjects_do_not_unlock_reason(self):
+        """비로그인 주체는 사진만 바꾸면 늘어나므로 문구 조건에 세지 않는다"""
+        payload = _payload(
+            groups={
+                G: {
+                    "1": _entry(1.0, 100, 90.0, 30, 14),  # 비로그인 16 + 로그인 14
+                    "2": _entry(1.0, 100, 90.0, 30, 15),
+                }
+            }
+        )
+        plan = self._plan(payload, subjects=15)
+        assert plan.reason(1) is None
+        assert plan.reason(2) is not None
+
+    def test_table_without_auth_subjects_shows_no_reason(self):
+        """auth_subjects 가 없는 예전 테이블은 0 으로 읽어 문구를 내지 않는다"""
+        entry = _entry(1.0, 100, 90.0, 30)
+        del entry["auth_subjects"]
+        plan = self._plan(_payload(groups={G: {"1": entry}}), subjects=15)
+        assert plan.reason(1) is None
 
     def test_unknown_gender_uses_face_shape_only(self):
         payload = _payload(groups={"unknown|둥근형": {"105": _entry(1.0, 80)}})
