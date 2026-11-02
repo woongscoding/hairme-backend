@@ -398,6 +398,8 @@ def _patched_pipeline(pending_count, processed_count=0, saved=None):
         patch.object(lf, "move_pending_to_processed", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
         patch.object(lf, "save_evaluation_report", return_value=True),
+        # 기준선 학습 시각 미상 -> 해시 홀드아웃 (fresh 홀드아웃은 별도 테스트)
+        patch.object(lf, "get_baseline_trained_at", return_value=(None, None)),
     ]
 
 

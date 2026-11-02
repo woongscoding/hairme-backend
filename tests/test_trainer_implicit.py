@@ -266,6 +266,8 @@ def _patch_pipeline(data, start_model, current_model, eval_side_effect=None):
         patch.object(lf, "move_pending_to_processed", return_value=True),
         patch.object(lf, "update_metadata", return_value=None),
         patch.object(lf, "save_evaluation_report", return_value=True),
+        # 기준선 학습 시각 미상 -> 해시 홀드아웃 (fresh 홀드아웃은 별도 테스트)
+        patch.object(lf, "get_baseline_trained_at", return_value=(None, None)),
     ]
 
 
@@ -813,3 +815,178 @@ def test_lambda_handler_non_scheduled_keeps_counter_precheck(trigger_type):
 
     assert not pipeline.called
     assert json.loads(response["body"])["min_samples"] == lf.MIN_SAMPLES
+
+
+# ========== (8) 공정 홀드아웃: 기준선 학습 이후 샘플만 ==========
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+CUTOFF = datetime(2026, 9, 9, 0, 29, 5, tzinfo=timezone.utc)
+
+
+def _ts(seconds):
+    return CUTOFF + timedelta(seconds=seconds)
+
+
+def test_fresh_split_time_boundary_is_strict():
+    ids = ["a", "b"]
+    timestamps = [CUTOFF, _ts(1)]  # 같은 시각은 "이전"
+    train, hold, info = lf.split_fresh_holdout_indices(ids, timestamps, CUTOFF, 1.0)
+    assert hold == [1]
+    assert train == [0]
+    assert info == {"fresh_samples": 1, "fresh_groups": 1}
+
+
+def test_fresh_split_missing_timestamp_is_before():
+    ts_missing = lf.parse_timestamp(None)
+    ts_broken = lf.parse_timestamp("not-a-date")
+    train, hold, info = lf.split_fresh_holdout_indices(
+        ["a", "b", "c"], [ts_missing, ts_broken, _ts(10)], CUTOFF, 1.0
+    )
+    assert hold == [2]
+    assert train == [0, 1]
+    # 로더가 sample_info 를 못 준 경우도 "이전"
+    info = lf.complete_sample_info(None, 2, ["k1", "k2"])
+    assert all(t <= CUTOFF for t in info["timestamps"])
+
+
+def test_fresh_split_mixed_group_goes_to_train():
+    """그룹 안에 이전 샘플이 하나라도 있으면 그룹 전체를 학습으로 (누수 방지)"""
+    ids = ["g", "g", "h", "h"]
+    timestamps = [_ts(-5), _ts(5), _ts(5), _ts(6)]
+    train, hold, info = lf.split_fresh_holdout_indices(ids, timestamps, CUTOFF, 1.0)
+    assert hold == [2, 3]
+    assert train == [0, 1]
+    assert info["fresh_groups"] == 1
+
+
+def test_fresh_split_before_samples_never_held_out_and_ratio_applies():
+    ids = [f"analysis-{i}" for i in range(400)]
+    before = [_ts(-100)] * 200
+    after = [_ts(100)] * 200
+    train, hold, info = lf.split_fresh_holdout_indices(ids, before + after, CUTOFF, 0.3)
+    assert all(i >= 200 for i in hold)
+    assert info["fresh_samples"] == 200
+    assert 0.2 < len(hold) / 200 < 0.4
+    assert sorted(train + hold) == list(range(400))
+    # 그룹 단위 해시 분할 유지
+    _, expected_hold = lf.split_holdout_indices(ids[200:], 0.3)
+    assert hold == [i + 200 for i in expected_hold]
+
+
+def _meta_s3(metadata):
+    return FakeS3({lf.CURRENT_METADATA_KEY: json.dumps(metadata)})
+
+
+def test_baseline_trained_at_prefers_fine_tuned_at():
+    fake = _meta_s3(
+        {
+            "updated_at": "2026-09-09T00:29:58+00:00",
+            "config": {"fine_tuned_at": "2026-09-09T00:29:05.228310+00:00"},
+        }
+    )
+    with patch.object(lf, "get_s3_client", return_value=fake):
+        at, field = lf.get_baseline_trained_at()
+    assert at == datetime(2026, 9, 9, 0, 29, 5, 228310, tzinfo=timezone.utc)
+    assert field == "config.fine_tuned_at"
+
+
+def test_baseline_trained_at_falls_back_to_updated_at():
+    fake = _meta_s3({"updated_at": "2026-09-09T00:29:58+00:00", "config": {}})
+    with patch.object(lf, "get_s3_client", return_value=fake):
+        at, field = lf.get_baseline_trained_at()
+    assert field == "updated_at"
+    assert at.minute == 29
+
+
+@pytest.mark.parametrize(
+    "objects",
+    [{}, {lf.CURRENT_METADATA_KEY: "{broken"}, {lf.CURRENT_METADATA_KEY: "{}"}],
+)
+def test_baseline_trained_at_unknown(objects):
+    with patch.object(lf, "get_s3_client", return_value=FakeS3(objects)):
+        assert lf.get_baseline_trained_at() == (None, None)
+
+
+def _timed_data(before, after):
+    """이전 before 건 + 이후 after 건 (각 샘플이 서로 다른 analysis)"""
+    data = list(_pipeline_data(before + after, 0))
+    keys = data[5]
+    data[7] = {
+        "sample_keys": keys,
+        "timestamps": [_ts(-3600)] * before + [_ts(3600)] * after,
+    }
+    return tuple(data)
+
+
+def _run_fresh(data, event=None, trained_at=CUTOFF, metrics=None):
+    start, current = MagicMock(name="base"), MagicMock(name="current")
+    patches = _patch_pipeline(data, start, current, eval_side_effect=metrics)
+    patches[-1] = patch.object(
+        lf,
+        "get_baseline_trained_at",
+        return_value=(trained_at, "config.fine_tuned_at" if trained_at else None),
+    )
+    return _run(patches, event or {"trigger_type": "scheduled"})
+
+
+def test_pipeline_fresh_holdout_only_uses_after_samples():
+    result, calls = _run_fresh(_timed_data(800, 200))
+
+    info = result["holdout_info"]
+    assert info["holdout_mode"] == lf.HOLDOUT_MODE_FRESH
+    assert info["baseline_trained_at"] == CUTOFF.isoformat()
+    assert info["fresh_samples"] == 200
+    assert result["holdout_ratio"] == lf.TRAIN_FRESH_HOLDOUT_RATIO
+    assert result["holdout_size"] >= lf.MIN_HOLDOUT_SAMPLES
+    # 학습에는 이전 800건 전부 + 이후 중 홀드아웃이 아닌 것
+    assert result["train_size"] == 1000 - result["holdout_size"]
+    assert result["gate"]["holdout_mode"] == lf.HOLDOUT_MODE_FRESH
+    assert result["gate"]["fresh_samples"] == 200
+    # 리포트에 기록
+    report_info = calls["report"].kwargs["holdout_info"]
+    assert report_info["holdout_mode"] == lf.HOLDOUT_MODE_FRESH
+    assert report_info["fresh_samples"] == 200
+
+
+def test_pipeline_fresh_holdout_insufficient_rejects_and_keeps_pending():
+    """이후 샘플이 적어 홀드아웃 < 20 이면 거부, pending 은 이동하지 않는다"""
+    result, calls = _run_fresh(_timed_data(800, 30))
+
+    assert result["holdout_size"] < lf.MIN_HOLDOUT_SAMPLES
+    assert result["gate"]["reason"] == "insufficient_holdout"
+    assert result["model_promoted"] is False
+    assert calls["move"] is None
+    assert result["pending_files_moved"] == 0
+    assert calls["report"].kwargs["holdout_info"]["holdout_mode"] == (
+        lf.HOLDOUT_MODE_FRESH
+    )
+
+
+def test_pipeline_hash_fallback_when_baseline_time_unknown():
+    result, calls = _run_fresh(_timed_data(800, 200), trained_at=None)
+
+    info = result["holdout_info"]
+    assert info["holdout_mode"] == lf.HOLDOUT_MODE_HASH
+    assert info["baseline_trained_at"] is None
+    assert info["fresh_samples"] is None
+    assert result["holdout_ratio"] == lf.TRAIN_HOLDOUT_RATIO
+    _, expected = lf.split_holdout_indices(
+        _timed_data(800, 200)[6], lf.TRAIN_HOLDOUT_RATIO
+    )
+    assert result["holdout_size"] == len(expected)
+    assert (
+        calls["report"].kwargs["holdout_info"]["holdout_mode"] == lf.HOLDOUT_MODE_HASH
+    )
+
+
+def test_pipeline_real_metadata_lookup_drives_fresh_split():
+    """get_baseline_trained_at 을 목으로 막지 않고 S3 metadata.json 으로 판정"""
+    fake = _meta_s3({"config": {"fine_tuned_at": CUTOFF.isoformat()}})
+    start, current = MagicMock(), MagicMock()
+    patches = _patch_pipeline(_timed_data(300, 100), start, current)
+    patches[-1] = patch.object(lf, "get_s3_client", return_value=fake)
+    result, _ = _run(patches, {"trigger_type": "scheduled"})
+
+    assert result["holdout_info"]["holdout_mode"] == lf.HOLDOUT_MODE_FRESH
+    assert result["holdout_info"]["fresh_samples"] == 100

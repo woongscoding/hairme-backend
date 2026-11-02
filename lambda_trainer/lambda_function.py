@@ -75,6 +75,14 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32"))
 # 품질 게이트 (홀드아웃 평가)
 # 홀드아웃 비율: analysis_id 해시로 분할하므로 실제 비율은 목표치 근사값이다.
 TRAIN_HOLDOUT_RATIO = float(os.getenv("TRAIN_HOLDOUT_RATIO", "0.15"))
+# 기준선 모델 학습 "이후" 샘플(fresh)에만 적용하는 홀드아웃 비율.
+# 게이트 홀드아웃은 기준선이 학습에 쓰지 않은 fresh 샘플로만 만들므로, 15% 로는
+# MIN_HOLDOUT_SAMPLES 를 모으는 데 오래 걸린다. 학습 데이터 대부분은 "이전" 샘플이라
+# 이 비율을 높여도 학습량 영향은 작다.
+TRAIN_FRESH_HOLDOUT_RATIO = float(os.getenv("TRAIN_FRESH_HOLDOUT_RATIO", "0.3"))
+HOLDOUT_MODE_FRESH = "fresh_after_baseline"
+HOLDOUT_MODE_HASH = "hash_fallback"
+CURRENT_METADATA_KEY = "models/current/metadata.json"
 # MSE 는 이전 대비 이 비율만큼 나빠지는 것까지 허용 (0.02 = 2%)
 GATE_MSE_TOLERANCE = float(os.getenv("GATE_MSE_TOLERANCE", "0.02"))
 # ranking accuracy 는 이전 대비 이 절대값만큼 떨어지는 것까지 허용
@@ -574,6 +582,50 @@ def split_holdout_indices(
     return train_indices, holdout_indices
 
 
+def split_fresh_holdout_indices(
+    analysis_ids: List[str],
+    timestamps: List[datetime],
+    baseline_trained_at: datetime,
+    ratio: float = TRAIN_FRESH_HOLDOUT_RATIO,
+) -> Tuple[List[int], List[int], Dict[str, int]]:
+    """
+    기준선 모델이 학습에 쓰지 않은 샘플로만 홀드아웃을 만든다.
+
+    - analysis_id 그룹 안의 모든 샘플 timestamp 가 baseline_trained_at 보다 뒤일 때만
+      그 그룹을 "이후(fresh)" 로 본다. 하나라도 이전이거나 timestamp 가 없으면
+      (parse_timestamp -> 최솟값) 그룹 전체를 "이전" 으로 보고 학습 쪽으로 보낸다.
+      이유: 같은 analysis 는 같은 얼굴/피부 특징을 공유하므로 일부라도 기준선 학습에
+      들어갔다면 그 그룹을 평가에 쓰면 누수가 된다 (보수적 판정).
+    - fresh 그룹만 analysis_id 해시 < ratio 이면 홀드아웃, 나머지는 학습.
+    - "이전" 그룹은 해시와 무관하게 전부 학습.
+
+    Returns:
+        (train_indices, holdout_indices, {"fresh_samples", "fresh_groups"})
+        인덱스는 오름차순
+    """
+    groups: Dict[str, List[int]] = {}
+    for idx, analysis_id in enumerate(analysis_ids):
+        groups.setdefault(analysis_id, []).append(idx)
+
+    holdout_set = set()
+    fresh_samples = fresh_groups = 0
+    for analysis_id, indices in groups.items():
+        if not all(timestamps[i] > baseline_trained_at for i in indices):
+            continue
+        fresh_groups += 1
+        fresh_samples += len(indices)
+        if ratio > 0 and analysis_id_bucket(analysis_id) < ratio:
+            holdout_set.update(indices)
+
+    train_indices = [i for i in range(len(analysis_ids)) if i not in holdout_set]
+    holdout_indices = sorted(holdout_set)
+    return (
+        train_indices,
+        holdout_indices,
+        {"fresh_samples": fresh_samples, "fresh_groups": fresh_groups},
+    )
+
+
 def take_indices(
     arrays: Tuple[np.ndarray, ...], indices: List[int]
 ) -> Tuple[np.ndarray, ...]:
@@ -847,6 +899,7 @@ def empty_sample_info() -> Dict[str, Any]:
         "sources": [],
         "signal_types": [],
         "duplicates_dropped": 0,
+        "timestamps": [],
     }
 
 
@@ -952,6 +1005,7 @@ def load_pending_feedbacks(
             "sources": [rec["source"] for rec in kept],
             "signal_types": [rec["signal_type"] for rec in kept],
             "duplicates_dropped": dropped,
+            "timestamps": [rec["timestamp"] for rec in kept],
         }
 
         logger.info(
@@ -991,6 +1045,9 @@ def complete_sample_info(
         info["signal_types"] = [None] * count
     if info.get("sample_keys") is None:
         info["sample_keys"] = list(file_keys) if len(file_keys) == count else []
+    if info.get("timestamps") is None:
+        # 시각을 모르면 "이전" 으로 취급 (누수 방지)
+        info["timestamps"] = [_MIN_TIMESTAMP] * count
     info.setdefault("duplicates_dropped", 0)
     return info
 
@@ -1555,6 +1612,7 @@ def save_evaluation_report(
     version: str,
     gate: Optional[Dict[str, Any]] = None,
     data_summary: Optional[Dict[str, Any]] = None,
+    holdout_info: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
     평가 리포트를 S3에 저장
@@ -1566,6 +1624,8 @@ def save_evaluation_report(
         version: 모델 버전
         gate: 품질 게이트 판정 결과 (거부 사유 추적용)
         data_summary: 명시/암묵 샘플 수, signal_type 별 수 (전체/학습/홀드아웃)
+        holdout_info: holdout_mode(fresh_after_baseline / hash_fallback),
+            baseline_trained_at, fresh(이후) 샘플 수 등
 
     Returns:
         성공 여부
@@ -1602,6 +1662,7 @@ def save_evaluation_report(
             "training_stats": training_stats,
             "gate": gate,
             "data_summary": data_summary,
+            "holdout_info": holdout_info,
             "model_promoted": bool(gate.get("passed")) if gate else None,
             "summary": {
                 "mse_improved": improvements.get("mse", 0) > 0,
@@ -1867,6 +1928,43 @@ def resolve_training_flags(event: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def get_baseline_trained_at() -> Tuple[Optional[datetime], Optional[str]]:
+    """
+    기준선(models/current) 모델의 학습 시각을 metadata.json 에서 읽는다.
+
+    config.fine_tuned_at (학습 파이프라인 시작 시각 = 학습 데이터 로드 이전) 을 우선 쓰고,
+    없으면 updated_at. 둘 다 없거나 읽기/파싱 실패면 (None, None) -> 해시 분할로 대체.
+
+    Returns:
+        (trained_at, 출처 필드명)
+    """
+    s3 = get_s3_client()
+    try:
+        response = s3.get_object(Bucket=S3_BUCKET, Key=CURRENT_METADATA_KEY)
+        metadata = json.loads(response["Body"].read().decode("utf-8"))
+    except Exception as e:
+        logger.warning(
+            f"⚠️ 기준선 metadata.json 읽기 실패 - 해시 홀드아웃으로 대체: {e}"
+        )
+        return None, None
+
+    if not isinstance(metadata, dict):
+        return None, None
+    config = metadata.get("config")
+    if not isinstance(config, dict):
+        config = {}
+    for field, value in (
+        ("config.fine_tuned_at", config.get("fine_tuned_at")),
+        ("updated_at", metadata.get("updated_at")),
+    ):
+        parsed = parse_timestamp(value)
+        if parsed != _MIN_TIMESTAMP:
+            return parsed, field
+
+    logger.warning("⚠️ 기준선 학습 시각 없음 - 해시 홀드아웃으로 대체")
+    return None, None
+
+
 def load_baseline_model(
     from_base: bool,
 ) -> Tuple[Optional[RecommendationModelV6], str]:
@@ -1992,17 +2090,47 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # 모델 출력이 sigmoid(0~1)이므로 동일 공간에서 비교해야 한다.
         gt_normalized = (gt - LABEL_MIN) / LABEL_RANGE
 
-        # 1.5. 학습/홀드아웃 결정적 분할 (analysis_id 해시)
-        logger.info(f"✂️ Step 1.5: 홀드아웃 분할 (ratio={TRAIN_HOLDOUT_RATIO})")
-        train_idx, holdout_idx = split_holdout_indices(
-            analysis_ids, TRAIN_HOLDOUT_RATIO
-        )
+        # 1.5. 학습/홀드아웃 결정적 분할
+        # 게이트 홀드아웃은 기준선(models/current)이 학습에 쓰지 않은 "이후" 샘플로만
+        # 만든다 (기준선이 본 샘플로 평가하면 기준선이 부당하게 유리해진다).
+        # 기준선 학습 시각을 모르면 analysis_id 해시 분할로 대체한다.
+        baseline_trained_at, trained_at_field = get_baseline_trained_at()
+        if baseline_trained_at is not None:
+            holdout_mode = HOLDOUT_MODE_FRESH
+            holdout_ratio = TRAIN_FRESH_HOLDOUT_RATIO
+            train_idx, holdout_idx, fresh = split_fresh_holdout_indices(
+                analysis_ids,
+                sample_info["timestamps"],
+                baseline_trained_at,
+                holdout_ratio,
+            )
+        else:
+            holdout_mode = HOLDOUT_MODE_HASH
+            holdout_ratio = TRAIN_HOLDOUT_RATIO
+            train_idx, holdout_idx = split_holdout_indices(analysis_ids, holdout_ratio)
+            fresh = {"fresh_samples": None, "fresh_groups": None}
+
+        holdout_info = {
+            "holdout_mode": holdout_mode,
+            "baseline_trained_at": (
+                baseline_trained_at.isoformat() if baseline_trained_at else None
+            ),
+            "baseline_trained_at_field": trained_at_field,
+            "holdout_ratio": holdout_ratio,
+            "fresh_samples": fresh["fresh_samples"],
+            "fresh_groups": fresh["fresh_groups"],
+            "holdout_size": len(holdout_idx),
+            "min_holdout": MIN_HOLDOUT_SAMPLES,
+        }
         result["train_size"] = len(train_idx)
         result["holdout_size"] = len(holdout_idx)
-        result["holdout_ratio"] = TRAIN_HOLDOUT_RATIO
+        result["holdout_ratio"] = holdout_ratio
+        result["holdout_info"] = holdout_info
         logger.info(
-            f"  학습 {len(train_idx)}건 / 홀드아웃 {len(holdout_idx)}건 "
-            f"(총 {count}건)"
+            f"✂️ Step 1.5: 홀드아웃 분할 mode={holdout_mode} "
+            f"baseline_trained_at={holdout_info['baseline_trained_at']} "
+            f"ratio={holdout_ratio} fresh={fresh['fresh_samples']} -> "
+            f"학습 {len(train_idx)}건 / 홀드아웃 {len(holdout_idx)}건 (총 {count}건)"
         )
 
         data_summary = {
@@ -2115,6 +2243,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         config["include_processed"] = include_processed
         config["source_model_key"] = source_model_key
         config["gate_baseline_model_key"] = baseline_model_key
+        config["holdout_mode"] = holdout_mode
         # BatchNorm running stats 는 fine-tuning 중 고정된다
         config["batchnorm_frozen"] = True
 
@@ -2127,6 +2256,12 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             skip_gate=skip_gate,
         )
         gate["baseline_model_key"] = baseline_model_key
+        gate.update(
+            {
+                k: holdout_info[k]
+                for k in ("holdout_mode", "baseline_trained_at", "fresh_samples")
+            }
+        )
         result["gate"] = gate
         result["steps_completed"].append("quality_gate")
 
@@ -2156,6 +2291,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
                 new_version,
                 gate=gate,
                 data_summary=data_summary,
+                holdout_info=holdout_info,
             )
             result["steps_completed"].append("save_evaluation_report")
 
@@ -2195,6 +2331,7 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             new_version,
             gate=gate,
             data_summary=data_summary,
+            holdout_info=holdout_info,
         )
         result["steps_completed"].append("save_evaluation_report")
 
