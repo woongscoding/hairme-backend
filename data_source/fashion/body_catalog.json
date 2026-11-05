@@ -1,0 +1,153 @@
+{
+  "_readme": [
+    "체형별 아이템 추천 카탈로그 (사람 검토/수정용 시드 파일).",
+    "services/body_fashion_service.py가 이 파일을 읽어 POST /api/fashion/body-analyze 응답을 만든다.",
+    "body_types / proportions의 키는 models/body_pose_analyzer.py의 분류 결과와 일치해야 한다.",
+    "recommended/avoid는 핏 키워드와 짧은 이유. items는 아래 products의 product_id 목록.",
+    "products의 affiliate_url PLACEHOLDER는 쿠팡파트너스 링크(https://link.coupang.com/...)로 교체한 뒤 active를 true로 바꿀 것.",
+    "active=false 제품은 추천 응답에서 빠지고 POST /api/products/click도 404를 준다.",
+    "(예시)가 붙은 제품명은 실제 판매 제품으로 교체 필요.",
+    "체중·체지방을 암시하는 표현(살, 뚱뚱, 날씬해 보이는 등)은 쓰지 않는다."
+  ],
+  "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
+  "body_types": {
+    "broad_shoulder": {
+      "label": "어깨 넓은형",
+      "description": "어깨선이 골반보다 넓어 보이는 비율이에요. 하체에 볼륨을 주고 어깨로 가는 시선을 분산하면 위아래 균형이 맞아 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "와이드 슬랙스", "reason": "하체에 볼륨을 더해 상하체 균형을 맞춰요"},
+          {"keyword": "브이넥 니트", "reason": "세로선이 생겨 어깨폭으로 가는 시선을 분산해요"},
+          {"keyword": "래글런 소매 티셔츠", "reason": "어깨선이 사선으로 떨어져 어깨폭이 덜 강조돼요"},
+          {"keyword": "카고 팬츠", "reason": "하체에 포인트가 생겨 시선이 아래로 내려가요"}
+        ],
+        "avoid": [
+          {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"},
+          {"keyword": "스키니 팬츠", "reason": "하체가 좁아 보여 상체가 더 커 보여요"},
+          {"keyword": "보트넥 상의", "reason": "가로 넥라인이 어깨폭을 넓혀 보이게 해요"}
+        ],
+        "items": ["fashion-bs-m-001", "fashion-bs-m-002"]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "브이넥 블라우스", "reason": "세로선이 생겨 어깨폭으로 가는 시선을 분산해요"},
+          {"keyword": "A라인 스커트", "reason": "하체에 볼륨을 더해 상하체 균형을 맞춰요"},
+          {"keyword": "와이드 팬츠", "reason": "하체 실루엣이 넓어져 어깨와 균형이 맞아요"},
+          {"keyword": "래글런 소매 니트", "reason": "어깨선이 부드럽게 떨어져 각진 느낌이 줄어요"}
+        ],
+        "avoid": [
+          {"keyword": "퍼프 소매", "reason": "어깨에 볼륨이 더해져 상체가 커 보여요"},
+          {"keyword": "오프숄더", "reason": "어깨 가로선이 그대로 드러나요"},
+          {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"}
+        ],
+        "items": ["fashion-bs-f-001", "fashion-bs-f-002"]
+      }
+    },
+    "lower_volume": {
+      "label": "하체 볼륨형",
+      "description": "골반 쪽 비율이 어깨에 비해 넓어 보이는 체형이에요. 어깨선을 살리고 하체는 깔끔한 실루엣으로 정리하면 균형이 맞아 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "어깨 각 잡힌 재킷", "reason": "어깨선이 살아나 상하체 균형이 맞아요"},
+          {"keyword": "스트레이트 팬츠", "reason": "허벅지부터 일자로 떨어져 하체 실루엣이 정돈돼요"},
+          {"keyword": "크루넥 스웨트셔츠", "reason": "가로 넥라인이 어깨를 넓어 보이게 해요"},
+          {"keyword": "어두운 컬러 하의", "reason": "시선이 상체로 올라가요"}
+        ],
+        "avoid": [
+          {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
+          {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"},
+          {"keyword": "허벅지 큰 포켓 팬츠", "reason": "하체에 부피가 더해져 보여요"}
+        ],
+        "items": ["fashion-lv-m-001", "fashion-lv-m-002"]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "보트넥 니트", "reason": "가로 넥라인이 어깨선을 넓어 보이게 해요"},
+          {"keyword": "퍼프 소매 블라우스", "reason": "어깨에 볼륨이 생겨 상하체 균형이 맞아요"},
+          {"keyword": "A라인 스커트", "reason": "골반에서 자연스럽게 퍼져 하체 라인을 감싸요"},
+          {"keyword": "부츠컷 팬츠", "reason": "밑단이 넓어져 골반과 균형이 맞아요"}
+        ],
+        "avoid": [
+          {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
+          {"keyword": "펜슬 스커트", "reason": "골반 라인이 강조돼요"},
+          {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"}
+        ],
+        "items": ["fashion-lv-f-001", "fashion-lv-f-002"]
+      }
+    },
+    "balanced": {
+      "label": "균형형",
+      "description": "어깨와 골반 비율이 고른 체형이에요. 대부분의 핏이 잘 어울리니 허리선을 살려 비율을 강조해 보세요.",
+      "male": {
+        "recommended": [
+          {"keyword": "테이퍼드 슬랙스", "reason": "깔끔한 실루엣으로 균형 잡힌 비율이 살아나요"},
+          {"keyword": "옥스퍼드 셔츠", "reason": "정핏 상의가 자연스러운 어깨선을 보여줘요"},
+          {"keyword": "세미오버 블레이저", "reason": "적당한 여유로 균형을 유지하며 분위기를 더해요"},
+          {"keyword": "스트레이트 데님", "reason": "어떤 상의와도 비율이 무난하게 맞아요"}
+        ],
+        "avoid": [
+          {"keyword": "상하의 모두 오버핏", "reason": "고른 비율이 옷에 묻혀요"}
+        ],
+        "items": ["fashion-bl-m-001", "fashion-bl-m-002"]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "허리 라인 원피스", "reason": "허리선이 잡혀 고른 비율이 살아나요"},
+          {"keyword": "하이웨이스트 와이드 팬츠", "reason": "허리가 강조돼 다리가 길어 보여요"},
+          {"keyword": "셔츠와 일자 데님", "reason": "기본 핏으로 균형 잡힌 실루엣을 보여줘요"},
+          {"keyword": "크롭 카디건", "reason": "허리 위에서 끊겨 상하체 비율이 좋아 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "상하의 모두 박시한 핏", "reason": "고른 비율이 옷에 묻혀요"}
+        ],
+        "items": ["fashion-bl-f-001", "fashion-bl-f-002"]
+      }
+    }
+  },
+  "proportions": {
+    "long_torso": {
+      "label": "상체 긴 비율",
+      "description": "다리에 비해 상체가 길어 보이는 비율이에요. 허리선을 높이면 다리가 길어 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "하이웨이스트 팬츠", "reason": "허리선이 올라가 다리가 길어 보여요"},
+          {"keyword": "상의 앞 넣어 입기", "reason": "허리 위치가 드러나 하체가 길어 보여요"},
+          {"keyword": "짧은 기장 재킷", "reason": "상체가 짧게 끊겨 비율이 좋아 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "엉덩이 덮는 긴 상의", "reason": "상체가 더 길어 보여요"},
+          {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
+        ],
+        "items": ["fashion-lt-m-001"]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "하이웨이스트 스커트", "reason": "허리선이 올라가 다리가 길어 보여요"},
+          {"keyword": "크롭 상의", "reason": "상체가 짧게 끊겨 비율이 좋아 보여요"},
+          {"keyword": "상의 넣어 입기", "reason": "허리 위치가 드러나 하체가 길어 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "골반 덮는 롱 니트", "reason": "상체가 더 길어 보여요"},
+          {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
+        ],
+        "items": ["fashion-lt-f-001"]
+      }
+    }
+  },
+  "products": [
+    {"product_id": "fashion-bs-m-001", "name": "(예시) 남성 와이드 슬랙스", "brand": "", "category": "pants", "fit_keyword": "와이드 슬랙스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bs-m-002", "name": "(예시) 남성 브이넥 니트", "brand": "", "category": "top", "fit_keyword": "브이넥 니트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bs-f-001", "name": "(예시) 여성 브이넥 블라우스", "brand": "", "category": "top", "fit_keyword": "브이넥 블라우스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bs-f-002", "name": "(예시) 여성 A라인 스커트", "brand": "", "category": "skirt", "fit_keyword": "A라인 스커트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lv-m-001", "name": "(예시) 남성 스트레이트 팬츠", "brand": "", "category": "pants", "fit_keyword": "스트레이트 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lv-m-002", "name": "(예시) 남성 크루넥 스웨트셔츠", "brand": "", "category": "top", "fit_keyword": "크루넥 스웨트셔츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lv-f-001", "name": "(예시) 여성 보트넥 니트", "brand": "", "category": "top", "fit_keyword": "보트넥 니트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lv-f-002", "name": "(예시) 여성 부츠컷 팬츠", "brand": "", "category": "pants", "fit_keyword": "부츠컷 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bl-m-001", "name": "(예시) 남성 테이퍼드 슬랙스", "brand": "", "category": "pants", "fit_keyword": "테이퍼드 슬랙스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bl-m-002", "name": "(예시) 남성 옥스퍼드 셔츠", "brand": "", "category": "top", "fit_keyword": "옥스퍼드 셔츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bl-f-001", "name": "(예시) 여성 허리 라인 원피스", "brand": "", "category": "dress", "fit_keyword": "허리 라인 원피스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-bl-f-002", "name": "(예시) 여성 하이웨이스트 와이드 팬츠", "brand": "", "category": "pants", "fit_keyword": "하이웨이스트 와이드 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lt-m-001", "name": "(예시) 남성 하이웨이스트 팬츠", "brand": "", "category": "pants", "fit_keyword": "하이웨이스트 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
+    {"product_id": "fashion-lt-f-001", "name": "(예시) 여성 크롭 상의", "brand": "", "category": "top", "fit_keyword": "크롭 상의", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false}
+  ]
+}

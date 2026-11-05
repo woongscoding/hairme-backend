@@ -105,6 +105,7 @@ evaluation/
 !data_source/trending_hairstyles.json
 !data_source/style_images/styles.json
 !data_source/style_images/image_manifest.json
+!data_source/fashion/body_catalog.json
 
 # Style example images: raw originals excluded, serving WebP included
 data_source/style_images/generated/
