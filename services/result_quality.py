@@ -6,14 +6,25 @@
 | 등급 | 해상도           | 워터마크              | is_preview |
 | ---- | ---------------- | --------------------- | ---------- |
 | free | FREE_IMAGE_SIZE  | FREE_RESULT_WATERMARK | true       |
+
+모델이 FREE_IMAGE_SIZE 보다 크게 돌려주면(Nano Banana 는 512 미지원 → 1K) 워터마크 전에
+긴 변을 그 크기로 줄인다. 무료 결과의 화질 차이는 모델과 상관없이 유지된다.
 | paid | PAID_IMAGE_SIZE  | 없음                  | false      |
 """
 
-from typing import Optional
+import base64
+import io
+from typing import Optional, Tuple
+
+from PIL import Image
 
 from config.settings import settings
+from core.logging import logger
 from services.credit_service import TIER_FREE, TIER_PAID
 from services.result_watermark import apply_watermark
+
+# image_size 설정값 → 긴 변 픽셀 (줄일 수 있는 것만)
+_SIZE_PIXELS = {"512": 512}
 
 
 def charged_tier(quota: Optional[dict]) -> str:
@@ -43,10 +54,41 @@ def image_size_for(tier: str) -> Optional[str]:
     return size or None
 
 
+def downscale_to(
+    image_base64: str, image_format: str, size: Optional[str]
+) -> Tuple[str, str]:
+    """긴 변이 size 보다 크면 그 크기로 줄인다. 실패하거나 해당 없으면 그대로."""
+    max_side = _SIZE_PIXELS.get(size or "")
+    if not max_side:
+        return image_base64, image_format
+    try:
+        image = Image.open(io.BytesIO(base64.b64decode(image_base64)))
+        if max(image.size) <= max_side:
+            return image_base64, image_format
+        scale = max_side / max(image.size)
+        resized = image.resize(
+            (round(image.width * scale), round(image.height * scale)), Image.LANCZOS
+        )
+        buffer = io.BytesIO()
+        fmt = (image_format or "png").lower()
+        if fmt in ("jpeg", "jpg"):
+            resized.convert("RGB").save(buffer, format="JPEG", quality=90)
+        else:
+            resized.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode("utf-8"), image_format
+    except Exception as e:
+        logger.warning(f"무료 결과 축소 실패 (원본 반환): {str(e)}")
+        return image_base64, image_format
+
+
 def finalize_image(result: dict, tier: str) -> tuple:
-    """무료 등급이면 워터마크를 넣은 (base64, format), 유료면 그대로"""
-    if not result_quality(tier)["watermarked"]:
-        return result["image_base64"], result["image_format"]
-    return apply_watermark(
-        result["image_base64"], result["image_format"], settings.RESULT_WATERMARK_TEXT
+    """무료 등급이면 FREE_IMAGE_SIZE 로 줄이고 워터마크, 유료면 그대로"""
+    image_base64, image_format = result["image_base64"], result["image_format"]
+    if tier == TIER_PAID:
+        return image_base64, image_format
+    image_base64, image_format = downscale_to(
+        image_base64, image_format, settings.FREE_IMAGE_SIZE
     )
+    if not result_quality(tier)["watermarked"]:
+        return image_base64, image_format
+    return apply_watermark(image_base64, image_format, settings.RESULT_WATERMARK_TEXT)

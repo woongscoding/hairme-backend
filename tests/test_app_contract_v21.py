@@ -184,7 +184,9 @@ class TestHairColorTier:
         config = service._gemini_client.models.generate_content.call_args.kwargs[
             "config"
         ]
-        assert config.image_config.image_size == "512"
+        # Nano Banana 는 512 미지원 → 1K 로 받고 finalize 에서 줄인다
+        assert config.image_config.image_size == "1K"
+        assert config.thinking_config.thinking_level.lower() == "minimal"
         assert config.response_modalities == ["IMAGE"]
 
         service.synthesize_hair_color(_jpeg_bytes(), "밀크브라운", "#C4A484")

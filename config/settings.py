@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     # ===== 합성 출력 등급 (무료 / 유료) =====
     # 유료 = 구매한 크레딧(paid_credits)으로 차감된 합성. 그 밖(비로그인 무료 한도,
     # 가입 보너스, 보상형 광고 크레딧, 관리자 지급)은 전부 무료 등급이다.
-    # 값은 Gemini ImageConfig.image_size 로 그대로 전달된다 ("512" | "1K" | "2K").
+    # 값은 Gemini ImageConfig.image_size 로 전달된다 ("512" | "1K" | "2K").
+    # 512 를 지원하지 않는 모델(Nano Banana)은 1K 로 받아 finalize 단계에서 512 로 줄인다.
     # 빈 문자열이면 파라미터를 넣지 않는다 (모델 기본값 1K).
     FREE_IMAGE_SIZE: str = "512"
     PAID_IMAGE_SIZE: str = "1K"
@@ -219,9 +220,13 @@ class Settings(BaseSettings):
     # Gemini Model Configuration
     MODEL_NAME: str = "gemini-2.5-flash"
     # 이미지 생성(합성/염색) 전용 모델.
-    # gemini-2.5-flash-image 는 2026-10-02 셧다운 예정이며,
-    # gemini-3.1-flash-image 는 동일한 지연시간으로 측정되어 기본값으로 승격했다.
-    GEMINI_IMAGE_MODEL: str = "gemini-3.1-flash-image"
+    # gemini-3.1-flash-image 는 2026-10-06 지원 종료 예고(종료일 미정) → Nano Banana 2.1.
+    # 11/06 비교(운영 프롬프트, 6장): 얼굴·구도 유지 개선, 장당 약 $0.067 → $0.036,
+    # 생각 minimal 기준 10~12초(이전 9~11초). 롤백은 이 값만 gemini-3.1-flash-image 로.
+    GEMINI_IMAGE_MODEL: str = "gemini-nano-banana-2.1"
+    # Nano Banana 생각 수준 ("minimal" | "medium" ... , 빈 값이면 모델 기본값 medium).
+    # 기본 medium 은 최대 27초까지 걸려 minimal 로 고정한다. low 는 이 모델이 거부한다.
+    GEMINI_IMAGE_THINKING_LEVEL: str = "minimal"
 
     # ML Model Paths
     ML_MODEL_PATH: str = "models/final_model.pth"

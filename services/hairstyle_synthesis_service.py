@@ -8,6 +8,7 @@ from PIL import Image
 
 from core.logging import logger
 from config.settings import settings
+from services.gemini_image_config import image_generation_config
 
 
 class HairstyleSynthesisService:
@@ -46,15 +47,8 @@ class HairstyleSynthesisService:
 
     @staticmethod
     def _generation_config(types, image_size: Optional[str]):
-        """이미지 생성 설정. image_size("512"/"1K")가 비면 모델 기본값(1K)"""
-        kwargs: Dict[str, Any] = {
-            # IMAGE 단독 요청이 TEXT 병행 대비 약 2.6초 빠르고,
-            # "텍스트만 반환 → 재시도" 실패 모드를 제거한다.
-            "response_modalities": ["IMAGE"],
-        }
-        if image_size:
-            kwargs["image_config"] = types.ImageConfig(image_size=image_size)
-        return types.GenerateContentConfig(**kwargs)
+        """이미지 생성 설정 (모델별 해상도·생각 수준은 gemini_image_config 가 맞춘다)"""
+        return image_generation_config(types, image_size)
 
     @staticmethod
     def _resize_image(image: Image.Image, max_size: int = 1024) -> Image.Image:
