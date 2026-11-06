@@ -3,9 +3,8 @@
 - POST /fashion/body-analyze: 전신 사진 → 체형 분류 → 추천 핏/제휴 아이템
 
 헤어스타일 분석과 독립된 기능이다. 무료(크레딧·Gemini 호출 없음)이고
-MediaPipe Pose 만 쓴다. 사진은 요청에 save_consent=true 가 있을 때만
-S3 body/originals/ 에 저장한다 (헤어 사진과 경로·동의 분리, 1년 보관).
-동의가 없으면 메모리에서만 처리한다. 로그에는 체형·비율·성별·처리 시간만 남긴다.
+MediaPipe Pose 만 쓴다. 분석한 사진은 S3 body/originals/ 에 1년 보관한다
+(헤어 사진과 경로 분리, 앱 촬영 가이드에 보관 사실을 안내). 로그에는 체형·비율·성별·처리 시간만 남긴다.
 
 recommended[].product_id 가 있으면 POST /products/click (source=body_analysis)으로
 쿠팡 검색 결과 링크(affiliate_url)를 발급한다.
@@ -58,15 +57,14 @@ def _photo_subject(user_id: Optional[str], device_id: Optional[str]) -> str:
     return "anonymous"
 
 
-async def _save_photo_if_consented(
-    consent: bool,
+async def _save_photo(
     image_data: Optional[bytes],
     user_id: Optional[str],
     device_id: Optional[str],
     metadata: Dict[str, str],
 ) -> bool:
-    """동의한 요청의 사진만 저장. 저장 실패는 분석 응답에 영향을 주지 않는다."""
-    if not consent or not image_data:
+    """체형 사진 저장. 저장 실패는 분석 응답에 영향을 주지 않는다."""
+    if not image_data:
         return False
     try:
         key = await run_in_threadpool(
@@ -87,14 +85,10 @@ async def analyze_body(
     request: Request,
     file: UploadFile = File(..., description="정면 전신 사진 (머리부터 발끝까지)"),
     gender: str = Form("male", pattern="^(male|female)$"),
-    save_consent: bool = Form(
-        False,
-        description="사진 저장 동의 (true 일 때만 S3 body/originals/ 에 1년 보관)",
-    ),
     device_id: Optional[str] = Form(
         None,
         max_length=128,
-        description="비로그인 사진 주체 (저장 동의 시 경로에 사용)",
+        description="비로그인 사진 주체 (S3 저장 경로에 사용)",
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
 ):
@@ -132,8 +126,7 @@ async def analyze_body(
         )
         processing_time = round(time.time() - start_time, 2)
 
-        photo_saved = await _save_photo_if_consented(
-            save_consent,
+        photo_saved = await _save_photo(
             image_data,
             user_id,
             device_id,
@@ -162,7 +155,6 @@ async def analyze_body(
                     1 for fit in result["recommended"] if fit["product_id"]
                 ),
                 "authenticated": user_id is not None,
-                "save_consent": save_consent,
                 "photo_saved": photo_saved,
                 "processing_time": processing_time,
             },
@@ -177,12 +169,11 @@ async def analyze_body(
         }
 
     except tuple(_ERROR_TYPES) as e:
-        # 전신이 안 잡히거나 정면이 아닌 사진도 동의했다면 남긴다 (가이드·검출 개선용).
+        # 전신이 안 잡히거나 정면이 아닌 사진도 남긴다 (가이드·검출 개선용).
         # 파일 형식 오류는 image_data 가 None 이거나 이미지가 아니라 저장하지 않는다.
         photo_saved = False
         if not isinstance(e, InvalidFileFormatException):
-            photo_saved = await _save_photo_if_consented(
-                save_consent,
+            photo_saved = await _save_photo(
                 image_data,
                 user_id,
                 device_id,
@@ -196,7 +187,6 @@ async def analyze_body(
                 "status_code": 400,
                 "gender": gender,
                 "authenticated": user_id is not None,
-                "save_consent": save_consent,
                 "photo_saved": photo_saved,
             },
         )

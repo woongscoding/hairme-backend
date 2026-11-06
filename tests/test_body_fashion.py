@@ -498,7 +498,7 @@ class TestFashionItemClick:
         assert args[4] == {"body_type": "broad_shoulder", "gender": "male"}
 
 
-# ========== 사진 저장 (동의한 요청만, 헤어 사진과 분리) ==========
+# ========== 사진 저장 (헤어 사진과 분리, 1년 보관) ==========
 
 
 @pytest.fixture
@@ -518,16 +518,9 @@ def _post_with(client, **data):
 
 
 class TestBodyPhotoSaving:
-    def test_no_consent_never_saves(self, client, pose_result, storage):
-        response = _post_with(client, device_id="a1b2c3d4e5f60718")
-        assert response.status_code == 200
-        storage.save_body_photo.assert_not_called()
-
-    def test_consent_saves_under_device_with_ratios(self, client, pose_result, storage):
+    def test_saves_under_device_with_ratios(self, client, pose_result, storage):
         with patch("api.endpoints.fashion.log_structured") as log:
-            response = _post_with(
-                client, save_consent="true", device_id="a1b2c3d4e5f60718"
-            )
+            response = _post_with(client, device_id="a1b2c3d4e5f60718")
         assert response.status_code == 200
         subject, image_bytes, metadata = storage.save_body_photo.call_args.args
         assert subject == "device-a1b2c3d4e5f60718"
@@ -537,7 +530,7 @@ class TestBodyPhotoSaving:
         assert metadata["shoulder-hip"] == "1.500"
         assert all(isinstance(v, str) and v.isascii() for v in metadata.values())
         _, payload = log.call_args.args
-        assert payload["save_consent"] is True and payload["photo_saved"] is True
+        assert payload["photo_saved"] is True
 
     def test_logged_in_user_is_subject(self, client, pose_result, storage):
         from main import app as main_app
@@ -545,7 +538,7 @@ class TestBodyPhotoSaving:
 
         main_app.dependency_overrides[get_optional_user_id] = lambda: "u-123"
         try:
-            _post_with(client, save_consent="true", device_id="a1b2c3d4e5f60718")
+            _post_with(client, device_id="a1b2c3d4e5f60718")
         finally:
             main_app.dependency_overrides.pop(get_optional_user_id, None)
         assert storage.save_body_photo.call_args.args[0] == "user-u-123"
@@ -554,17 +547,13 @@ class TestBodyPhotoSaving:
     def test_unsafe_or_missing_device_is_anonymous(
         self, client, pose_result, storage, device_id
     ):
-        data = {"save_consent": "true"}
-        if device_id:
-            data["device_id"] = device_id
+        data = {"device_id": device_id} if device_id else {}
         _post_with(client, **data)
         assert storage.save_body_photo.call_args.args[0] == "anonymous"
 
-    def test_pose_failure_photo_is_saved_when_consented(
-        self, client, pose_result, storage
-    ):
+    def test_pose_failure_photo_is_saved(self, client, pose_result, storage):
         pose_result.extract_landmarks.return_value = None
-        response = _post_with(client, save_consent="true", device_id="a1b2c3d4e5f60718")
+        response = _post_with(client, device_id="a1b2c3d4e5f60718")
         assert response.status_code == 400
         metadata = storage.save_body_photo.call_args.args[2]
         assert metadata["error"] == "full_body_not_detected"
@@ -573,7 +562,7 @@ class TestBodyPhotoSaving:
         response = client.post(
             "/api/fashion/body-analyze",
             files={"file": ("body.png", b"not an image", "image/png")},
-            data={"save_consent": "true"},
+            data={"gender": "male"},
         )
         assert response.status_code == 400
         storage.save_body_photo.assert_not_called()
@@ -582,7 +571,7 @@ class TestBodyPhotoSaving:
         self, client, pose_result, storage
     ):
         storage.save_body_photo.side_effect = RuntimeError("s3 down")
-        response = _post_with(client, save_consent="true")
+        response = _post_with(client)
         assert response.status_code == 200
         assert response.json()["success"] is True
 
@@ -604,7 +593,7 @@ class TestBodyPhotoStorageService:
         kwargs = service._client.put_object.call_args.kwargs
         assert kwargs["Bucket"] == "test-bucket"
         assert kwargs["ContentType"] == "image/png"
-        assert kwargs["Metadata"]["body-photo-consent"] == "true"
+        assert kwargs["Metadata"]["source"] == "body-analysis"
         assert not kwargs["Key"].startswith("originals/")
 
     def test_disabled_without_bucket(self, monkeypatch):

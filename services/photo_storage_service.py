@@ -4,8 +4,8 @@
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
 - originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
-- body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (요청마다 save_consent=true 일 때만,
-  1년 보관). 얼굴(헤어) 사진과 동의·경로·보관 기간을 모두 분리한다.
+- body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (분석한 사진 전부, 1년 보관).
+  얼굴(헤어) 사진과 경로·보관 기간을 분리한다.
 
 PHOTO_S3_BUCKET 미설정 시 모든 기능이 조용히 비활성화됨 (합성 자체는 정상 동작).
 """
@@ -278,7 +278,7 @@ class PhotoStorageService:
             logger.warning(f"원본 저장 실패 (무시): {str(e)}")
             return None
 
-    # ========== 체형 코디 전신 사진 (요청마다 동의한 경우만) ==========
+    # ========== 체형 코디 전신 사진 (1년 보관) ==========
 
     def save_body_photo(
         self, subject: str, image_bytes: bytes, metadata: Dict[str, str]
@@ -286,7 +286,6 @@ class PhotoStorageService:
         """
         체형 분석 사진 저장. 헤어 원본(originals/)과 섞이지 않게 body/originals/ 아래에 둔다.
 
-        호출자가 save_consent 를 확인한 뒤 호출해야 한다.
         subject 는 "user-{user_id}" 또는 "device-{device_id}" (경로에 쓸 수 있게 정리된 값).
 
         Returns:
@@ -305,9 +304,9 @@ class PhotoStorageService:
                 Key=key,
                 Body=image_bytes,
                 ContentType=content_type,
-                Metadata={"body-photo-consent": "true", **metadata},
+                Metadata={"source": "body-analysis", **metadata},
             )
-            logger.info(f"🧍 체형 사진 저장 (동의): {subject}")
+            logger.info(f"🧍 체형 사진 저장: {subject}")
             return key
         except Exception as e:
             logger.warning(f"체형 사진 저장 실패 (무시): {str(e)}")
