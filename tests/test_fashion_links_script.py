@@ -16,7 +16,12 @@ CATALOG = json.loads(fashion_links.CATALOG_PATH.read_text(encoding="utf-8"))
 
 
 def _catalog():
-    return copy.deepcopy(CATALOG)
+    """링크를 아직 하나도 안 넣은 상태의 카탈로그"""
+    catalog = copy.deepcopy(CATALOG)
+    for link in catalog["links"]:
+        link["affiliate_url"] = "PLACEHOLDER"
+        link["active"] = False
+    return catalog
 
 
 def test_export_has_search_url_and_blank_placeholder():
@@ -62,7 +67,7 @@ def test_apply_rejects_bad_rows_without_partial_changes(row):
     }
     with pytest.raises(ValueError):
         fashion_links.apply_links(catalog, [good, row])
-    assert catalog == CATALOG
+    assert catalog == _catalog()
 
 
 def test_dump_keeps_catalog_format():

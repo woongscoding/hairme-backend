@@ -223,14 +223,26 @@ class TestBodyFashionService:
             "상체 긴 비율"
         )
 
-    def test_placeholder_links_are_inactive_and_hidden(self):
-        for link in self.service.catalog["links"]:
-            if link["affiliate_url"] == "PLACEHOLDER":
-                assert link["active"] is False
-                assert self.service.get_product(link["product_id"]) is None
-        result = self.service.build_recommendation("balanced", [], "male")
+    def test_inactive_links_are_hidden(self, tmp_path):
+        catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        for link in catalog["links"]:
+            link["active"] = False
+            link["affiliate_url"] = "PLACEHOLDER"
+        path = tmp_path / "body_catalog.json"
+        path.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+
+        service = BodyFashionService(path)
+        assert service.get_product("fashion-m-01") is None
+        result = service.build_recommendation("balanced", [], "male")
         assert all(fit["product_id"] is None for fit in result["recommended"])
         assert "items" not in result
+
+    def test_live_catalog_links_are_coupang_partner_links(self):
+        for link in self.service.catalog["links"]:
+            if link["active"]:
+                assert link["affiliate_url"].startswith("https://link.coupang.com/")
+            else:
+                assert link["affiliate_url"] == "PLACEHOLDER"
 
     def test_active_links_attach_to_keywords_without_url(self, tmp_path):
         catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -354,8 +366,9 @@ class TestBodyAnalyzeEndpoint:
         }
         assert data["recommended"][0]["keyword"] == "브이넥 블라우스"
         assert data["avoid"]
-        # 제휴 링크 교체 전에는 비활성
-        assert data["recommended"][0]["product_id"] is None
+        # 링크 ID만 나가고 URL 은 클릭 API 에서만 준다
+        assert data["recommended"][0]["product_id"] == "fashion-f-01"
+        assert "affiliate_url" not in data["recommended"][0]
         assert "쿠팡 파트너스" in data["disclosure"]
 
     def test_logs_ratios_without_image(self, client, pose_result):
@@ -438,11 +451,16 @@ def mock_click_service():
 
 
 class TestFashionItemClick:
-    def test_inactive_placeholder_item_is_404(self, client, mock_click_service):
-        response = client.post(
-            "/api/products/click",
-            json={"product_id": "fashion-m-01", "source": "body_analysis"},
-        )
+    def test_inactive_item_is_404(self, client, mock_click_service):
+        fashion = MagicMock()
+        fashion.get_product.return_value = None
+        with patch(
+            "api.endpoints.products.get_body_fashion_service", return_value=fashion
+        ):
+            response = client.post(
+                "/api/products/click",
+                json={"product_id": "fashion-m-01", "source": "body_analysis"},
+            )
         assert response.status_code == 404
         mock_click_service.log_click.assert_not_called()
 
