@@ -43,6 +43,7 @@ from api.endpoints.results import router as results_router
 from api.endpoints.style_images import router as style_images_router
 from api.endpoints.products import router as products_router
 from api.endpoints.events import router as events_router
+from api.endpoints.fashion import router as fashion_router
 
 # 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
 genai = None
@@ -304,6 +305,7 @@ app.include_router(results_router, prefix="/api", tags=["results"])
 app.include_router(style_images_router, prefix="/api", tags=["styles"])
 app.include_router(products_router, prefix="/api", tags=["products"])
 app.include_router(events_router, prefix="/api", tags=["events"])
+app.include_router(fashion_router, prefix="/api", tags=["fashion"])
 
 
 # ========== Startup Event ==========

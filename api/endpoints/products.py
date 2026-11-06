@@ -2,6 +2,7 @@
 
 - GET /products/recommendations: 스타일 기반 제품 추천 (affiliate_url 미포함)
 - POST /products/click: 클릭 로그 기록 + 제휴 링크 발급 (로그인 불필요)
+  헤어 제품과 체형별 패션 아이템(/fashion/body-analyze 의 items)을 함께 처리한다.
 
 클릭이 로그인 필수였던 동안 합성 성공의 84%(비로그인)가 제품 링크를 아예 받을 수
 없었다. 제휴 수수료는 사업자 등록 없이도 수령 가능한 유일한 수익 채널인데 도달이
@@ -14,7 +15,7 @@ affiliate_url을 추천 응답에 넣지 않고 클릭 엔드포인트로만 발
 모든 클릭이 로그를 거치게 해서 "헤어 프로필 × 제품 클릭" 데이터가 누락되지 않게.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -25,6 +26,7 @@ from slowapi.util import get_remote_address
 from core.jwt_auth import get_optional_user_id
 from core.logging import logger
 from services.affiliate_click_service import get_affiliate_click_service
+from services.body_fashion_service import get_body_fashion_service
 from services.product_recommendation_service import (
     get_product_recommendation_service,
 )
@@ -41,12 +43,15 @@ class ClickRequest(BaseModel):
     )
     source: str = Field(
         "browse",
-        pattern="^(synthesis_result|analysis_result|browse)$",
+        pattern="^(synthesis_result|analysis_result|body_analysis|browse)$",
         description="클릭이 발생한 화면",
     )
     hair_profile: Optional[Dict[str, Any]] = Field(
         None,
-        description="유저 헤어 프로필 스냅샷 (얼굴형/퍼스널컬러 등, 앱이 보유한 분석 결과)",
+        description=(
+            "유저 프로필 스냅샷 (얼굴형/퍼스널컬러 등, 앱이 보유한 분석 결과)."
+            " 체형 아이템은 body_type/gender 를 넣는다."
+        ),
     )
     device_id: Optional[str] = Field(
         None,
@@ -81,6 +86,19 @@ async def get_product_recommendations(
         raise HTTPException(status_code=500, detail="제품 추천에 실패했습니다.")
 
     return {"style": style, "products": products, "disclosure": disclosure}
+
+
+def _find_product(product_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """헤어 제품 → 체형 패션 아이템 순으로 찾는다. (제품, 해당 카탈로그의 disclosure)
+
+    product_id 는 카탈로그끼리 겹치지 않는다 (패션 아이템은 "fashion-" 접두사).
+    """
+    hair = get_product_recommendation_service()
+    product = hair.get_product(product_id)
+    if product is not None:
+        return product, hair.disclosure
+    fashion = get_body_fashion_service()
+    return fashion.get_product(product_id), fashion.disclosure
 
 
 def _click_principal(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
@@ -118,7 +136,7 @@ async def click_product(
     비로그인도 device_id로 로그를 남기므로 "헤어 프로필 x 제품 클릭" 데이터 자산은
     유지된다 - 오히려 모집단이 6배가 된다.
     """
-    product = get_product_recommendation_service().get_product(body.product_id)
+    product, disclosure = _find_product(body.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="존재하지 않는 제품입니다.")
 
@@ -143,5 +161,5 @@ async def click_product(
         "success": True,
         "product_id": product["product_id"],
         "affiliate_url": product.get("affiliate_url"),
-        "disclosure": get_product_recommendation_service().disclosure,
+        "disclosure": disclosure,
     }

@@ -92,7 +92,7 @@ def create_photo_bucket(s3, bucket_name: str, region: str) -> None:
         },
     )
 
-    # 캐시는 90일, 결과물은 180일 후 자동 삭제 (원본은 학습 데이터라 무기한 보관)
+    # 캐시 90일, 결과물 180일, 체형 사진 365일 후 자동 삭제 (헤어 원본은 학습 데이터라 무기한 보관)
     s3.put_bucket_lifecycle_configuration(
         Bucket=bucket_name,
         LifecycleConfiguration={
@@ -108,6 +108,13 @@ def create_photo_bucket(s3, bucket_name: str, region: str) -> None:
                     "Status": "Enabled",
                     "Filter": {"Prefix": "results/"},
                     "Expiration": {"Days": 180},
+                },
+                # 체형 코디 전신 사진: 동의 문구에 적은 보관 기간(1년)
+                {
+                    "ID": "expire-body-originals",
+                    "Status": "Enabled",
+                    "Filter": {"Prefix": "body/originals/"},
+                    "Expiration": {"Days": 365},
                 },
             ]
         },

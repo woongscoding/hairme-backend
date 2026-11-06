@@ -1,0 +1,159 @@
+{
+  "_readme": [
+    "체형별 아이템 추천 카탈로그 (사람 검토/수정용 시드 파일).",
+    "services/body_fashion_service.py가 이 파일을 읽어 POST /api/fashion/body-analyze 응답을 만든다.",
+    "body_types / proportions의 키는 models/body_pose_analyzer.py의 분류 결과와 일치해야 한다.",
+    "recommended/avoid는 핏 키워드와 짧은 이유. 추천 키워드는 links에서 (gender, keyword)가 같은 항목과 자동으로 이어진다.",
+    "links는 상품이 아니라 쿠팡 검색 결과 페이지 링크다 (쿠팡 오픈 API는 파트너스 최종 승인 전 사용 불가라 상품 단위 관리 대신 검색 링크를 쓴다).",
+    "링크 교체: python scripts/fashion_links.py export → CSV의 affiliate_url 칸 채우기 → python scripts/fashion_links.py import.",
+    "active=false 링크는 응답에서 빠지고(product_id null) POST /api/products/click도 404를 준다.",
+    "links에 없는 추천 키워드(예: 상의 넣어 입기)는 스타일링 팁이라 링크 없이 나간다.",
+    "체중·체지방을 암시하는 표현(살, 뚱뚱, 날씬해 보이는 등)은 쓰지 않는다."
+  ],
+  "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
+  "body_types": {
+    "broad_shoulder": {
+      "label": "어깨 넓은형",
+      "description": "어깨선이 골반보다 넓어 보이는 비율이에요. 하체에 볼륨을 주고 어깨로 가는 시선을 분산하면 위아래 균형이 맞아 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "와이드 슬랙스", "reason": "하체에 볼륨을 더해 상하체 균형을 맞춰요"},
+          {"keyword": "브이넥 니트", "reason": "세로선이 생겨 어깨폭으로 가는 시선을 분산해요"},
+          {"keyword": "래글런 소매 티셔츠", "reason": "어깨선이 사선으로 떨어져 어깨폭이 덜 강조돼요"},
+          {"keyword": "카고 팬츠", "reason": "하체에 포인트가 생겨 시선이 아래로 내려가요"}
+        ],
+        "avoid": [
+          {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"},
+          {"keyword": "스키니 팬츠", "reason": "하체가 좁아 보여 상체가 더 커 보여요"},
+          {"keyword": "보트넥 상의", "reason": "가로 넥라인이 어깨폭을 넓혀 보이게 해요"}
+        ]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "브이넥 블라우스", "reason": "세로선이 생겨 어깨폭으로 가는 시선을 분산해요"},
+          {"keyword": "A라인 스커트", "reason": "하체에 볼륨을 더해 상하체 균형을 맞춰요"},
+          {"keyword": "와이드 팬츠", "reason": "하체 실루엣이 넓어져 어깨와 균형이 맞아요"},
+          {"keyword": "래글런 소매 니트", "reason": "어깨선이 부드럽게 떨어져 각진 느낌이 줄어요"}
+        ],
+        "avoid": [
+          {"keyword": "퍼프 소매", "reason": "어깨에 볼륨이 더해져 상체가 커 보여요"},
+          {"keyword": "오프숄더", "reason": "어깨 가로선이 그대로 드러나요"},
+          {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"}
+        ]
+      }
+    },
+    "lower_volume": {
+      "label": "하체 볼륨형",
+      "description": "골반 쪽 비율이 어깨에 비해 넓어 보이는 체형이에요. 어깨선을 살리고 하체는 깔끔한 실루엣으로 정리하면 균형이 맞아 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "어깨 각 잡힌 재킷", "reason": "어깨선이 살아나 상하체 균형이 맞아요"},
+          {"keyword": "스트레이트 팬츠", "reason": "허벅지부터 일자로 떨어져 하체 실루엣이 정돈돼요"},
+          {"keyword": "크루넥 스웨트셔츠", "reason": "가로 넥라인이 어깨를 넓어 보이게 해요"},
+          {"keyword": "어두운 컬러 하의", "reason": "시선이 상체로 올라가요"}
+        ],
+        "avoid": [
+          {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
+          {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"},
+          {"keyword": "허벅지 큰 포켓 팬츠", "reason": "하체에 부피가 더해져 보여요"}
+        ]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "보트넥 니트", "reason": "가로 넥라인이 어깨선을 넓어 보이게 해요"},
+          {"keyword": "퍼프 소매 블라우스", "reason": "어깨에 볼륨이 생겨 상하체 균형이 맞아요"},
+          {"keyword": "A라인 스커트", "reason": "골반에서 자연스럽게 퍼져 하체 라인을 감싸요"},
+          {"keyword": "부츠컷 팬츠", "reason": "밑단이 넓어져 골반과 균형이 맞아요"}
+        ],
+        "avoid": [
+          {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
+          {"keyword": "펜슬 스커트", "reason": "골반 라인이 강조돼요"},
+          {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"}
+        ]
+      }
+    },
+    "balanced": {
+      "label": "균형형",
+      "description": "어깨와 골반 비율이 고른 체형이에요. 대부분의 핏이 잘 어울리니 허리선을 살려 비율을 강조해 보세요.",
+      "male": {
+        "recommended": [
+          {"keyword": "테이퍼드 슬랙스", "reason": "깔끔한 실루엣으로 균형 잡힌 비율이 살아나요"},
+          {"keyword": "옥스퍼드 셔츠", "reason": "정핏 상의가 자연스러운 어깨선을 보여줘요"},
+          {"keyword": "세미오버 블레이저", "reason": "적당한 여유로 균형을 유지하며 분위기를 더해요"},
+          {"keyword": "스트레이트 데님", "reason": "어떤 상의와도 비율이 무난하게 맞아요"}
+        ],
+        "avoid": [
+          {"keyword": "상하의 모두 오버핏", "reason": "고른 비율이 옷에 묻혀요"}
+        ]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "허리 라인 원피스", "reason": "허리선이 잡혀 고른 비율이 살아나요"},
+          {"keyword": "하이웨이스트 와이드 팬츠", "reason": "허리가 강조돼 다리가 길어 보여요"},
+          {"keyword": "셔츠와 일자 데님", "reason": "기본 핏으로 균형 잡힌 실루엣을 보여줘요"},
+          {"keyword": "크롭 카디건", "reason": "허리 위에서 끊겨 상하체 비율이 좋아 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "상하의 모두 박시한 핏", "reason": "고른 비율이 옷에 묻혀요"}
+        ]
+      }
+    }
+  },
+  "proportions": {
+    "long_torso": {
+      "label": "상체 긴 비율",
+      "description": "다리에 비해 상체가 길어 보이는 비율이에요. 허리선을 높이면 다리가 길어 보여요.",
+      "male": {
+        "recommended": [
+          {"keyword": "하이웨이스트 팬츠", "reason": "허리선이 올라가 다리가 길어 보여요"},
+          {"keyword": "상의 앞 넣어 입기", "reason": "허리 위치가 드러나 하체가 길어 보여요"},
+          {"keyword": "짧은 기장 재킷", "reason": "상체가 짧게 끊겨 비율이 좋아 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "엉덩이 덮는 긴 상의", "reason": "상체가 더 길어 보여요"},
+          {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
+        ]
+      },
+      "female": {
+        "recommended": [
+          {"keyword": "하이웨이스트 스커트", "reason": "허리선이 올라가 다리가 길어 보여요"},
+          {"keyword": "크롭 상의", "reason": "상체가 짧게 끊겨 비율이 좋아 보여요"},
+          {"keyword": "상의 넣어 입기", "reason": "허리 위치가 드러나 하체가 길어 보여요"}
+        ],
+        "avoid": [
+          {"keyword": "골반 덮는 롱 니트", "reason": "상체가 더 길어 보여요"},
+          {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
+        ]
+      }
+    }
+  },
+  "links": [
+    {"product_id": "fashion-m-01", "gender": "male", "keyword": "와이드 슬랙스", "category": "pants", "search_query": "남성 와이드 슬랙스", "affiliate_url": "https://link.coupang.com/a/irSoSmVks0", "active": true},
+    {"product_id": "fashion-m-02", "gender": "male", "keyword": "브이넥 니트", "category": "top", "search_query": "남성 브이넥 니트", "affiliate_url": "https://link.coupang.com/a/irSpEDn2ho", "active": true},
+    {"product_id": "fashion-m-03", "gender": "male", "keyword": "래글런 소매 티셔츠", "category": "top", "search_query": "남성 래글런 티셔츠", "affiliate_url": "https://link.coupang.com/a/irSqdPYle8", "active": true},
+    {"product_id": "fashion-m-04", "gender": "male", "keyword": "카고 팬츠", "category": "pants", "search_query": "남성 카고 팬츠", "affiliate_url": "https://link.coupang.com/a/irSrekNX2a", "active": true},
+    {"product_id": "fashion-m-05", "gender": "male", "keyword": "어깨 각 잡힌 재킷", "category": "outer", "search_query": "남성 테일러드 재킷", "affiliate_url": "https://link.coupang.com/a/irSrMZ8CWG", "active": true},
+    {"product_id": "fashion-m-06", "gender": "male", "keyword": "스트레이트 팬츠", "category": "pants", "search_query": "남성 스트레이트 팬츠", "affiliate_url": "https://link.coupang.com/a/irSse017Rs", "active": true},
+    {"product_id": "fashion-m-07", "gender": "male", "keyword": "크루넥 스웨트셔츠", "category": "top", "search_query": "남성 크루넥 맨투맨", "affiliate_url": "https://link.coupang.com/a/irSsBogomq", "active": true},
+    {"product_id": "fashion-m-08", "gender": "male", "keyword": "어두운 컬러 하의", "category": "pants", "search_query": "남성 블랙 슬랙스", "affiliate_url": "https://link.coupang.com/a/irStelOdrM", "active": true},
+    {"product_id": "fashion-m-09", "gender": "male", "keyword": "테이퍼드 슬랙스", "category": "pants", "search_query": "남성 테이퍼드 슬랙스", "affiliate_url": "https://link.coupang.com/a/irStBmc7TE", "active": true},
+    {"product_id": "fashion-m-10", "gender": "male", "keyword": "옥스퍼드 셔츠", "category": "top", "search_query": "남성 옥스퍼드 셔츠", "affiliate_url": "https://link.coupang.com/a/irStYaeJu8", "active": true},
+    {"product_id": "fashion-m-11", "gender": "male", "keyword": "세미오버 블레이저", "category": "outer", "search_query": "남성 세미오버 블레이저", "affiliate_url": "https://link.coupang.com/a/irSujZcVQy", "active": true},
+    {"product_id": "fashion-m-12", "gender": "male", "keyword": "스트레이트 데님", "category": "pants", "search_query": "남성 스트레이트 데님", "affiliate_url": "https://link.coupang.com/a/irSuZNSr6a", "active": true},
+    {"product_id": "fashion-m-13", "gender": "male", "keyword": "하이웨이스트 팬츠", "category": "pants", "search_query": "남성 하이웨스트 팬츠", "affiliate_url": "https://link.coupang.com/a/irSvkueLbo", "active": true},
+    {"product_id": "fashion-m-14", "gender": "male", "keyword": "짧은 기장 재킷", "category": "outer", "search_query": "남성 크롭 재킷", "affiliate_url": "https://link.coupang.com/a/irSvWadY6e", "active": true},
+    {"product_id": "fashion-f-01", "gender": "female", "keyword": "브이넥 블라우스", "category": "top", "search_query": "여성 브이넥 블라우스", "affiliate_url": "https://link.coupang.com/a/isgu5J7YC4", "active": true},
+    {"product_id": "fashion-f-02", "gender": "female", "keyword": "A라인 스커트", "category": "skirt", "search_query": "A라인 스커트", "affiliate_url": "https://link.coupang.com/a/ir4MP2vHfU", "active": true},
+    {"product_id": "fashion-f-03", "gender": "female", "keyword": "와이드 팬츠", "category": "pants", "search_query": "여성 와이드 팬츠", "affiliate_url": "https://link.coupang.com/a/ir4NPjtvzg", "active": true},
+    {"product_id": "fashion-f-04", "gender": "female", "keyword": "래글런 소매 니트", "category": "top", "search_query": "여성 래글런 니트", "affiliate_url": "https://link.coupang.com/a/ir4QmR6AtE", "active": true},
+    {"product_id": "fashion-f-05", "gender": "female", "keyword": "보트넥 니트", "category": "top", "search_query": "여성 보트넥 니트", "affiliate_url": "https://link.coupang.com/a/ir4QNfbuhw", "active": true},
+    {"product_id": "fashion-f-06", "gender": "female", "keyword": "퍼프 소매 블라우스", "category": "top", "search_query": "퍼프 소매 블라우스", "affiliate_url": "https://link.coupang.com/a/ir4VHzVv9U", "active": true},
+    {"product_id": "fashion-f-07", "gender": "female", "keyword": "부츠컷 팬츠", "category": "pants", "search_query": "여성 부츠컷 팬츠", "affiliate_url": "https://link.coupang.com/a/ir4TLh6I2K", "active": true},
+    {"product_id": "fashion-f-08", "gender": "female", "keyword": "허리 라인 원피스", "category": "dress", "search_query": "허리 라인 원피스", "affiliate_url": "https://link.coupang.com/a/ir4W8hE3Ua", "active": true},
+    {"product_id": "fashion-f-09", "gender": "female", "keyword": "하이웨이스트 와이드 팬츠", "category": "pants", "search_query": "여성 하이웨스트 와이드 팬츠", "affiliate_url": "https://link.coupang.com/a/ir4XY6vPoa", "active": true},
+    {"product_id": "fashion-f-10", "gender": "female", "keyword": "셔츠와 일자 데님", "category": "pants", "search_query": "여성 일자 데님", "affiliate_url": "https://link.coupang.com/a/ir4YLLPgei", "active": true},
+    {"product_id": "fashion-f-11", "gender": "female", "keyword": "크롭 카디건", "category": "top", "search_query": "크롭 카디건", "affiliate_url": "https://link.coupang.com/a/ir4ZWuCsgK", "active": true},
+    {"product_id": "fashion-f-12", "gender": "female", "keyword": "하이웨이스트 스커트", "category": "skirt", "search_query": "하이웨스트 스커트", "affiliate_url": "https://link.coupang.com/a/ir40AAwFt6", "active": true},
+    {"product_id": "fashion-f-13", "gender": "female", "keyword": "크롭 상의", "category": "top", "search_query": "여성 크롭 티셔츠", "affiliate_url": "https://link.coupang.com/a/ir41hEueMC", "active": true}
+  ]
+}

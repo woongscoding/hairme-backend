@@ -29,6 +29,26 @@ class MultipleFacesException(HairMeException):
         super().__init__(message)
 
 
+class FullBodyNotDetectedException(HairMeException):
+    """Raised when a full body (head to ankles) is not visible in the photo"""
+
+    def __init__(
+        self,
+        message: str = "전신이 인식되지 않았습니다.\n머리부터 발끝까지 나오도록 정면에서 찍어주세요.",
+    ):
+        super().__init__(message)
+
+
+class NotFrontalPoseException(HairMeException):
+    """Raised when the body is turned too far sideways to measure proportions"""
+
+    def __init__(
+        self,
+        message: str = "몸이 옆으로 돌아가 있어요.\n카메라를 향해 정면으로 서서 찍어주세요.",
+    ):
+        super().__init__(message)
+
+
 class DatabaseException(HairMeException):
     """Raised when database operations fail"""
 
