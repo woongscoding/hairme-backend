@@ -17,6 +17,7 @@ from PIL import Image
 
 from core.logging import logger
 from config.settings import settings
+from services.gemini_image_config import image_generation_config
 
 
 @dataclass
@@ -270,13 +271,8 @@ class HairColorService:
 
             logger.info(f"🎨 염색 시뮬레이션 시작: {color_name} ({color_hex})")
 
-            config_kwargs: Dict[str, Any] = {
-                # IMAGE 단독 요청 (지연시간 단축 + 텍스트 응답 실패 모드 제거)
-                "response_modalities": ["IMAGE"],
-            }
-            if image_size:
-                config_kwargs["image_config"] = types.ImageConfig(image_size=image_size)
-            generation_config = types.GenerateContentConfig(**config_kwargs)
+            # 모델별 해상도·생각 수준은 gemini_image_config 가 맞춘다
+            generation_config = image_generation_config(types, image_size)
 
             # Call Gemini API with retry
             MAX_RETRIES = 3

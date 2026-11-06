@@ -483,7 +483,9 @@ class TestImageSizeConfig:
         service = self._service()
         service.synthesize_hairstyle(self._jpeg(), "리프컷", image_size="512")
         config = service._client.models.generate_content.call_args.kwargs["config"]
-        assert config.image_config.image_size == "512"
+        # Nano Banana 는 512 미지원 → 1K 로 받고 finalize 에서 줄인다
+        assert config.image_config.image_size == "1K"
+        assert config.thinking_config.thinking_level.lower() == "minimal"
         assert config.response_modalities == ["IMAGE"]
 
     def test_no_image_size_leaves_model_default(self):
