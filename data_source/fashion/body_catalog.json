@@ -3,10 +3,11 @@
     "체형별 아이템 추천 카탈로그 (사람 검토/수정용 시드 파일).",
     "services/body_fashion_service.py가 이 파일을 읽어 POST /api/fashion/body-analyze 응답을 만든다.",
     "body_types / proportions의 키는 models/body_pose_analyzer.py의 분류 결과와 일치해야 한다.",
-    "recommended/avoid는 핏 키워드와 짧은 이유. items는 아래 products의 product_id 목록.",
-    "products의 affiliate_url PLACEHOLDER는 쿠팡파트너스 링크(https://link.coupang.com/...)로 교체한 뒤 active를 true로 바꿀 것.",
-    "active=false 제품은 추천 응답에서 빠지고 POST /api/products/click도 404를 준다.",
-    "(예시)가 붙은 제품명은 실제 판매 제품으로 교체 필요.",
+    "recommended/avoid는 핏 키워드와 짧은 이유. 추천 키워드는 links에서 (gender, keyword)가 같은 항목과 자동으로 이어진다.",
+    "links는 상품이 아니라 쿠팡 검색 결과 페이지 링크다 (쿠팡 오픈 API는 파트너스 최종 승인 전 사용 불가라 상품 단위 관리 대신 검색 링크를 쓴다).",
+    "링크 교체: python scripts/fashion_links.py export → CSV의 affiliate_url 칸 채우기 → python scripts/fashion_links.py import.",
+    "active=false 링크는 응답에서 빠지고(product_id null) POST /api/products/click도 404를 준다.",
+    "links에 없는 추천 키워드(예: 상의 넣어 입기)는 스타일링 팁이라 링크 없이 나간다.",
     "체중·체지방을 암시하는 표현(살, 뚱뚱, 날씬해 보이는 등)은 쓰지 않는다."
   ],
   "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
@@ -25,8 +26,7 @@
           {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"},
           {"keyword": "스키니 팬츠", "reason": "하체가 좁아 보여 상체가 더 커 보여요"},
           {"keyword": "보트넥 상의", "reason": "가로 넥라인이 어깨폭을 넓혀 보이게 해요"}
-        ],
-        "items": ["fashion-bs-m-001", "fashion-bs-m-002"]
+        ]
       },
       "female": {
         "recommended": [
@@ -39,8 +39,7 @@
           {"keyword": "퍼프 소매", "reason": "어깨에 볼륨이 더해져 상체가 커 보여요"},
           {"keyword": "오프숄더", "reason": "어깨 가로선이 그대로 드러나요"},
           {"keyword": "어깨 패드 재킷", "reason": "이미 넓은 어깨선이 더 강조돼요"}
-        ],
-        "items": ["fashion-bs-f-001", "fashion-bs-f-002"]
+        ]
       }
     },
     "lower_volume": {
@@ -57,8 +56,7 @@
           {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
           {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"},
           {"keyword": "허벅지 큰 포켓 팬츠", "reason": "하체에 부피가 더해져 보여요"}
-        ],
-        "items": ["fashion-lv-m-001", "fashion-lv-m-002"]
+        ]
       },
       "female": {
         "recommended": [
@@ -71,8 +69,7 @@
           {"keyword": "스키니 진", "reason": "하체 라인이 그대로 드러나요"},
           {"keyword": "펜슬 스커트", "reason": "골반 라인이 강조돼요"},
           {"keyword": "밝은 컬러 하의", "reason": "시선이 하체로 모여요"}
-        ],
-        "items": ["fashion-lv-f-001", "fashion-lv-f-002"]
+        ]
       }
     },
     "balanced": {
@@ -87,8 +84,7 @@
         ],
         "avoid": [
           {"keyword": "상하의 모두 오버핏", "reason": "고른 비율이 옷에 묻혀요"}
-        ],
-        "items": ["fashion-bl-m-001", "fashion-bl-m-002"]
+        ]
       },
       "female": {
         "recommended": [
@@ -99,8 +95,7 @@
         ],
         "avoid": [
           {"keyword": "상하의 모두 박시한 핏", "reason": "고른 비율이 옷에 묻혀요"}
-        ],
-        "items": ["fashion-bl-f-001", "fashion-bl-f-002"]
+        ]
       }
     }
   },
@@ -117,8 +112,7 @@
         "avoid": [
           {"keyword": "엉덩이 덮는 긴 상의", "reason": "상체가 더 길어 보여요"},
           {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
-        ],
-        "items": ["fashion-lt-m-001"]
+        ]
       },
       "female": {
         "recommended": [
@@ -129,25 +123,37 @@
         "avoid": [
           {"keyword": "골반 덮는 롱 니트", "reason": "상체가 더 길어 보여요"},
           {"keyword": "로우라이즈 팬츠", "reason": "허리선이 내려가 다리가 짧아 보여요"}
-        ],
-        "items": ["fashion-lt-f-001"]
+        ]
       }
     }
   },
-  "products": [
-    {"product_id": "fashion-bs-m-001", "name": "(예시) 남성 와이드 슬랙스", "brand": "", "category": "pants", "fit_keyword": "와이드 슬랙스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bs-m-002", "name": "(예시) 남성 브이넥 니트", "brand": "", "category": "top", "fit_keyword": "브이넥 니트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bs-f-001", "name": "(예시) 여성 브이넥 블라우스", "brand": "", "category": "top", "fit_keyword": "브이넥 블라우스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bs-f-002", "name": "(예시) 여성 A라인 스커트", "brand": "", "category": "skirt", "fit_keyword": "A라인 스커트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lv-m-001", "name": "(예시) 남성 스트레이트 팬츠", "brand": "", "category": "pants", "fit_keyword": "스트레이트 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lv-m-002", "name": "(예시) 남성 크루넥 스웨트셔츠", "brand": "", "category": "top", "fit_keyword": "크루넥 스웨트셔츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lv-f-001", "name": "(예시) 여성 보트넥 니트", "brand": "", "category": "top", "fit_keyword": "보트넥 니트", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lv-f-002", "name": "(예시) 여성 부츠컷 팬츠", "brand": "", "category": "pants", "fit_keyword": "부츠컷 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bl-m-001", "name": "(예시) 남성 테이퍼드 슬랙스", "brand": "", "category": "pants", "fit_keyword": "테이퍼드 슬랙스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bl-m-002", "name": "(예시) 남성 옥스퍼드 셔츠", "brand": "", "category": "top", "fit_keyword": "옥스퍼드 셔츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bl-f-001", "name": "(예시) 여성 허리 라인 원피스", "brand": "", "category": "dress", "fit_keyword": "허리 라인 원피스", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-bl-f-002", "name": "(예시) 여성 하이웨이스트 와이드 팬츠", "brand": "", "category": "pants", "fit_keyword": "하이웨이스트 와이드 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lt-m-001", "name": "(예시) 남성 하이웨이스트 팬츠", "brand": "", "category": "pants", "fit_keyword": "하이웨이스트 팬츠", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false},
-    {"product_id": "fashion-lt-f-001", "name": "(예시) 여성 크롭 상의", "brand": "", "category": "top", "fit_keyword": "크롭 상의", "price_krw": null, "affiliate_url": "PLACEHOLDER", "image_url": "", "active": false}
+  "links": [
+    {"product_id": "fashion-m-01", "gender": "male", "keyword": "와이드 슬랙스", "category": "pants", "search_query": "남성 와이드 슬랙스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-02", "gender": "male", "keyword": "브이넥 니트", "category": "top", "search_query": "남성 브이넥 니트", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-03", "gender": "male", "keyword": "래글런 소매 티셔츠", "category": "top", "search_query": "남성 래글런 티셔츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-04", "gender": "male", "keyword": "카고 팬츠", "category": "pants", "search_query": "남성 카고 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-05", "gender": "male", "keyword": "어깨 각 잡힌 재킷", "category": "outer", "search_query": "남성 테일러드 재킷", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-06", "gender": "male", "keyword": "스트레이트 팬츠", "category": "pants", "search_query": "남성 스트레이트 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-07", "gender": "male", "keyword": "크루넥 스웨트셔츠", "category": "top", "search_query": "남성 크루넥 맨투맨", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-08", "gender": "male", "keyword": "어두운 컬러 하의", "category": "pants", "search_query": "남성 블랙 슬랙스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-09", "gender": "male", "keyword": "테이퍼드 슬랙스", "category": "pants", "search_query": "남성 테이퍼드 슬랙스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-10", "gender": "male", "keyword": "옥스퍼드 셔츠", "category": "top", "search_query": "남성 옥스퍼드 셔츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-11", "gender": "male", "keyword": "세미오버 블레이저", "category": "outer", "search_query": "남성 세미오버 블레이저", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-12", "gender": "male", "keyword": "스트레이트 데님", "category": "pants", "search_query": "남성 스트레이트 데님", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-13", "gender": "male", "keyword": "하이웨이스트 팬츠", "category": "pants", "search_query": "남성 하이웨스트 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-m-14", "gender": "male", "keyword": "짧은 기장 재킷", "category": "outer", "search_query": "남성 크롭 재킷", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-01", "gender": "female", "keyword": "브이넥 블라우스", "category": "top", "search_query": "여성 브이넥 블라우스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-02", "gender": "female", "keyword": "A라인 스커트", "category": "skirt", "search_query": "A라인 스커트", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-03", "gender": "female", "keyword": "와이드 팬츠", "category": "pants", "search_query": "여성 와이드 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-04", "gender": "female", "keyword": "래글런 소매 니트", "category": "top", "search_query": "여성 래글런 니트", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-05", "gender": "female", "keyword": "보트넥 니트", "category": "top", "search_query": "여성 보트넥 니트", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-06", "gender": "female", "keyword": "퍼프 소매 블라우스", "category": "top", "search_query": "퍼프 소매 블라우스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-07", "gender": "female", "keyword": "부츠컷 팬츠", "category": "pants", "search_query": "여성 부츠컷 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-08", "gender": "female", "keyword": "허리 라인 원피스", "category": "dress", "search_query": "허리 라인 원피스", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-09", "gender": "female", "keyword": "하이웨이스트 와이드 팬츠", "category": "pants", "search_query": "여성 하이웨스트 와이드 팬츠", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-10", "gender": "female", "keyword": "셔츠와 일자 데님", "category": "pants", "search_query": "여성 일자 데님", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-11", "gender": "female", "keyword": "크롭 카디건", "category": "top", "search_query": "크롭 카디건", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-12", "gender": "female", "keyword": "하이웨이스트 스커트", "category": "skirt", "search_query": "하이웨스트 스커트", "affiliate_url": "PLACEHOLDER", "active": false},
+    {"product_id": "fashion-f-13", "gender": "female", "keyword": "크롭 상의", "category": "top", "search_query": "여성 크롭 티셔츠", "affiliate_url": "PLACEHOLDER", "active": false}
   ]
 }

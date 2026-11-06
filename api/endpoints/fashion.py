@@ -6,7 +6,8 @@
 MediaPipe Pose 만 쓴다. 사진은 메모리에서만 처리하고 저장하지 않으며,
 로그에는 체형·비율·성별·처리 시간만 남긴다.
 
-items 의 affiliate_url 은 POST /products/click (source=body_analysis)으로 발급한다.
+recommended[].product_id 가 있으면 POST /products/click (source=body_analysis)으로
+쿠팡 검색 결과 링크(affiliate_url)를 발급한다.
 """
 
 import time
@@ -57,8 +58,9 @@ async def analyze_body(
     체형: broad_shoulder(어깨 넓은형) / lower_volume(하체 볼륨형) / balanced(균형형)
     보조 표시(secondary): long_torso(상체 긴 비율)
 
-    items 는 활성 제휴 제품만 포함하며 affiliate_url 은 없다 -
-    POST /products/click 으로 발급받을 것. disclosure 는 반드시 함께 표시해야 한다.
+    recommended[].product_id 는 활성 쿠팡 검색 링크가 있을 때만 값이 있다 (없으면 null).
+    affiliate_url 은 POST /products/click 으로 발급받을 것.
+    disclosure 는 링크를 보여줄 때 반드시 함께 표시해야 한다.
     """
     start_time = time.time()
 
@@ -94,7 +96,9 @@ async def analyze_body(
                 "shoulder_hip_ratio": round(ratios.shoulder_hip_ratio, 3),
                 "leg_ratio": round(ratios.leg_ratio, 3),
                 "shoulder_torso_ratio": round(ratios.shoulder_torso_ratio, 3),
-                "items_count": len(result["items"]),
+                "linked_count": sum(
+                    1 for fit in result["recommended"] if fit["product_id"]
+                ),
                 "authenticated": user_id is not None,
                 "processing_time": processing_time,
             },

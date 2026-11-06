@@ -223,39 +223,63 @@ class TestBodyFashionService:
             "상체 긴 비율"
         )
 
-    def test_placeholder_items_are_inactive_and_hidden(self):
-        for product in self.service.catalog["products"]:
-            if product["affiliate_url"] == "PLACEHOLDER":
-                assert product["active"] is False
-                assert self.service.get_product(product["product_id"]) is None
+    def test_placeholder_links_are_inactive_and_hidden(self):
+        for link in self.service.catalog["links"]:
+            if link["affiliate_url"] == "PLACEHOLDER":
+                assert link["active"] is False
+                assert self.service.get_product(link["product_id"]) is None
         result = self.service.build_recommendation("balanced", [], "male")
-        assert result["items"] == []
+        assert all(fit["product_id"] is None for fit in result["recommended"])
+        assert "items" not in result
 
-    def test_active_items_are_returned_without_affiliate_url(self, tmp_path):
+    def test_active_links_attach_to_keywords_without_url(self, tmp_path):
         catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-        for product in catalog["products"]:
-            product["active"] = True
-            product["affiliate_url"] = "https://link.coupang.com/a/test"
+        for link in catalog["links"]:
+            link["active"] = True
+            link["affiliate_url"] = "https://link.coupang.com/a/test"
         path = tmp_path / "body_catalog.json"
         path.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
 
         result = BodyFashionService(path).build_recommendation(
             "broad_shoulder", ["long_torso"], "male"
         )
-        ids = [item["product_id"] for item in result["items"]]
-        assert ids == ["fashion-bs-m-001", "fashion-bs-m-002", "fashion-lt-m-001"]
-        assert all("affiliate_url" not in item for item in result["items"])
+        by_keyword = {
+            fit["keyword"]: fit["product_id"] for fit in result["recommended"]
+        }
+        assert by_keyword["와이드 슬랙스"] == "fashion-m-01"
+        assert by_keyword["하이웨이스트 팬츠"] == "fashion-m-13"
+        # 스타일링 팁은 살 물건이 아니라 링크가 없다
+        assert by_keyword["상의 앞 넣어 입기"] is None
+        assert all("affiliate_url" not in fit for fit in result["recommended"])
 
-    def test_item_references_exist(self):
+    def test_links_follow_gender(self, tmp_path):
+        catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        for link in catalog["links"]:
+            link["active"] = True
+            link["affiliate_url"] = "https://link.coupang.com/a/test"
+        path = tmp_path / "body_catalog.json"
+        path.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+
+        result = BodyFashionService(path).build_recommendation(
+            "broad_shoulder", [], "female"
+        )
+        ids = [fit["product_id"] for fit in result["recommended"]]
+        assert ids and all(pid.startswith("fashion-f-") for pid in ids)
+
+    def test_every_recommendation_is_linked_or_a_tip(self):
         catalog = self.service.catalog
-        product_ids = {p["product_id"] for p in catalog["products"]}
-        assert all(pid.startswith("fashion-") for pid in product_ids)
+        links = {(link["gender"], link["keyword"]) for link in catalog["links"]}
+        assert all(
+            link["product_id"].startswith("fashion-") for link in catalog["links"]
+        )
+        tips = {("male", "상의 앞 넣어 입기"), ("female", "상의 넣어 입기")}
         sections = list(catalog["body_types"].values()) + list(
             catalog["proportions"].values()
         )
         for section in sections:
             for gender in ("male", "female"):
-                assert set(section[gender]["items"]) <= product_ids
+                for fit in section[gender]["recommended"]:
+                    assert (gender, fit["keyword"]) in links | tips, fit["keyword"]
 
     def test_no_weight_or_fat_wording(self):
         banned = ("뚱뚱", "날씬", "체중", "체지방", "다이어트", "살쪄", "살이", "비만")
@@ -330,7 +354,8 @@ class TestBodyAnalyzeEndpoint:
         }
         assert data["recommended"][0]["keyword"] == "브이넥 블라우스"
         assert data["avoid"]
-        assert data["items"] == []  # 제휴 링크 교체 전에는 비활성
+        # 제휴 링크 교체 전에는 비활성
+        assert data["recommended"][0]["product_id"] is None
         assert "쿠팡 파트너스" in data["disclosure"]
 
     def test_logs_ratios_without_image(self, client, pose_result):
@@ -416,14 +441,14 @@ class TestFashionItemClick:
     def test_inactive_placeholder_item_is_404(self, client, mock_click_service):
         response = client.post(
             "/api/products/click",
-            json={"product_id": "fashion-bs-m-001", "source": "body_analysis"},
+            json={"product_id": "fashion-m-01", "source": "body_analysis"},
         )
         assert response.status_code == 404
         mock_click_service.log_click.assert_not_called()
 
     def test_active_item_returns_link_and_logs(self, client, mock_click_service):
         product = {
-            "product_id": "fashion-bs-m-001",
+            "product_id": "fashion-m-01",
             "category": "pants",
             "affiliate_url": "https://link.coupang.com/a/test",
             "active": True,
@@ -437,7 +462,7 @@ class TestFashionItemClick:
             response = client.post(
                 "/api/products/click",
                 json={
-                    "product_id": "fashion-bs-m-001",
+                    "product_id": "fashion-m-01",
                     "source": "body_analysis",
                     "hair_profile": {"body_type": "broad_shoulder", "gender": "male"},
                     "device_id": "a1b2c3d4e5f60718",

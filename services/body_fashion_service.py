@@ -2,6 +2,9 @@
 
 - 카탈로그: data_source/fashion/body_catalog.json (사람이 검토/수정하는 시드 파일)
 - 헤어 제품 카탈로그와 같은 방식: JSON 파일, 콜드스타트 후 첫 사용 시 1회 로드
+- 링크는 상품이 아니라 쿠팡 검색 결과 페이지다. 쿠팡 오픈 API는 파트너스 최종 승인
+  전에는 쓸 수 없어서, 추천 키워드 x 성별마다 검색 링크 하나를 둔다
+  (교체 절차: scripts/fashion_links.py)
 - affiliate_url은 추천 응답에 넣지 않는다 - POST /products/click으로만 발급해
   클릭 로그가 누락되지 않게 한다
 """
@@ -17,20 +20,9 @@ CATALOG_PATH = (
     / "body_catalog.json"
 )
 
-# 추천 응답에 노출하는 필드 - affiliate_url은 의도적으로 제외
-PUBLIC_FIELDS = (
-    "product_id",
-    "name",
-    "brand",
-    "category",
-    "fit_keyword",
-    "price_krw",
-    "image_url",
-)
-
 
 class BodyFashionService:
-    """체형 분류 결과 → 추천 핏/피할 핏/제휴 아이템"""
+    """체형 분류 결과 → 추천 핏(검색 링크 ID 포함)/피할 핏"""
 
     def __init__(self, catalog_path: Path = CATALOG_PATH):
         self._catalog_path = catalog_path
@@ -49,11 +41,22 @@ class BodyFashionService:
         return self.catalog.get("disclosure", "")
 
     def get_product(self, product_id: str) -> Optional[Dict[str, Any]]:
-        """product_id로 제품 조회 (affiliate_url 포함 전체 필드, 비활성 제품 제외)"""
-        for product in self.catalog.get("products", []):
-            if product.get("product_id") == product_id and product.get("active", True):
-                return product
+        """product_id로 검색 링크 조회 (affiliate_url 포함, 비활성 제외)
+
+        클릭 엔드포인트가 헤어 제품과 같은 이름으로 부르므로 get_product 로 둔다.
+        """
+        for link in self.catalog.get("links", []):
+            if link.get("product_id") == product_id and link.get("active", False):
+                return link
         return None
+
+    def _active_link_ids(self, gender: str) -> Dict[str, str]:
+        """keyword → product_id (해당 성별의 활성 링크만)"""
+        return {
+            link["keyword"]: link["product_id"]
+            for link in self.catalog.get("links", [])
+            if link.get("gender") == gender and link.get("active", False)
+        }
 
     def build_recommendation(
         self, body_type: str, flags: Sequence[str], gender: str
@@ -61,7 +64,8 @@ class BodyFashionService:
         """체형 + 보조 표시 + 성별로 응답 본문을 만든다.
 
         보조 표시(예: 상체 긴 비율)의 추천은 체형 추천 뒤에 붙이고,
-        같은 키워드는 한 번만 넣는다.
+        같은 키워드는 한 번만 넣는다. 추천 키워드마다 product_id 를 붙이는데,
+        활성 링크가 없으면(교체 전이거나 스타일링 팁) None 이다.
         """
         key = "female" if gender == "female" else "male"
         entry = self.catalog["body_types"][body_type]
@@ -81,29 +85,20 @@ class BodyFashionService:
             )
             sections.append(proportion[key])
 
+        link_ids = self._active_link_ids(key)
+        recommended = [
+            {**fit, "product_id": link_ids.get(fit["keyword"])}
+            for fit in _merge(sections, "recommended")
+        ]
         return {
             "body_type": body_type,
             "body_type_label": entry["label"],
             "description": entry["description"],
             "secondary": secondary,
-            "recommended": _merge(sections, "recommended"),
+            "recommended": recommended,
             "avoid": _merge(sections, "avoid"),
-            "items": self._items(sections),
             "disclosure": self.disclosure,
         }
-
-    def _items(self, sections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        seen = set()
-        for section in sections:
-            for product_id in section.get("items", []):
-                if product_id in seen:
-                    continue
-                seen.add(product_id)
-                product = self.get_product(product_id)
-                if product is not None:
-                    items.append({k: product.get(k) for k in PUBLIC_FIELDS})
-        return items
 
 
 def _merge(sections: List[Dict[str, Any]], field: str) -> List[Dict[str, str]]:
