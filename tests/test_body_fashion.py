@@ -496,3 +496,143 @@ class TestFashionItemClick:
         assert args[1] is product
         assert args[3] == "body_analysis"
         assert args[4] == {"body_type": "broad_shoulder", "gender": "male"}
+
+
+# ========== 사진 저장 (동의한 요청만, 헤어 사진과 분리) ==========
+
+
+@pytest.fixture
+def storage():
+    service = MagicMock()
+    service.save_body_photo.return_value = "body/originals/x/1.png"
+    with patch("api.endpoints.fashion.get_photo_storage_service", return_value=service):
+        yield service
+
+
+def _post_with(client, **data):
+    return client.post(
+        "/api/fashion/body-analyze",
+        files={"file": ("body.png", _png_bytes(), "image/png")},
+        data={"gender": "male", **data},
+    )
+
+
+class TestBodyPhotoSaving:
+    def test_no_consent_never_saves(self, client, pose_result, storage):
+        response = _post_with(client, device_id="a1b2c3d4e5f60718")
+        assert response.status_code == 200
+        storage.save_body_photo.assert_not_called()
+
+    def test_consent_saves_under_device_with_ratios(self, client, pose_result, storage):
+        with patch("api.endpoints.fashion.log_structured") as log:
+            response = _post_with(
+                client, save_consent="true", device_id="a1b2c3d4e5f60718"
+            )
+        assert response.status_code == 200
+        subject, image_bytes, metadata = storage.save_body_photo.call_args.args
+        assert subject == "device-a1b2c3d4e5f60718"
+        assert image_bytes.startswith(b"\x89PNG")
+        assert metadata["body-type"] == "balanced"
+        assert metadata["gender"] == "male"
+        assert metadata["shoulder-hip"] == "1.500"
+        assert all(isinstance(v, str) and v.isascii() for v in metadata.values())
+        _, payload = log.call_args.args
+        assert payload["save_consent"] is True and payload["photo_saved"] is True
+
+    def test_logged_in_user_is_subject(self, client, pose_result, storage):
+        from main import app as main_app
+        from core.jwt_auth import get_optional_user_id
+
+        main_app.dependency_overrides[get_optional_user_id] = lambda: "u-123"
+        try:
+            _post_with(client, save_consent="true", device_id="a1b2c3d4e5f60718")
+        finally:
+            main_app.dependency_overrides.pop(get_optional_user_id, None)
+        assert storage.save_body_photo.call_args.args[0] == "user-u-123"
+
+    @pytest.mark.parametrize("device_id", [None, "../../etc", "short"])
+    def test_unsafe_or_missing_device_is_anonymous(
+        self, client, pose_result, storage, device_id
+    ):
+        data = {"save_consent": "true"}
+        if device_id:
+            data["device_id"] = device_id
+        _post_with(client, **data)
+        assert storage.save_body_photo.call_args.args[0] == "anonymous"
+
+    def test_pose_failure_photo_is_saved_when_consented(
+        self, client, pose_result, storage
+    ):
+        pose_result.extract_landmarks.return_value = None
+        response = _post_with(client, save_consent="true", device_id="a1b2c3d4e5f60718")
+        assert response.status_code == 400
+        metadata = storage.save_body_photo.call_args.args[2]
+        assert metadata["error"] == "full_body_not_detected"
+
+    def test_invalid_file_is_not_saved(self, client, pose_result, storage):
+        response = client.post(
+            "/api/fashion/body-analyze",
+            files={"file": ("body.png", b"not an image", "image/png")},
+            data={"save_consent": "true"},
+        )
+        assert response.status_code == 400
+        storage.save_body_photo.assert_not_called()
+
+    def test_storage_failure_does_not_break_analysis(
+        self, client, pose_result, storage
+    ):
+        storage.save_body_photo.side_effect = RuntimeError("s3 down")
+        response = _post_with(client, save_consent="true")
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+
+class TestBodyPhotoStorageService:
+    def test_key_is_separate_from_hair_originals(self, monkeypatch):
+        from services.photo_storage_service import PhotoStorageService
+
+        monkeypatch.setenv("PHOTO_S3_BUCKET", "test-bucket")
+        service = PhotoStorageService()
+        service._client = MagicMock()
+
+        key = service.save_body_photo(
+            "device-abc12345", _png_bytes(), {"gender": "male"}
+        )
+
+        assert key.startswith("body/originals/device-abc12345/")
+        assert key.endswith(".png")
+        kwargs = service._client.put_object.call_args.kwargs
+        assert kwargs["Bucket"] == "test-bucket"
+        assert kwargs["ContentType"] == "image/png"
+        assert kwargs["Metadata"]["body-photo-consent"] == "true"
+        assert not kwargs["Key"].startswith("originals/")
+
+    def test_disabled_without_bucket(self, monkeypatch):
+        from services.photo_storage_service import PhotoStorageService
+
+        monkeypatch.setenv("PHOTO_S3_BUCKET", "")
+        assert PhotoStorageService().save_body_photo("x", b"1", {}) is None
+
+
+def test_lifecycle_merge_keeps_existing_rules():
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "apply_body_photo_lifecycle.py"
+    )
+    spec = importlib.util.spec_from_file_location("apply_body_photo_lifecycle", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    existing = [
+        {"ID": "expire-cache", "Filter": {"Prefix": "cache/"}},
+        {"ID": "expire-body-originals", "Expiration": {"Days": 30}},
+    ]
+    rules = module.merged_rules(existing)
+    by_id = {r["ID"]: r for r in rules}
+    assert set(by_id) == {"expire-cache", "expire-body-originals"}
+    assert by_id["expire-body-originals"]["Expiration"]["Days"] == 365
+    assert by_id["expire-body-originals"]["Filter"]["Prefix"] == "body/originals/"

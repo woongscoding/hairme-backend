@@ -4,6 +4,8 @@
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
 - originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
+- body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (요청마다 save_consent=true 일 때만,
+  1년 보관). 얼굴(헤어) 사진과 동의·경로·보관 기간을 모두 분리한다.
 
 PHOTO_S3_BUCKET 미설정 시 모든 기능이 조용히 비활성화됨 (합성 자체는 정상 동작).
 """
@@ -27,6 +29,22 @@ except ImportError:
 
 from config.settings import settings
 from core.logging import logger
+
+
+# 체형 사진 경로 (수명주기 규칙도 이 접두사로 건다)
+BODY_ORIGINALS_PREFIX = "body/originals/"
+
+
+PNG_SIGNATURE = bytes([0x89]) + b"PNG"
+
+
+def _image_type(data: bytes) -> Tuple[str, str]:
+    """매직 바이트로 확장자/ContentType 판별 (업로드 검증을 통과한 jpg/png/webp)"""
+    if data.startswith(PNG_SIGNATURE):
+        return "png", "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp", "image/webp"
+    return "jpg", "image/jpeg"
 
 
 class PhotoStorageService:
@@ -258,6 +276,41 @@ class PhotoStorageService:
             return key
         except Exception as e:
             logger.warning(f"원본 저장 실패 (무시): {str(e)}")
+            return None
+
+    # ========== 체형 코디 전신 사진 (요청마다 동의한 경우만) ==========
+
+    def save_body_photo(
+        self, subject: str, image_bytes: bytes, metadata: Dict[str, str]
+    ) -> Optional[str]:
+        """
+        체형 분석 사진 저장. 헤어 원본(originals/)과 섞이지 않게 body/originals/ 아래에 둔다.
+
+        호출자가 save_consent 를 확인한 뒤 호출해야 한다.
+        subject 는 "user-{user_id}" 또는 "device-{device_id}" (경로에 쓸 수 있게 정리된 값).
+
+        Returns:
+            저장된 S3 key (비활성/실패 시 None)
+        """
+        if not self.enabled:
+            return None
+
+        ext, content_type = _image_type(image_bytes)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        key = f"{BODY_ORIGINALS_PREFIX}{subject}/{ts}_{uuid.uuid4().hex[:8]}.{ext}"
+
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=image_bytes,
+                ContentType=content_type,
+                Metadata={"body-photo-consent": "true", **metadata},
+            )
+            logger.info(f"🧍 체형 사진 저장 (동의): {subject}")
+            return key
+        except Exception as e:
+            logger.warning(f"체형 사진 저장 실패 (무시): {str(e)}")
             return None
 
     def presigned_url(self, key: str) -> Optional[str]:
