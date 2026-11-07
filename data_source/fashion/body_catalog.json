@@ -8,7 +8,8 @@
     "링크 교체: python scripts/fashion_links.py export → CSV의 affiliate_url 칸 채우기 → python scripts/fashion_links.py import.",
     "active=false 링크는 응답에서 빠지고(product_id null) POST /api/products/click도 404를 준다.",
     "links에 없는 추천 키워드(예: 상의 넣어 입기)는 스타일링 팁이라 링크 없이 나간다.",
-    "체중·체지방을 암시하는 표현(살, 뚱뚱, 날씬해 보이는 등)은 쓰지 않는다."
+    "체중·체지방을 암시하는 표현(살, 뚱뚱, 날씬해 보이는 등)은 쓰지 않는다.",
+    "item_images: \"성별/키워드\" -> data_source/fashion/items/ 의 WebP (AI 생성 제품 사진, 실제 판매 상품 아님). 키워드를 바꾸면 이미지도 다시 만들 것"
   ],
   "disclosure": "이 게시물은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.",
   "body_types": {
@@ -155,5 +156,6 @@
     {"product_id": "fashion-f-11", "gender": "female", "keyword": "크롭 카디건", "category": "top", "search_query": "크롭 카디건", "affiliate_url": "https://link.coupang.com/a/ir4ZWuCsgK", "active": true},
     {"product_id": "fashion-f-12", "gender": "female", "keyword": "하이웨이스트 스커트", "category": "skirt", "search_query": "하이웨스트 스커트", "affiliate_url": "https://link.coupang.com/a/ir40AAwFt6", "active": true},
     {"product_id": "fashion-f-13", "gender": "female", "keyword": "크롭 상의", "category": "top", "search_query": "여성 크롭 티셔츠", "affiliate_url": "https://link.coupang.com/a/ir41hEueMC", "active": true}
-  ]
+  ],
+  "item_images": {"female/A라인 스커트": "f_25ebd6dc24.webp", "female/골반 덮는 롱 니트": "f_7cc6822576.webp", "female/래글런 소매 니트": "f_8f4d1b611c.webp", "female/로우라이즈 팬츠": "f_eb4d4fe8a8.webp", "female/밝은 컬러 하의": "f_3785442ae2.webp", "female/보트넥 니트": "f_9dc6051554.webp", "female/부츠컷 팬츠": "f_42e62fde5f.webp", "female/브이넥 블라우스": "f_d00fd8b762.webp", "female/상의 넣어 입기": "f_c4959aae38.webp", "female/상하의 모두 박시한 핏": "f_8e107d9ac4.webp", "female/셔츠와 일자 데님": "f_dc340b5c8a.webp", "female/스키니 진": "f_0ba44b8d4d.webp", "female/어깨 패드 재킷": "f_5a4c36c265.webp", "female/오프숄더": "f_f26e9b8214.webp", "female/와이드 팬츠": "f_759fe2b2a5.webp", "female/크롭 상의": "f_374d97820d.webp", "female/크롭 카디건": "f_f05aca8803.webp", "female/퍼프 소매": "f_806dcdf05a.webp", "female/퍼프 소매 블라우스": "f_da6976aca2.webp", "female/펜슬 스커트": "f_3a9006d051.webp", "female/하이웨이스트 스커트": "f_b80a0fb2c2.webp", "female/하이웨이스트 와이드 팬츠": "f_5f525fb227.webp", "female/허리 라인 원피스": "f_f4cebb083c.webp", "male/래글런 소매 티셔츠": "m_09b491997a.webp", "male/로우라이즈 팬츠": "m_eb4d4fe8a8.webp", "male/밝은 컬러 하의": "m_3785442ae2.webp", "male/보트넥 상의": "m_c39a15c532.webp", "male/브이넥 니트": "m_6e0a743b3d.webp", "male/상의 앞 넣어 입기": "m_3ab9201e3f.webp", "male/상하의 모두 오버핏": "m_c7b01ae9b6.webp", "male/세미오버 블레이저": "m_a4b023bf74.webp", "male/스키니 진": "m_0ba44b8d4d.webp", "male/스키니 팬츠": "m_8392af0077.webp", "male/스트레이트 데님": "m_be66a62db8.webp", "male/스트레이트 팬츠": "m_51093a0a25.webp", "male/어깨 각 잡힌 재킷": "m_9a4a8ccd65.webp", "male/어깨 패드 재킷": "m_5a4c36c265.webp", "male/어두운 컬러 하의": "m_dbea890fd5.webp", "male/엉덩이 덮는 긴 상의": "m_410f602b62.webp", "male/옥스퍼드 셔츠": "m_c0c8255a15.webp", "male/와이드 슬랙스": "m_67ea1ba836.webp", "male/짧은 기장 재킷": "m_af23e9984a.webp", "male/카고 팬츠": "m_b5062200eb.webp", "male/크루넥 스웨트셔츠": "m_a33b7bf72d.webp", "male/테이퍼드 슬랙스": "m_99c9c0e91a.webp", "male/하이웨이스트 팬츠": "m_367109b1e3.webp", "male/허벅지 큰 포켓 팬츠": "m_74fae42ae2.webp"}
 }

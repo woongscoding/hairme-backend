@@ -129,26 +129,47 @@ class TestComputeBodyRatios:
 
     @pytest.mark.parametrize(
         "idx",
-        [
-            bpa.NOSE,
-            bpa.LEFT_SHOULDER,
-            bpa.RIGHT_HIP,
-            bpa.LEFT_KNEE,
-            bpa.RIGHT_ANKLE,
-        ],
+        [bpa.LEFT_SHOULDER, bpa.RIGHT_SHOULDER, bpa.LEFT_HIP, bpa.RIGHT_HIP],
     )
-    def test_invisible_joint_rejected(self, idx):
+    def test_invisible_shoulder_or_hip_rejected(self, idx):
         landmarks = make_landmarks()
         x, y, _ = landmarks[idx]
         landmarks[idx] = (x, y, 0.3)
         with pytest.raises(FullBodyNotDetectedException):
             compute_body_ratios(landmarks, WIDTH, HEIGHT)
 
-    def test_feet_cut_off_rejected(self):
-        # MediaPipe 는 프레임 밖 발목도 추정한다 - visibility 가 높아도 좌표로 거른다
-        landmarks = make_landmarks(ankle_y=1.08)
+    @pytest.mark.parametrize(
+        "idx, leg_measured",
+        [
+            (bpa.NOSE, False),
+            (bpa.LEFT_ANKLE, False),
+            (bpa.RIGHT_ANKLE, False),
+            (bpa.LEFT_KNEE, True),
+            (bpa.RIGHT_KNEE, True),
+        ],
+    )
+    def test_optional_joint_invisible_still_measures_body_type(self, idx, leg_measured):
+        landmarks = make_landmarks(shoulder_hip=1.6)
+        x, y, _ = landmarks[idx]
+        landmarks[idx] = (x, y, 0.3)
+        ratios = compute_body_ratios(landmarks, WIDTH, HEIGHT)
+        assert ratios.shoulder_hip_ratio == pytest.approx(1.6, abs=1e-6)
+        assert (ratios.leg_ratio is not None) is leg_measured
+
+    def test_feet_cut_off_skips_leg_ratio_only(self):
+        # 실사용 첫날 거절 사진: 발목만 살짝 프레임 밖. 체형은 재고 다리 비율만 건너뛴다
+        # (MediaPipe 는 프레임 밖 발목도 추정한다 - visibility 가 높아도 좌표로 거른다)
+        ratios = compute_body_ratios(
+            make_landmarks(shoulder_hip=1.6, ankle_y=1.08), WIDTH, HEIGHT
+        )
+        assert ratios.shoulder_hip_ratio == pytest.approx(1.6, abs=1e-6)
+        assert ratios.leg_ratio is None
+        assert ratios.to_dict()["leg"] is None
+
+    def test_hips_cut_off_rejected(self):
+        # 가슴 위까지만 나온 사진 - 골반이 프레임 밖이면 체형을 잴 수 없다
         with pytest.raises(FullBodyNotDetectedException):
-            compute_body_ratios(landmarks, WIDTH, HEIGHT)
+            compute_body_ratios(make_landmarks(ankle_y=2.2), WIDTH, HEIGHT)
 
     def test_side_view_rejected(self):
         with pytest.raises(NotFrontalPoseException):
@@ -159,7 +180,7 @@ class TestComputeBodyRatios:
             compute_body_ratios(make_landmarks()[:20], WIDTH, HEIGHT)
 
     def test_error_messages_are_korean_guidance(self):
-        assert "머리부터 발끝까지" in str(FullBodyNotDetectedException())
+        assert "허리 아래까지" in str(FullBodyNotDetectedException())
         assert "정면" in str(NotFrontalPoseException())
 
 
@@ -198,6 +219,47 @@ class TestBodyFashionService:
         recommended = {fit["keyword"] for fit in result["recommended"]}
         avoid = {fit["keyword"] for fit in result["avoid"]}
         assert not recommended & avoid, "같은 핏을 추천하면서 피하라고 하면 안 된다"
+        for fit in result["recommended"] + result["avoid"]:
+            assert "image_url" in fit
+
+    def test_live_catalog_every_keyword_has_image(self):
+        catalog = self.service.catalog
+        sections = list(catalog["body_types"].values()) + list(
+            catalog["proportions"].values()
+        )
+        for section in sections:
+            for gender in ("male", "female"):
+                for kind in ("recommended", "avoid"):
+                    for fit in section[gender][kind]:
+                        url = self.service.image_url(gender, fit["keyword"])
+                        assert url and url.startswith("/api/fashion/images/"), (
+                            gender,
+                            fit["keyword"],
+                        )
+
+    def test_image_url_uses_base_url_and_skips_missing_files(self, tmp_path):
+        catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+        catalog["item_images"] = {
+            "male/와이드 슬랙스": "m_test.webp",
+            "male/브이넥 니트": "m_missing.webp",
+        }
+        path = tmp_path / "body_catalog.json"
+        path.write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "items").mkdir()
+        (tmp_path / "items" / "m_test.webp").write_bytes(b"RIFF")
+
+        service = BodyFashionService(path)
+        result = service.build_recommendation(
+            "broad_shoulder", [], "male", base_url="https://api.example.com/"
+        )
+        urls = {fit["keyword"]: fit["image_url"] for fit in result["recommended"]}
+        assert urls["와이드 슬랙스"] == (
+            "https://api.example.com/api/fashion/images/m_test.webp"
+        )
+        assert urls["브이넥 니트"] is None  # 파일이 없으면 null
+        assert urls["카고 팬츠"] is None  # 매핑이 없으면 null
+        # 성별이 다르면 같은 키워드라도 다른 이미지다
+        assert service.image_url("female", "와이드 슬랙스") is None
 
     def test_long_torso_tips_are_appended_without_duplicates(self):
         base = self.service.build_recommendation("balanced", [], "female")
@@ -393,14 +455,30 @@ class TestBodyAnalyzeEndpoint:
         body = response.json()
         assert body["success"] is False
         assert body["error"] == "fullbodynotdetected"
-        assert "머리부터 발끝까지" in body["message"]
+        assert "허리 아래까지" in body["message"]
         event, payload = log.call_args.args
         assert event == "body_analysis_error"
         assert payload["error_type"] == "full_body_not_detected"
 
-    def test_partial_body_returns_400(self, client, pose_result):
+    def test_feet_cut_off_is_still_analyzed(self, client, pose_result):
         pose_result.extract_landmarks.return_value = (
-            make_landmarks(ankle_y=1.1),
+            make_landmarks(shoulder_hip=1.65, leg=0.45, ankle_y=1.1),
+            WIDTH,
+            HEIGHT,
+        )
+        with patch("api.endpoints.fashion.log_structured") as log:
+            response = _post(client)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["body_type"] == "broad_shoulder"
+        assert data["ratios"]["leg"] is None
+        # 다리 비율을 못 쟀으면 상체 긴 비율 표시도 없다
+        assert data["secondary"] == []
+        assert log.call_args.args[1]["leg_ratio"] is None
+
+    def test_upper_body_only_returns_400(self, client, pose_result):
+        pose_result.extract_landmarks.return_value = (
+            make_landmarks(ankle_y=2.2),
             WIDTH,
             HEIGHT,
         )
@@ -625,3 +703,28 @@ def test_lifecycle_merge_keeps_existing_rules():
     assert set(by_id) == {"expire-cache", "expire-body-originals"}
     assert by_id["expire-body-originals"]["Expiration"]["Days"] == 365
     assert by_id["expire-body-originals"]["Filter"]["Prefix"] == "body/originals/"
+
+
+# ========== 아이템 이미지 서빙 ==========
+
+
+class TestItemImageEndpoint:
+    def test_serves_bundled_webp(self, client):
+        filename = next(iter(BodyFashionService().catalog["item_images"].values()))
+        response = client.get(f"/api/fashion/images/{filename}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/webp"
+        assert "immutable" in response.headers["cache-control"]
+        assert response.content[:4] == b"RIFF"
+
+    @pytest.mark.parametrize(
+        "filename", ["..%2Fbody_catalog.json", "nope.webp", "m_x.png", "..webp"]
+    )
+    def test_rejects_unknown_or_traversal(self, client, filename):
+        assert client.get(f"/api/fashion/images/{filename}").status_code == 404
+
+    def test_analyze_response_has_absolute_image_urls(self, client, pose_result):
+        response = _post(client)
+        assert response.status_code == 200
+        for fit in response.json()["recommended"] + response.json()["avoid"]:
+            assert fit["image_url"].startswith("http://testserver/api/fashion/images/")

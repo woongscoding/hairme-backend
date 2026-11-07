@@ -31,17 +31,16 @@ LEFT_SHOULDER, RIGHT_SHOULDER = 11, 12
 LEFT_HIP, RIGHT_HIP = 23, 24
 LEFT_KNEE, RIGHT_KNEE = 25, 26
 LEFT_ANKLE, RIGHT_ANKLE = 27, 28
+# 체형(어깨/골반 비율) 판정에 꼭 필요한 관절. 발이 잘리거나 무릎 위까지만 나온
+# 사진도 받는다 - 실사용 첫날 거절된 사진이 대부분 발목만 살짝 잘린 경우였다.
 REQUIRED_LANDMARKS = (
-    NOSE,
     LEFT_SHOULDER,
     RIGHT_SHOULDER,
     LEFT_HIP,
     RIGHT_HIP,
-    LEFT_KNEE,
-    RIGHT_KNEE,
-    LEFT_ANKLE,
-    RIGHT_ANKLE,
 )
+# 다리 비율(보조 표시 long_torso)용. 하나라도 안 보이면 다리 비율만 건너뛴다
+LEG_LANDMARKS = (NOSE, LEFT_ANKLE, RIGHT_ANKLE)
 
 # 이 값 미만이면 해당 관절이 사진에 안 보이는 것으로 본다
 MIN_VISIBILITY = 0.5
@@ -79,15 +78,26 @@ class BodyRatios:
     """체형 분류 입력 비율"""
 
     shoulder_hip_ratio: float  # 어깨 관절 폭 / 골반 관절 폭
-    leg_ratio: float  # 다리 길이 / 코→발목 길이
+    # 다리 길이 / 코→발목 길이. 발목(또는 코)이 사진에 없으면 None
+    leg_ratio: Optional[float]
     shoulder_torso_ratio: float  # 어깨 폭 / 몸통 길이 (정면 판정용)
 
     def to_dict(self) -> dict:
         return {
             "shoulder_hip": round(self.shoulder_hip_ratio, 3),
-            "leg": round(self.leg_ratio, 3),
+            "leg": None if self.leg_ratio is None else round(self.leg_ratio, 3),
             "shoulder_torso": round(self.shoulder_torso_ratio, 3),
         }
+
+
+def _is_visible(landmark: Landmark) -> bool:
+    """관절이 보이고 프레임 안에 있는지 (MediaPipe 는 프레임 밖 관절도 추정해 내놓는다)"""
+    x, y, visibility = landmark
+    return (
+        visibility >= MIN_VISIBILITY
+        and -FRAME_MARGIN <= x <= 1 + FRAME_MARGIN
+        and -FRAME_MARGIN <= y <= 1 + FRAME_MARGIN
+    )
 
 
 def compute_body_ratios(
@@ -96,19 +106,13 @@ def compute_body_ratios(
     """관절 좌표로 체형 비율을 계산한다 (순수 함수).
 
     Raises:
-        FullBodyNotDetectedException: 필수 관절이 안 보이거나 프레임 밖
+        FullBodyNotDetectedException: 어깨·골반이 안 보이거나 프레임 밖
         NotFrontalPoseException: 몸이 옆으로 돌아가 비율을 잴 수 없음
     """
-    if len(landmarks) <= max(REQUIRED_LANDMARKS):
+    if len(landmarks) <= max(REQUIRED_LANDMARKS + LEG_LANDMARKS):
         raise FullBodyNotDetectedException()
-    for idx in REQUIRED_LANDMARKS:
-        x, y, visibility = landmarks[idx]
-        if visibility < MIN_VISIBILITY:
-            raise FullBodyNotDetectedException()
-        if not (-FRAME_MARGIN <= x <= 1 + FRAME_MARGIN):
-            raise FullBodyNotDetectedException()
-        if not (-FRAME_MARGIN <= y <= 1 + FRAME_MARGIN):
-            raise FullBodyNotDetectedException()
+    if not all(_is_visible(landmarks[idx]) for idx in REQUIRED_LANDMARKS):
+        raise FullBodyNotDetectedException()
 
     # 원본 화면비를 살린 픽셀 좌표에서 잰다 (정규화 좌표는 가로세로 축척이 다르다)
     def point(idx: int) -> Tuple[float, float]:
@@ -122,27 +126,31 @@ def compute_body_ratios(
     hip_width = math.dist(point(LEFT_HIP), point(RIGHT_HIP))
     shoulder_mid = midpoint(LEFT_SHOULDER, RIGHT_SHOULDER)
     hip_mid = midpoint(LEFT_HIP, RIGHT_HIP)
-    ankle_mid = midpoint(LEFT_ANKLE, RIGHT_ANKLE)
     torso_length = math.dist(shoulder_mid, hip_mid)
-    leg_length = math.dist(hip_mid, ankle_mid)
-    body_length = math.dist(point(NOSE), ankle_mid)
 
-    if min(hip_width, torso_length, body_length) <= 0:
+    if min(hip_width, torso_length) <= 0:
         raise FullBodyNotDetectedException()
 
     shoulder_torso_ratio = shoulder_width / torso_length
     if shoulder_torso_ratio < MIN_SHOULDER_TORSO_RATIO:
         raise NotFrontalPoseException()
 
+    leg_ratio: Optional[float] = None
+    if all(_is_visible(landmarks[idx]) for idx in LEG_LANDMARKS):
+        ankle_mid = midpoint(LEFT_ANKLE, RIGHT_ANKLE)
+        body_length = math.dist(point(NOSE), ankle_mid)
+        if body_length > 0:
+            leg_ratio = math.dist(hip_mid, ankle_mid) / body_length
+
     return BodyRatios(
         shoulder_hip_ratio=shoulder_width / hip_width,
-        leg_ratio=leg_length / body_length,
+        leg_ratio=leg_ratio,
         shoulder_torso_ratio=shoulder_torso_ratio,
     )
 
 
 def classify_body_from_ratios(
-    shoulder_hip_ratio: float, leg_ratio: float, gender: str
+    shoulder_hip_ratio: float, leg_ratio: Optional[float], gender: str
 ) -> Tuple[str, List[str]]:
     """비율로 체형과 보조 비율 표시를 정한다 (순수 함수, 테스트 가능).
 
@@ -159,7 +167,12 @@ def classify_body_from_ratios(
     else:
         body_type = "balanced"
 
-    flags = [LONG_TORSO] if leg_ratio < LONG_TORSO_LEG_RATIO else []
+    # 발목이 안 보여 다리 비율을 못 쟀으면 보조 표시는 붙이지 않는다
+    flags = (
+        [LONG_TORSO]
+        if leg_ratio is not None and leg_ratio < LONG_TORSO_LEG_RATIO
+        else []
+    )
     return body_type, flags
 
 

@@ -7,6 +7,9 @@
   (교체 절차: scripts/fashion_links.py)
 - affiliate_url은 추천 응답에 넣지 않는다 - POST /products/click으로만 발급해
   클릭 로그가 누락되지 않게 한다
+- 아이템 대표 이미지: data_source/fashion/items/*.webp (AI 생성 제품 사진, 실제 판매
+  상품 아님). 카탈로그 item_images 에 "성별/키워드" → 파일명. GET /api/fashion/images/
+  로 서빙하고, 이미지가 없는 키워드는 image_url 이 null 이다
 """
 
 import json
@@ -19,6 +22,8 @@ CATALOG_PATH = (
     / "fashion"
     / "body_catalog.json"
 )
+
+IMAGE_ENDPOINT_PREFIX = "/api/fashion/images/"
 
 
 class BodyFashionService:
@@ -34,6 +39,18 @@ class BodyFashionService:
             with open(self._catalog_path, encoding="utf-8") as f:
                 self._catalog = json.load(f)
         return self._catalog
+
+    @property
+    def items_dir(self) -> Path:
+        """아이템 대표 이미지 폴더 (카탈로그 옆 items/)"""
+        return self._catalog_path.parent / "items"
+
+    def image_url(self, gender: str, keyword: str, base_url: str = "") -> Optional[str]:
+        """키워드 대표 이미지 URL (없으면 None). base_url 이 비면 상대 경로"""
+        filename = self.catalog.get("item_images", {}).get(f"{gender}/{keyword}")
+        if not filename or not (self.items_dir / filename).is_file():
+            return None
+        return base_url.rstrip("/") + IMAGE_ENDPOINT_PREFIX + filename
 
     @property
     def disclosure(self) -> str:
@@ -59,7 +76,11 @@ class BodyFashionService:
         }
 
     def build_recommendation(
-        self, body_type: str, flags: Sequence[str], gender: str
+        self,
+        body_type: str,
+        flags: Sequence[str],
+        gender: str,
+        base_url: str = "",
     ) -> Dict[str, Any]:
         """체형 + 보조 표시 + 성별로 응답 본문을 만든다.
 
@@ -87,8 +108,16 @@ class BodyFashionService:
 
         link_ids = self._active_link_ids(key)
         recommended = [
-            {**fit, "product_id": link_ids.get(fit["keyword"])}
+            {
+                **fit,
+                "product_id": link_ids.get(fit["keyword"]),
+                "image_url": self.image_url(key, fit["keyword"], base_url),
+            }
             for fit in _merge(sections, "recommended")
+        ]
+        avoid = [
+            {**fit, "image_url": self.image_url(key, fit["keyword"], base_url)}
+            for fit in _merge(sections, "avoid")
         ]
         return {
             "body_type": body_type,
@@ -96,7 +125,7 @@ class BodyFashionService:
             "description": entry["description"],
             "secondary": secondary,
             "recommended": recommended,
-            "avoid": _merge(sections, "avoid"),
+            "avoid": avoid,
             "disclosure": self.disclosure,
         }
 

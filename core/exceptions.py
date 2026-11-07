@@ -30,11 +30,11 @@ class MultipleFacesException(HairMeException):
 
 
 class FullBodyNotDetectedException(HairMeException):
-    """Raised when a full body (head to ankles) is not visible in the photo"""
+    """Raised when shoulders and hips are not both visible in the photo"""
 
     def __init__(
         self,
-        message: str = "전신이 인식되지 않았습니다.\n머리부터 발끝까지 나오도록 정면에서 찍어주세요.",
+        message: str = "어깨와 골반이 보이지 않아요.\n허리 아래까지 나오도록 정면에서 찍어주세요.",
     ):
         super().__init__(message)
 

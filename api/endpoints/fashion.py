@@ -16,7 +16,7 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -83,7 +83,9 @@ async def _save_photo(
 @limiter.limit("10/minute")
 async def analyze_body(
     request: Request,
-    file: UploadFile = File(..., description="정면 전신 사진 (머리부터 발끝까지)"),
+    file: UploadFile = File(
+        ..., description="정면 사진 (어깨~골반 필수, 발끝까지 권장)"
+    ),
     gender: str = Form("male", pattern="^(male|female)$"),
     device_id: Optional[str] = Form(
         None,
@@ -122,7 +124,7 @@ async def analyze_body(
             ratios.shoulder_hip_ratio, ratios.leg_ratio, gender
         )
         result = get_body_fashion_service().build_recommendation(
-            body_type, flags, gender
+            body_type, flags, gender, base_url=str(request.base_url)
         )
         processing_time = round(time.time() - start_time, 2)
 
@@ -135,7 +137,9 @@ async def analyze_body(
                 "body-type": body_type,
                 "flags": ",".join(flags),
                 "shoulder-hip": f"{ratios.shoulder_hip_ratio:.3f}",
-                "leg": f"{ratios.leg_ratio:.3f}",
+                "leg": (
+                    "none" if ratios.leg_ratio is None else f"{ratios.leg_ratio:.3f}"
+                ),
                 "shoulder-torso": f"{ratios.shoulder_torso_ratio:.3f}",
             },
         )
@@ -149,7 +153,9 @@ async def analyze_body(
                 "flags": flags,
                 "gender": gender,
                 "shoulder_hip_ratio": round(ratios.shoulder_hip_ratio, 3),
-                "leg_ratio": round(ratios.leg_ratio, 3),
+                "leg_ratio": (
+                    None if ratios.leg_ratio is None else round(ratios.leg_ratio, 3)
+                ),
                 "shoulder_torso_ratio": round(ratios.shoulder_torso_ratio, 3),
                 "linked_count": sum(
                     1 for fit in result["recommended"] if fit["product_id"]
@@ -206,3 +212,25 @@ async def analyze_body(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+
+
+_IMAGE_CACHE_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
+@router.get("/fashion/images/{filename}")
+async def get_item_image(filename: str):
+    """체형 코디 아이템 대표 이미지 (Lambda 이미지에 번들된 WebP)"""
+    # 경로 조작 방지: 구분자/상위 이동 문자를 포함하면 거부
+    if (
+        "/" in filename
+        or "\\" in filename
+        or ".." in filename
+        or not filename.endswith(".webp")
+    ):
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다")
+
+    path = get_body_fashion_service().items_dir / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다")
+
+    return FileResponse(path, media_type="image/webp", headers=_IMAGE_CACHE_HEADERS)
