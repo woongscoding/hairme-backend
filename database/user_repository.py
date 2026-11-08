@@ -151,11 +151,14 @@ class UserRepository:
         email: Optional[str] = None,
         initial_credits: int = 0,
         free_policy_arm: Optional[str] = None,
+        signup_bonus_pending: int = 0,
     ) -> Dict[str, Any]:
         """신규 사용자 생성 (가입 보너스 크레딧 포함)
 
         free_policy_arm: 가입 기기의 무료 정책 실험 코호트 (services/free_policy_service).
                          보상형 광고 보상 방식 결정과 실험 분석에 쓴다.
+        signup_bonus_pending: 아직 지급하지 않은 가입 보너스. 보너스 지급 트랜잭션이
+                         이 속성을 지우므로, 지급이 실패하면 다음 로그인에서 다시 지급한다.
         """
         now = _now_iso()
         item: Dict[str, Any] = {
@@ -173,6 +176,8 @@ class UserRepository:
             item["email"] = email
         if free_policy_arm:
             item["free_policy_arm"] = free_policy_arm
+        if signup_bonus_pending > 0:
+            item["signup_bonus_pending"] = signup_bonus_pending
 
         # kakao_id 유일성 마커 + 실제 사용자 아이템을 한 트랜잭션으로 기록.
         # GSI 조회는 최종 일관성이라 "조회 후 생성"만으로는 동시 요청에서

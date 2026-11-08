@@ -164,6 +164,27 @@ def _insufficient_credits_response(balance: int) -> JSONResponse:
     )
 
 
+def _refund_once(refund: Callable[[], None]) -> Callable[[], None]:
+    """환불 함수를 최대 1회만 실행되게 감싼다 (best effort - 예외는 로그만).
+
+    합성 엔드포인트는 "실패 응답 경로에서 환불" 뒤에 예외가 나면 바깥 except 에서
+    또 환불을 부른다. 감싸지 않으면 한 번의 실패로 크레딧이 두 번 돌아온다.
+    """
+    done = False
+
+    def run() -> None:
+        nonlocal done
+        if done:
+            return
+        done = True
+        try:
+            refund()
+        except Exception as e:
+            logger.error(f"❌ 환불 처리 실패: {str(e)}")
+
+    return run
+
+
 def refunded_balance(quota: Optional[Dict[str, Any]]) -> Optional[int]:
     """환불 후 잔액 (회원 크레딧만). 레거시 device 흐름/무과금 경로는 None.
 
@@ -244,7 +265,7 @@ def charge_synthesis_quota(
         return (
             None,
             {"mode": "credits", "balance": balance, "tier": tier},
-            refund_credits,
+            _refund_once(refund_credits),
         )
 
     # ===== 비로그인: 레거시 device_id 일일 제한 =====
@@ -337,7 +358,7 @@ def charge_synthesis_quota(
                 "used": used,
                 "remaining": max(0, lifetime_limit - used),
             },
-            refund_lifetime_quota,
+            _refund_once(refund_lifetime_quota),
         )
 
     # (2b) 대조군: device_id 일일 제한
@@ -378,4 +399,4 @@ def charge_synthesis_quota(
         if ip_key:
             usage_service.decrement_daily_counter(ip_key)
 
-    return None, quota, refund_free_quota
+    return None, quota, _refund_once(refund_free_quota)

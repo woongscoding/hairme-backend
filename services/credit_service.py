@@ -57,6 +57,26 @@ class InsufficientCreditsError(Exception):
         super().__init__(f"크레딧이 부족합니다 (잔액: {balance})")
 
 
+class RefAlreadyClaimedError(Exception):
+    """이미 처리된 외부 트랜잭션 (같은 구매 토큰 등의 재요청)"""
+
+
+def _grant_update(amount: int, reason: str, paid: bool) -> Tuple[str, Dict[str, Any]]:
+    """크레딧 지급용 UpdateExpression 과 값"""
+    update_expression = "SET credits = if_not_exists(credits, :zero) + :amt"
+    values: Dict[str, Any] = {":amt": amount, ":zero": 0}
+    if paid:
+        update_expression += (
+            ", paid_credits = if_not_exists(paid_credits, :zero) + :amt"
+        )
+        if reason == "purchase":
+            update_expression += (
+                ", first_purchase_at = if_not_exists(first_purchase_at, :now)"
+            )
+            values[":now"] = datetime.now(timezone.utc).isoformat()
+    return update_expression, values
+
+
 class CreditService:
     """크레딧 차감/지급/조회"""
 
@@ -352,17 +372,7 @@ class CreditService:
         if amount <= 0:
             raise ValueError("지급 금액은 1 이상이어야 합니다")
 
-        update_expression = "SET credits = if_not_exists(credits, :zero) + :amt"
-        values: Dict[str, Any] = {":amt": amount, ":zero": 0}
-        if paid:
-            update_expression += (
-                ", paid_credits = if_not_exists(paid_credits, :zero) + :amt"
-            )
-            if reason == "purchase":
-                update_expression += (
-                    ", first_purchase_at = if_not_exists(first_purchase_at, :now)"
-                )
-                values[":now"] = datetime.now(timezone.utc).isoformat()
+        update_expression, values = _grant_update(amount, reason, paid)
 
         try:
             response = self.users_table.update_item(
@@ -384,6 +394,146 @@ class CreditService:
             f"크레딧 지급: user_id={user_id}, +{amount} ({reason}), 잔액={balance_after}"
         )
         return balance_after
+
+    def grant_with_claim(
+        self,
+        ref_key: str,
+        user_id: str,
+        amount: int,
+        reason: str,
+        ref_id: Optional[str] = None,
+        paid: bool = False,
+        detail: Optional[Dict[str, Any]] = None,
+        max_attempts: int = 3,
+        remove_attrs: Tuple[str, ...] = (),
+    ) -> int:
+        """
+        중복 방지 마커 + 크레딧 지급 + 원장 기록을 한 트랜잭션으로 처리
+
+        try_claim_ref → grant 를 따로 하면, 그 사이에 Lambda 가 끊겼을 때 마커만 남고
+        크레딧은 지급되지 않는다. 재시도는 "이미 처리됨"으로 거절되므로 결제한
+        사용자가 크레딧을 영영 못 받는다. 셋을 묶으면 전부 반영되거나 전부 안 된다.
+
+        원장의 balance_after 를 정확히 남기려고 지급 전 잔액을 읽고, 그 잔액이
+        그대로일 때만 지급한다 (동시 차감이 끼어들면 다시 읽어 재시도).
+
+        remove_attrs: 지급과 같은 트랜잭션에서 사용자 아이템에서 지울 속성
+                      (예: 가입 보너스 대기 표시)
+
+        Returns:
+            지급 후 잔액
+
+        Raises:
+            RefAlreadyClaimedError: 이미 처리된 ref_key (중복 요청)
+            ValueError: 존재하지 않는 사용자 / 잘못된 금액
+        """
+        if amount <= 0:
+            raise ValueError("지급 금액은 1 이상이어야 합니다")
+
+        update_expression, values = _grant_update(amount, reason, paid)
+        if remove_attrs:
+            update_expression += " REMOVE " + ", ".join(remove_attrs)
+        client = self.users_table.meta.client
+        users_table_name = self.users_table.name
+        ledger_table_name = self.ledger_table.name
+
+        claim: Dict[str, Any] = {
+            "user_id": ref_key,
+            "sk": "claim",
+            "claimed_by": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if detail:
+            claim["detail"] = detail
+
+        for attempt in range(1, max_attempts + 1):
+            response = self.users_table.get_item(
+                Key={"user_id": user_id},
+                ProjectionExpression="credits",
+                ConsistentRead=True,
+            )
+            user = response.get("Item")
+            if user is None:
+                raise ValueError("존재하지 않는 사용자입니다")
+
+            update_values = dict(values)
+            if "credits" in user:
+                before = int(user["credits"])
+                condition = "credits = :before"
+                update_values[":before"] = before
+            else:
+                before = 0
+                condition = (
+                    "attribute_exists(user_id) AND attribute_not_exists(credits)"
+                )
+            balance_after = before + amount
+
+            now = datetime.now(timezone.utc).isoformat()
+            ledger_row: Dict[str, Any] = {
+                "user_id": user_id,
+                "sk": f"{now}#{uuid.uuid4().hex[:8]}",
+                "amount": amount,
+                "reason": reason,
+                "balance_after": balance_after,
+                "created_at": now,
+            }
+            if ref_id:
+                ledger_row["ref_id"] = ref_id
+
+            # 이 클라이언트는 리소스에서 얻은 것이라 파이썬 값을 그대로 넘긴다
+            # ({"S": ...} 형태로 감싸면 이중 직렬화된다)
+            try:
+                client.transact_write_items(
+                    TransactItems=[
+                        {
+                            "Put": {
+                                "TableName": ledger_table_name,
+                                "Item": claim,
+                                "ConditionExpression": "attribute_not_exists(user_id)",
+                            }
+                        },
+                        {
+                            "Update": {
+                                "TableName": users_table_name,
+                                "Key": {"user_id": user_id},
+                                "UpdateExpression": update_expression,
+                                "ConditionExpression": condition,
+                                "ExpressionAttributeValues": update_values,
+                            }
+                        },
+                        {
+                            "Put": {
+                                "TableName": ledger_table_name,
+                                "Item": ledger_row,
+                            }
+                        },
+                    ]
+                )
+            except ClientError as e:
+                if e.response["Error"]["Code"] != "TransactionCanceledException":
+                    logger.error(f"크레딧 지급 실패: {e.response['Error']['Message']}")
+                    raise
+                reasons = e.response.get("CancellationReasons") or []
+                codes = [r.get("Code") for r in reasons]
+                if codes and codes[0] == "ConditionalCheckFailed":
+                    logger.warning(
+                        f"⚠️ 중복 트랜잭션 처리 시도: ref_hash={_mask_ref(ref_key)}"
+                    )
+                    raise RefAlreadyClaimedError(ref_key)
+                # 잔액이 그 사이 바뀌었거나(동시 차감) 트랜잭션 충돌 - 다시 읽어 재시도
+                logger.warning(
+                    f"크레딧 지급 트랜잭션 재시도 ({attempt}/{max_attempts}): "
+                    f"reasons={codes}"
+                )
+                continue
+
+            logger.info(
+                f"크레딧 지급: user_id={mask_user_id(user_id)}, +{amount} ({reason}), "
+                f"잔액={balance_after}"
+            )
+            return balance_after
+
+        raise RuntimeError("크레딧 지급 트랜잭션이 반복 충돌로 실패했습니다")
 
     def get_history(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """최근 크레딧 증감 내역 (최신순)"""

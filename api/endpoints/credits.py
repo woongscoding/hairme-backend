@@ -27,7 +27,7 @@ from services.admob_ssv_service import (
     is_reward_timestamp_fresh,
     parse_ad_unit_allowlist,
 )
-from services.credit_service import get_credit_service
+from services.credit_service import RefAlreadyClaimedError, get_credit_service
 from services.play_billing_service import (
     ACK_STATE_NOT_ACKNOWLEDGED,
     InvalidPurchaseError,
@@ -320,26 +320,27 @@ async def purchase_credits(
             detail="결제 검증 서비스를 일시적으로 사용할 수 없습니다.",
         )
 
-    # 같은 purchase_token 재사용 시 중복 지급 방지 (멱등성)
+    # 같은 purchase_token 재사용 시 중복 지급 방지 (멱등성).
+    # 마커·지급·원장을 한 트랜잭션으로 - 중간에 끊겨도 "마커만 있고 크레딧은 없는"
+    # 상태가 생기지 않아, 재시도가 409 로 막혀 결제분을 잃는 일이 없다.
     ref_key = f"purchase#{body.purchase_token}"
-    if not credit_service.try_claim_ref(
-        ref_key,
-        user_id,
-        detail={"product_id": body.product_id, "order_id": receipt.get("order_id")},
-    ):
-        raise HTTPException(status_code=409, detail="이미 처리된 구매입니다.")
-
     try:
-        balance = credit_service.grant(
-            user_id, amount, reason="purchase", ref_id=body.purchase_token, paid=True
+        balance = credit_service.grant_with_claim(
+            ref_key,
+            user_id,
+            amount,
+            reason="purchase",
+            ref_id=body.purchase_token,
+            paid=True,
+            detail={"product_id": body.product_id, "order_id": receipt.get("order_id")},
         )
+    except RefAlreadyClaimedError:
+        raise HTTPException(status_code=409, detail="이미 처리된 구매입니다.")
     except ValueError:
-        credit_service.release_ref(ref_key)
         release_once()
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     except Exception:
-        # 지급 실패 시 클레임 회수 - 클라이언트가 재시도할 수 있게
-        credit_service.release_ref(ref_key)
+        # 트랜잭션이 반영되지 않았으므로 클라이언트가 그대로 재시도하면 된다
         release_once()
         logger.error(f"❌ 구매 크레딧 지급 실패: user_id={user_id}", exc_info=True)
         raise HTTPException(

@@ -295,7 +295,9 @@ class TestSignupBonusByArm:
             "free_policy_arm": kw.get("free_policy_arm"),
         }
         credit = MagicMock()
-        credit.grant.side_effect = lambda user_id, amount, reason: amount
+        credit.grant_with_claim.side_effect = (
+            lambda ref_key, user_id, amount, reason, remove_attrs=(): amount
+        )
         payload = {"kakao_access_token": "t"}
         if device_id:
             payload["device_id"] = device_id

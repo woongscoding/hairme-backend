@@ -275,3 +275,22 @@ class TestValidationBeforeCharge:
         assert usage.counters == {}
         assert usage.device_calls == []
         service.synthesize_hair_color.assert_not_called()
+
+
+def test_refund_runs_at_most_once():
+    """환불 함수를 두 번 불러도(실패 응답 경로 + 바깥 except) 한 번만 환불된다"""
+    from unittest.mock import MagicMock
+
+    from core.quota import charge_synthesis_quota
+
+    credit = MagicMock()
+    credit.consume_for_synthesis.return_value = (4, "paid")
+    error, quota, refund = charge_synthesis_quota(
+        user_id="u-1", device_id=None, credit_service_factory=lambda: credit
+    )
+    assert error is None
+
+    refund()
+    refund()
+
+    credit.grant.assert_called_once()

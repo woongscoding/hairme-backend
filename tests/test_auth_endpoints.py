@@ -91,7 +91,7 @@ class TestKakaoLogin:
         repo.create.return_value = new_user
 
         credit_service = MagicMock()
-        credit_service.grant.return_value = 5
+        credit_service.grant_with_claim.return_value = 5
 
         with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
             "api.endpoints.auth.get_credit_service", return_value=credit_service
@@ -104,8 +104,58 @@ class TestKakaoLogin:
         data = response.json()
         assert data["is_new_user"] is True
         assert data["user"]["credits"] == 5
-        credit_service.grant.assert_called_once()
-        assert credit_service.grant.call_args.kwargs["reason"] == "signup_bonus"
+        # 대기 표시를 남기고 가입 → 마커와 함께 한 번만 지급하며 표시를 지운다
+        assert repo.create.call_args.kwargs["signup_bonus_pending"] == 5
+        credit_service.grant_with_claim.assert_called_once()
+        call = credit_service.grant_with_claim.call_args
+        assert call.args[:3] == ("signup_bonus#new-user-id", "new-user-id", 5)
+        assert call.kwargs["reason"] == "signup_bonus"
+        assert call.kwargs["remove_attrs"] == ("signup_bonus_pending",)
+
+    def test_failed_signup_bonus_is_granted_on_next_login(self, client, mock_kakao):
+        """가입 때 보너스 지급이 실패하면 대기 표시가 남아 다음 로그인에서 지급된다"""
+        pending_user = dict(
+            EXISTING_USER, user_id="pending-user", credits=0, signup_bonus_pending=5
+        )
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = pending_user
+
+        credit_service = MagicMock()
+        credit_service.grant_with_claim.return_value = 5
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+            "api.endpoints.auth.get_credit_service", return_value=credit_service
+        ):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 200
+        assert response.json()["is_new_user"] is False
+        assert response.json()["user"]["credits"] == 5
+        assert credit_service.grant_with_claim.call_args.args[0] == (
+            "signup_bonus#pending-user"
+        )
+
+    def test_pending_bonus_retry_failure_does_not_block_login(self, client, mock_kakao):
+        pending_user = dict(
+            EXISTING_USER, user_id="pending-user", credits=0, signup_bonus_pending=5
+        )
+        repo = MagicMock()
+        repo.get_by_kakao_id.return_value = pending_user
+
+        credit_service = MagicMock()
+        credit_service.grant_with_claim.side_effect = Exception("DynamoDB down")
+
+        with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+            "api.endpoints.auth.get_credit_service", return_value=credit_service
+        ):
+            response = client.post(
+                "/api/auth/kakao", json={"kakao_access_token": "valid_kakao_token"}
+            )
+
+        assert response.status_code == 200
+        assert response.json()["user"]["credits"] == 0
 
     def test_signup_race_falls_back_to_existing_user_without_bonus(
         self, client, mock_kakao
@@ -131,7 +181,7 @@ class TestKakaoLogin:
         assert data["user"]["user_id"] == "existing-user-id"
         assert data["user"]["credits"] == 3
         # 가입 보너스는 지급되지 않아야 한다 (중복 지급 방지)
-        credit_service.grant.assert_not_called()
+        credit_service.grant_with_claim.assert_not_called()
         repo.update_last_login.assert_called_once_with("existing-user-id")
 
     def test_signup_race_falls_back_to_uniqueness_marker(self, client, mock_kakao):
@@ -153,7 +203,7 @@ class TestKakaoLogin:
         assert response.status_code == 200
         assert response.json()["is_new_user"] is False
         repo.get_by_kakao_marker.assert_called_once_with("12345678")
-        credit_service.grant.assert_not_called()
+        credit_service.grant_with_claim.assert_not_called()
 
     def test_signup_race_unresolvable_returns_503(self, client, mock_kakao):
         repo = MagicMock()
@@ -171,7 +221,7 @@ class TestKakaoLogin:
             )
 
         assert response.status_code == 503
-        credit_service.grant.assert_not_called()
+        credit_service.grant_with_claim.assert_not_called()
 
     def test_login_suspended_user_rejected(self, client, mock_kakao):
         """정지 계정은 토큰을 발급받지 못한다 (403)"""

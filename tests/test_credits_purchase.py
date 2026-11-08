@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from core.jwt_auth import create_access_token
 from main import app
+from services.credit_service import RefAlreadyClaimedError
 from services.play_billing_service import (
     InvalidPurchaseError,
     PlayBillingUnavailableError,
@@ -50,7 +51,7 @@ def mock_credit():
     """클레임 성공 + 지급 성공을 기본값으로 모킹"""
     service = MagicMock()
     service.try_claim_ref.return_value = True
-    service.grant.return_value = 15
+    service.grant_with_claim.return_value = 15
     with patch("api.endpoints.credits.get_credit_service", return_value=service):
         yield service
 
@@ -68,11 +69,17 @@ class TestPurchaseCredits:
         assert data["balance"] == 15
         assert data["order_id"] == "GPA.1234-5678"
 
-        # reason="purchase", ref_id=purchase_token으로 지급되는지 확인
-        grant_kwargs = mock_credit.grant.call_args.kwargs
+        # 마커·지급을 한 번에: reason="purchase", ref_id=purchase_token, 유료분
+        grant_kwargs = mock_credit.grant_with_claim.call_args.kwargs
         assert grant_kwargs["reason"] == "purchase"
         assert grant_kwargs["ref_id"] == "token-abc-123"
-        assert mock_credit.grant.call_args.args == ("buyer-user-id", 10)
+        assert grant_kwargs["paid"] is True
+        assert mock_credit.grant_with_claim.call_args.args == (
+            "purchase#token-abc-123",
+            "buyer-user-id",
+            10,
+        )
+        mock_credit.grant.assert_not_called()
 
     def test_requires_auth(self, client, mock_play, mock_credit):
         response = client.post("/api/credits/purchase", json=PURCHASE_BODY)
@@ -86,7 +93,7 @@ class TestPurchaseCredits:
         )
         assert response.status_code == 400
         mock_play.verify_product_purchase.assert_not_called()
-        mock_credit.grant.assert_not_called()
+        mock_credit.grant_with_claim.assert_not_called()
 
     def test_invalid_receipt(self, client, auth_headers, mock_play, mock_credit):
         mock_play.verify_product_purchase.side_effect = InvalidPurchaseError()
@@ -96,7 +103,7 @@ class TestPurchaseCredits:
         )
 
         assert response.status_code == 400
-        mock_credit.grant.assert_not_called()
+        mock_credit.grant_with_claim.assert_not_called()
 
     def test_play_api_unavailable(self, client, auth_headers, mock_play, mock_credit):
         mock_play.verify_product_purchase.side_effect = PlayBillingUnavailableError()
@@ -106,33 +113,32 @@ class TestPurchaseCredits:
         )
 
         assert response.status_code == 503
-        mock_credit.grant.assert_not_called()
+        mock_credit.grant_with_claim.assert_not_called()
 
     def test_duplicate_token_rejected(
         self, client, auth_headers, mock_play, mock_credit
     ):
         """같은 purchase_token 재사용 시 중복 지급 방지 (멱등성)"""
-        mock_credit.try_claim_ref.return_value = False
+        mock_credit.grant_with_claim.side_effect = RefAlreadyClaimedError("k")
 
         response = client.post(
             "/api/credits/purchase", json=PURCHASE_BODY, headers=auth_headers
         )
 
         assert response.status_code == 409
-        mock_credit.grant.assert_not_called()
 
-    def test_grant_failure_releases_claim(
+    def test_grant_failure_leaves_no_claim(
         self, client, auth_headers, mock_play, mock_credit
     ):
-        """지급 실패 시 클레임 마커를 회수해 재시도 가능하게 함"""
-        mock_credit.grant.side_effect = Exception("DynamoDB down")
+        """지급 트랜잭션 실패 시 마커도 남지 않으므로(원자적) 회수할 것이 없다"""
+        mock_credit.grant_with_claim.side_effect = Exception("DynamoDB down")
 
         response = client.post(
             "/api/credits/purchase", json=PURCHASE_BODY, headers=auth_headers
         )
 
         assert response.status_code == 500
-        mock_credit.release_ref.assert_called_once_with("purchase#token-abc-123")
+        mock_credit.release_ref.assert_not_called()
         # 내부 오류 정보가 응답에 노출되지 않음
         assert "DynamoDB" not in response.text
 
@@ -169,7 +175,7 @@ class TestPurchaseCredits:
         mock_play.acknowledge_product_purchase.assert_called_once_with(
             "credits_10", "token-abc-123"
         )
-        mock_credit.grant.assert_called_once()
+        mock_credit.grant_with_claim.assert_called_once()
 
     def test_acknowledge_failure_returns_503_before_claim(
         self, client, auth_headers, mock_play, mock_credit
@@ -190,4 +196,4 @@ class TestPurchaseCredits:
 
         assert response.status_code == 503
         mock_credit.try_claim_ref.assert_not_called()
-        mock_credit.grant.assert_not_called()
+        mock_credit.grant_with_claim.assert_not_called()

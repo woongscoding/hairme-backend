@@ -30,7 +30,7 @@ from database.user_repository import (
     UserAlreadyExistsError,
     get_user_repository,
 )
-from services.credit_service import get_credit_service
+from services.credit_service import RefAlreadyClaimedError, get_credit_service
 from services.free_policy_service import resolve_device_arm, signup_bonus_for
 from services.kakao_auth_service import get_kakao_auth_service
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
@@ -130,6 +130,38 @@ def _signup_arm(device_id: Optional[str]) -> Optional[str]:
     return resolve_device_arm(get_usage_limit_service(), validated)
 
 
+def _grant_pending_signup_bonus(user: dict, bonus: Optional[int] = None) -> int:
+    """대기 중인 가입 보너스를 한 번만 지급하고 대기 표시를 지운다 (한 트랜잭션).
+
+    가입 직후 지급이 실패해도 대기 표시가 남아 다음 로그인에서 다시 시도된다.
+    마커(signup_bonus#<user_id>)가 있어 두 번 지급되지 않는다.
+
+    Returns:
+        이번에 지급한 보너스 (지급할 것이 없으면 0)
+    """
+    if bonus is None:
+        bonus = int(user.get("signup_bonus_pending") or 0)
+    if bonus <= 0:
+        return 0
+    try:
+        balance = get_credit_service().grant_with_claim(
+            f"signup_bonus#{user['user_id']}",
+            user["user_id"],
+            bonus,
+            reason="signup_bonus",
+            remove_attrs=("signup_bonus_pending",),
+        )
+    except RefAlreadyClaimedError:
+        # 이미 지급됨 (대기 표시만 남은 비정상 상태) - 다시 주지 않는다
+        logger.warning(
+            f"⚠️ 가입 보너스 이미 지급됨: user_id={mask_user_id(user['user_id'])}"
+        )
+        return 0
+    user["credits"] = balance
+    user.pop("signup_bonus_pending", None)
+    return bonus
+
+
 # ========== Endpoints ==========
 
 
@@ -168,6 +200,8 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
                     email=profile.get("email"),
                     initial_credits=0,
                     free_policy_arm=arm,
+                    # 실험군 기기로 가입하면 보너스가 줄어든다 (free_policy_service 참고)
+                    signup_bonus_pending=signup_bonus_for(arm),
                 )
             except UserAlreadyExistsError:
                 # 동시 요청이 먼저 가입시킴 - 기존 로그인으로 전환 (보너스 없음)
@@ -192,21 +226,24 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
             )
 
         if is_new_user:
-            # 실험군 기기로 가입하면 보너스가 줄어든다 (free_policy_service 참고)
-            bonus = signup_bonus_for(arm)
-            if bonus > 0:
-                balance = get_credit_service().grant(
-                    user["user_id"],
-                    bonus,
-                    reason="signup_bonus",
-                )
-                user["credits"] = balance
+            bonus = _grant_pending_signup_bonus(user, signup_bonus_for(arm))
             log_structured(
                 "signup",
                 {"user_id": mask_user_id(user["user_id"]), "arm": arm, "bonus": bonus},
             )
         else:
             user_repo.update_last_login(user["user_id"])
+            # 가입 때 보너스 지급이 실패한 계정이면 지금 다시 지급.
+            # 여기서 또 실패해도 로그인은 막지 않는다 (대기 표시가 남아 다음에 재시도)
+            if user.get("signup_bonus_pending"):
+                try:
+                    _grant_pending_signup_bonus(user)
+                except Exception:
+                    logger.error(
+                        "❌ 대기 가입 보너스 재지급 실패: "
+                        f"user_id={mask_user_id(user['user_id'])}",
+                        exc_info=True,
+                    )
 
     except HTTPException:
         raise
