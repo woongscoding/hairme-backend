@@ -552,6 +552,15 @@ class TestServiceCountsRealCalls:
         service.RETRY_DELAY = 0
         return service, client
 
+    @staticmethod
+    def _server_error():
+        """Gemini 5xx (재시도 대상). 분류되지 않은 일반 Exception 은 재시도하지 않는다"""
+        from google.genai import errors
+
+        return errors.ServerError(
+            500, {"error": {"code": 500, "message": "boom", "status": "INTERNAL"}}
+        )
+
     def _image_response(self):
         part = MagicMock()
         part.inline_data.data = b"\x89PNG\r\n\x1a\nfake"
@@ -573,7 +582,7 @@ class TestServiceCountsRealCalls:
     def test_counts_every_retry(self):
         """한 요청이 3배 비용을 낼 수 있다는 것을 로그로 볼 수 있어야 한다"""
         service, client = self._service(
-            [Exception("500"), Exception("500"), self._image_response()]
+            [self._server_error(), self._server_error(), self._image_response()]
         )
 
         result = service.synthesize_hairstyle(_png_bytes(), "크롭컷")
@@ -583,7 +592,7 @@ class TestServiceCountsRealCalls:
         assert client.models.generate_content.call_count == 3
 
     def test_exhausted_retries_report_all_calls(self):
-        service, _client = self._service([Exception("500")] * 3)
+        service, _client = self._service([self._server_error() for _ in range(3)])
 
         result = service.synthesize_hairstyle(_png_bytes(), "크롭컷")
 
@@ -604,7 +613,7 @@ class TestServiceCountsRealCalls:
         assert result["api_calls"] == 0
 
     def test_reference_synthesis_counts_calls(self):
-        service, client = self._service([Exception("500"), self._image_response()])
+        service, client = self._service([self._server_error(), self._image_response()])
 
         result = service.synthesize_with_reference(_png_bytes(), _png_bytes())
 

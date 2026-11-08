@@ -34,6 +34,21 @@ def client():
         yield test_client
 
 
+@pytest.fixture(autouse=True)
+def _no_hair_color_cost_guard_writes():
+    """염색 합성의 일 예산·중복 요청 잠금은 여기의 관심사가 아니다 (실제 DynamoDB 접근 차단).
+
+    동작 자체는 tests/test_hair_color_safeguards.py 가 검증한다.
+    """
+    with patch("api.endpoints.hair_color.record_api_calls"), patch(
+        "api.endpoints.hair_color.daily_budget_exceeded", return_value=False
+    ), patch(
+        "api.endpoints.hair_color.acquire_synthesis_lock",
+        return_value=(True, lambda: None),
+    ):
+        yield
+
+
 def _png_bytes() -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", (64, 64), (120, 90, 60)).save(buf, "PNG")

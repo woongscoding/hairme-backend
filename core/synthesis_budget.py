@@ -19,14 +19,18 @@
 - 사전 거절(중복 요청 409 / 예산 503 / 한도 402·429)은 Gemini 를 부르지 않으므로
   집계에 들어가지 않는다. 그런 이벤트의 구조화 로그에는 api_calls 필드 자체를
   넣지 않아, 로그를 합산할 때도 섞이지 않는다.
-- 이 모듈은 api/endpoints/synthesis.py 의 두 엔드포인트만 집계한다.
-  /api/hair-color/synthesize 도 Gemini 이미지 생성을 호출하지만 아직 포함되지
-  않는다 - "하루 전체"는 헤어스타일 합성 두 경로 기준이다.
+- Gemini 이미지 생성을 부르는 네 엔드포인트를 모두 집계한다:
+  api/endpoints/synthesis.py 의 /v2/synthesize, /v2/synthesize-with-reference 와
+  api/endpoints/hair_color.py 의 /hair-color/synthesize,
+  /hair-color/synthesize-by-personal-color (염색은 Beauty Lambda 에서 돌지만 같은
+  hairstyle_usage 행에 더하므로 "하루 전체"는 두 Lambda 합계다).
 
 누구를 막는가:
-- 비로그인 경로만 막는다. 회원은 상한과 무관하게 전원 통과시킨다
-  (크레딧 잔액은 hairme-users.credits 단일 정수라 유료/보너스 출처를 나눌 수
-  없다. 출처 구분이 가능해지기 전까지는 회원을 막지 않는 쪽을 택했다).
+- 비로그인 경로만 막는다. 회원은 상한과 무관하게 전원 통과시킨다 (네 엔드포인트
+  모두 같은 규칙). 수익화 v2.1 부터 지갑이 유료(paid_credits)/무료 잔액으로
+  나뉘어 "무료 크레딧으로 합성하는 회원"만 골라 막는 것도 기술적으로는 가능하지만,
+  지금은 정책상 회원을 막지 않는다 (로그인을 유도하는 503 문구와도 맞물려 있다).
+  회원 무료 합성까지 막으려면 호출부의 `user_id is None` 조건을 바꿔야 한다.
 - settings.DAILY_SYNTHESIS_BUDGET 이 0(기본)이면 상한 조회를 건너뛴다.
   집계(record_api_calls)는 상한값과 무관하게 항상 수행한다 - 상한을 정하려면
   먼저 평소 호출량을 모아야 하기 때문이다.

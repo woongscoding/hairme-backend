@@ -1,14 +1,17 @@
 """Hairstyle synthesis service using Gemini 2.5 Flash Image API"""
 
-import base64
 import io
-import time
 from typing import Dict, Any, Optional
 from PIL import Image
 
 from core.logging import logger
 from config.settings import settings
-from services.gemini_image_config import image_generation_config
+from services.gemini_image_config import (
+    build_image_client,
+    generate_image,
+    image_generation_config,
+    inline_image_to_base64,
+)
 
 
 class HairstyleSynthesisService:
@@ -32,15 +35,12 @@ class HairstyleSynthesisService:
 
     @property
     def client(self):
-        """Lazy load the Gemini client"""
+        """Lazy load the Gemini client (HTTP 타임아웃 포함, gemini_image_config 공용)"""
         if self._client is None:
-            from google import genai
-            from config.settings import settings
-
-            self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self._client = build_image_client()
         return self._client
 
-    # 재시도 설정
+    # 재시도 설정 (일시적 오류만 재시도 - 분류는 gemini_image_config.generate_image)
     MAX_RETRIES = 3
     RETRY_DELAY = 1.0  # seconds
     MAX_IMAGE_SIZE = 1024  # API 전송 전 최대 해상도 (비용 절감)
@@ -121,55 +121,18 @@ class HairstyleSynthesisService:
 
             logger.info(f"🎨 헤어스타일 합성 시작: {hairstyle_name} ({gender})")
 
-            # 재시도 로직으로 API 호출
-            result_image = None
-            result_text = None
-            last_error = None
+            generation = generate_image(
+                self.client,
+                [prompt, original_image],
+                self._generation_config(types, image_size),
+                max_attempts=self.MAX_RETRIES,
+                retry_delay=self.RETRY_DELAY,
+                label="헤어스타일 합성",
+            )
+            api_calls = generation.api_calls
+            result_text = generation.text
 
-            for attempt in range(self.MAX_RETRIES):
-                try:
-                    api_calls += 1
-                    # Call Gemini 2.5 Flash Image API
-                    response = self.client.models.generate_content(
-                        model=settings.GEMINI_IMAGE_MODEL,
-                        contents=[prompt, original_image],
-                        config=self._generation_config(types, image_size),
-                    )
-
-                    # Extract the generated image
-                    result_image = None
-                    result_text = None
-
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, "inline_data") and part.inline_data:
-                            # Image data
-                            result_image = part.inline_data
-                        elif hasattr(part, "text") and part.text:
-                            # Text response
-                            result_text = part.text
-
-                    if result_image is not None:
-                        logger.info(
-                            f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})"
-                        )
-                        break
-                    else:
-                        logger.warning(
-                            f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}"
-                        )
-                        if attempt < self.MAX_RETRIES - 1:
-                            time.sleep(self.RETRY_DELAY)
-
-                except Exception as api_error:
-                    last_error = api_error
-                    logger.warning(
-                        f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}"
-                    )
-                    if attempt < self.MAX_RETRIES - 1:
-                        time.sleep(self.RETRY_DELAY)
-
-            if result_image is None:
-                logger.error(f"❌ {self.MAX_RETRIES}번 시도 후에도 이미지 생성 실패")
+            if not generation.success:
                 return {
                     "success": False,
                     "image_base64": None,
@@ -177,54 +140,10 @@ class HairstyleSynthesisService:
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text,
                     "api_calls": api_calls,
+                    "failure_reason": generation.failure,
                 }
 
-            # Convert to base64
-            image_bytes = result_image.data
-
-            # 🔍 디버깅: Gemini 응답 데이터 타입 확인
-            logger.info(f"📦 Gemini 응답 데이터 타입: {type(image_bytes)}")
-            logger.info(
-                f"📦 Gemini 응답 데이터 크기: {len(image_bytes) if image_bytes else 0}"
-            )
-
-            # Gemini API가 이미 Base64 문자열을 반환하는 경우 처리
-            if isinstance(image_bytes, str):
-                # 이미 Base64 문자열인 경우 - 그대로 사용
-                logger.info("📦 Gemini가 이미 Base64 문자열을 반환함 - 그대로 사용")
-                image_base64 = image_bytes
-            elif isinstance(image_bytes, bytes):
-                # bytes인 경우 - PNG 시그니처 확인
-                if image_bytes[:4] == b"\x89PNG" or image_bytes[:3] == b"\xff\xd8\xff":
-                    # 실제 이미지 바이너리 - Base64 인코딩 필요
-                    logger.info("📦 실제 이미지 바이너리 - Base64 인코딩 수행")
-                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                else:
-                    # 이미 Base64 인코딩된 bytes일 수 있음 - 디코드해서 확인
-                    try:
-                        decoded_str = image_bytes.decode("utf-8")
-                        # Base64 문자열인지 확인 (iVBOR은 PNG, /9j/는 JPEG의 Base64 시작)
-                        if decoded_str.startswith("iVBOR") or decoded_str.startswith(
-                            "/9j/"
-                        ):
-                            logger.info("📦 이미 Base64 인코딩된 bytes - 그대로 사용")
-                            image_base64 = decoded_str
-                        else:
-                            # 알 수 없는 형식 - 일단 Base64 인코딩
-                            logger.info("📦 알 수 없는 형식 - Base64 인코딩 수행")
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                    except UnicodeDecodeError:
-                        # UTF-8 디코드 실패 - 바이너리 데이터로 취급
-                        logger.info("📦 바이너리 데이터 - Base64 인코딩 수행")
-                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-            else:
-                # 기타 타입 - 일단 bytes로 변환 시도
-                logger.warning(f"📦 예상치 못한 타입: {type(image_bytes)}")
-                image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
-
-            # Determine format from mime type
-            mime_type = result_image.mime_type  # e.g., "image/png"
-            image_format = mime_type.split("/")[-1] if mime_type else "png"
+            image_base64, image_format = inline_image_to_base64(generation.image)
 
             logger.info(f"✅ 헤어스타일 합성 성공: {hairstyle_name}")
 
@@ -291,52 +210,18 @@ class HairstyleSynthesisService:
 
             logger.info(f"🎨 레퍼런스 기반 헤어스타일 합성 시작 ({gender})")
 
-            # 재시도 로직으로 API 호출
-            result_image = None
-            result_text = None
-            last_error = None
+            generation = generate_image(
+                self.client,
+                [prompt, user_image, reference_image],
+                self._generation_config(types, image_size),
+                max_attempts=self.MAX_RETRIES,
+                retry_delay=self.RETRY_DELAY,
+                label="레퍼런스 합성",
+            )
+            api_calls = generation.api_calls
+            result_text = generation.text
 
-            for attempt in range(self.MAX_RETRIES):
-                try:
-                    api_calls += 1
-                    response = self.client.models.generate_content(
-                        model=settings.GEMINI_IMAGE_MODEL,
-                        contents=[prompt, user_image, reference_image],
-                        config=self._generation_config(types, image_size),
-                    )
-
-                    # Extract result
-                    result_image = None
-                    result_text = None
-
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, "inline_data") and part.inline_data:
-                            result_image = part.inline_data
-                        elif hasattr(part, "text") and part.text:
-                            result_text = part.text
-
-                    if result_image is not None:
-                        logger.info(
-                            f"✅ API 호출 성공 (시도 {attempt + 1}/{self.MAX_RETRIES})"
-                        )
-                        break
-                    else:
-                        logger.warning(
-                            f"⚠️ 이미지 미생성 (시도 {attempt + 1}/{self.MAX_RETRIES}), Gemini 응답: {result_text}"
-                        )
-                        if attempt < self.MAX_RETRIES - 1:
-                            time.sleep(self.RETRY_DELAY)
-
-                except Exception as api_error:
-                    last_error = api_error
-                    logger.warning(
-                        f"⚠️ API 호출 실패 (시도 {attempt + 1}/{self.MAX_RETRIES}): {str(api_error)}"
-                    )
-                    if attempt < self.MAX_RETRIES - 1:
-                        time.sleep(self.RETRY_DELAY)
-
-            if result_image is None:
-                logger.error(f"❌ {self.MAX_RETRIES}번 시도 후에도 이미지 생성 실패")
+            if not generation.success:
                 return {
                     "success": False,
                     "image_base64": None,
@@ -344,34 +229,12 @@ class HairstyleSynthesisService:
                     "message": "AI가 잠깐 졸았나봐요.. 다시 한번 눌러주세요!",
                     "gemini_response": result_text,
                     "api_calls": api_calls,
+                    "failure_reason": generation.failure,
                 }
 
-            image_bytes = result_image.data
+            image_base64, image_format = inline_image_to_base64(generation.image)
 
-            # Gemini API가 이미 Base64 문자열을 반환하는 경우 처리
-            if isinstance(image_bytes, str):
-                image_base64 = image_bytes
-            elif isinstance(image_bytes, bytes):
-                if image_bytes[:4] == b"\x89PNG" or image_bytes[:3] == b"\xff\xd8\xff":
-                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                else:
-                    try:
-                        decoded_str = image_bytes.decode("utf-8")
-                        if decoded_str.startswith("iVBOR") or decoded_str.startswith(
-                            "/9j/"
-                        ):
-                            image_base64 = decoded_str
-                        else:
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                    except UnicodeDecodeError:
-                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-            else:
-                image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
-
-            mime_type = result_image.mime_type
-            image_format = mime_type.split("/")[-1] if mime_type else "png"
-
-            logger.info(f"✅ 레퍼런스 기반 합성 성공")
+            logger.info("✅ 레퍼런스 기반 합성 성공")
 
             return {
                 "success": True,

@@ -58,6 +58,19 @@ NOOP_RELEASE: Callable[[], None] = lambda: None
 LockResult = Tuple[bool, Callable[[], None]]
 
 
+def lock_subject(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
+    """중복 요청 판정의 주체. 회원은 "user:<id>", 비로그인은 "device:<id>".
+
+    api/endpoints/synthesis.py 의 _lock_subject 와 같은 규칙이다 (염색 합성이 쓴다.
+    tests/test_hair_color_safeguards.py 가 두 구현이 같은 값을 내는지 확인한다).
+    잠금 키는 이 값을 해시해서 만들므로 원문이 저장소에 남지 않는다.
+    """
+    if user_id:
+        return f"user:{user_id}"
+    trimmed = (device_id or "").strip()
+    return f"device:{trimmed}" if trimmed else None
+
+
 def build_lock_key(subject: str, cache_key: str) -> str:
     """잠금 파티션 키: "synlock#<주체 해시>#<cache_key 앞 32자>"
 

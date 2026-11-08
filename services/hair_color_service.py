@@ -6,18 +6,22 @@ Phase 3: 염색 추천 + 합성 서비스
 - 가상 염색 시뮬레이션
 """
 
-import base64
 import io
 import json
-import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from PIL import Image
 
 from core.logging import logger
-from config.settings import settings
-from services.gemini_image_config import image_generation_config
+from services.gemini_image_config import (
+    GEMINI_IMAGE_MAX_ATTEMPTS,
+    GEMINI_IMAGE_RETRY_DELAY,
+    build_image_client,
+    generate_image,
+    image_generation_config,
+    inline_image_to_base64,
+)
 
 
 @dataclass
@@ -140,11 +144,9 @@ class HairColorService:
 
     @property
     def gemini_client(self):
-        """Lazy load Gemini client"""
+        """Lazy load Gemini client (HTTP 타임아웃 포함, gemini_image_config 공용)"""
         if self._gemini_client is None:
-            from google import genai
-
-            self._gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            self._gemini_client = build_image_client()
             logger.info("✅ HairColorService: Gemini client loaded")
         return self._gemini_client
 
@@ -242,9 +244,14 @@ class HairColorService:
                 "success": bool,
                 "image_base64": str,
                 "image_format": str,
-                "message": str
+                "message": str,
+                "api_calls": int  # 실제 Gemini 호출 횟수 (재시도 포함, 비용 계측용)
             }
+            실패 시 "failure_reason" (gemini_image_config.FAILURE_*) 이 추가될 수 있다.
         """
+        # 이미지 열기/프롬프트 구성 단계에서 실패하면 호출 전일 수 있다
+        api_calls = 0
+
         try:
             from google.genai import types
 
@@ -274,76 +281,28 @@ class HairColorService:
             # 모델별 해상도·생각 수준은 gemini_image_config 가 맞춘다
             generation_config = image_generation_config(types, image_size)
 
-            # Call Gemini API with retry
-            MAX_RETRIES = 3
-            RETRY_DELAY = 1.0
+            generation = generate_image(
+                self.gemini_client,
+                [prompt, original_image],
+                generation_config,
+                max_attempts=GEMINI_IMAGE_MAX_ATTEMPTS,
+                retry_delay=GEMINI_IMAGE_RETRY_DELAY,
+                label="염색 시뮬레이션",
+            )
+            api_calls = generation.api_calls
 
-            result_image = None
-            result_text = None
-
-            for attempt in range(MAX_RETRIES):
-                try:
-                    response = self.gemini_client.models.generate_content(
-                        model=settings.GEMINI_IMAGE_MODEL,
-                        contents=[prompt, original_image],
-                        config=generation_config,
-                    )
-
-                    for part in response.candidates[0].content.parts:
-                        if hasattr(part, "inline_data") and part.inline_data:
-                            result_image = part.inline_data
-                        elif hasattr(part, "text") and part.text:
-                            result_text = part.text
-
-                    if result_image is not None:
-                        logger.info(
-                            f"✅ API 호출 성공 (시도 {attempt + 1}/{MAX_RETRIES})"
-                        )
-                        break
-                    else:
-                        logger.warning(f"⚠️ 이미지 미생성 (시도 {attempt + 1})")
-                        if attempt < MAX_RETRIES - 1:
-                            time.sleep(RETRY_DELAY)
-
-                except Exception as api_error:
-                    logger.warning(
-                        f"⚠️ API 호출 실패 (시도 {attempt + 1}): {str(api_error)}"
-                    )
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(RETRY_DELAY)
-
-            if result_image is None:
+            if not generation.success:
                 return {
                     "success": False,
                     "image_base64": None,
                     "image_format": None,
                     "message": "염색 시뮬레이션 생성에 실패했습니다. 다시 시도해주세요.",
+                    "api_calls": api_calls,
+                    "failure_reason": generation.failure,
                 }
 
-            # Convert to base64
-            image_bytes = result_image.data
-
-            if isinstance(image_bytes, str):
-                image_base64 = image_bytes
-            elif isinstance(image_bytes, bytes):
-                if image_bytes[:4] == b"\x89PNG" or image_bytes[:3] == b"\xff\xd8\xff":
-                    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                else:
-                    try:
-                        decoded_str = image_bytes.decode("utf-8")
-                        if decoded_str.startswith("iVBOR") or decoded_str.startswith(
-                            "/9j/"
-                        ):
-                            image_base64 = decoded_str
-                        else:
-                            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-                    except UnicodeDecodeError:
-                        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-            else:
-                image_base64 = base64.b64encode(bytes(image_bytes)).decode("utf-8")
-
-            mime_type = result_image.mime_type
-            image_format = mime_type.split("/")[-1] if mime_type else "png"
+            image_base64, image_format = inline_image_to_base64(generation.image)
+            result_text = generation.text
 
             logger.info(f"✅ 염색 시뮬레이션 완료: {color_name}")
 
@@ -353,6 +312,7 @@ class HairColorService:
                 "image_format": image_format,
                 "message": f"'{color_name}' 염색이 적용되었습니다.",
                 "gemini_response": result_text,
+                "api_calls": api_calls,
             }
 
         except Exception as e:
@@ -363,6 +323,7 @@ class HairColorService:
                 "image_base64": None,
                 "image_format": None,
                 "message": "염색 시뮬레이션 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+                "api_calls": api_calls,
             }
 
     def get_color_by_name(self, color_name: str) -> Optional[Dict[str, Any]]:

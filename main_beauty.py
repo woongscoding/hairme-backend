@@ -15,13 +15,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from config.settings import settings
 from core.logging import logger, log_structured
 from core.monitoring import init_sentry
+from core.rate_limit import rate_limit_exceeded_handler
 
 # Lambda type identifier
 LAMBDA_TYPE = os.environ.get("LAMBDA_TYPE", "beauty")
@@ -67,7 +68,8 @@ app = FastAPI(
 
 # Attach limiter to app state
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# 메인 Lambda(main.py)와 같은 한국어 429 본문 (slowapi 기본 핸들러는 영어 + 제한 수치 노출)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
 # ========== Trusted Host Middleware ==========

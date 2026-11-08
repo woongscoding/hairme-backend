@@ -11,11 +11,20 @@ Phase 3: 염색 추천 + 합성 API
 - 모든 입력 검증은 과금보다 먼저 수행
 - 화질 등급은 스타일 합성과 같다 (services.result_quality):
   구매 크레딧으로 차감되면 1K, 그 외는 512px + 워터마크 (is_preview=true)
+
+비용 보호 (api/endpoints/synthesis.py 와 같은 순서·같은 응답):
+  입력 검증 → 일 예산 상한(비로그인만, 503) → 중복 요청 잠금(409) → 과금
+  → 합성 → record_api_calls(실제 Gemini 호출 수) → 실패 시 환불 → 잠금 해제
+- 결과 캐시는 없다 (스타일 합성과 다른 점). 잠금 키는 같은 사진 + 같은 컬러 +
+  같은 추가 요청의 해시라, 같은 요청을 연달아 누르면 두 번째는 과금 전에 409.
+- 구조화 로그의 api_calls 는 Gemini 를 실제로 시도한 이벤트에만 넣는다
+  (사전 거절 409/503/402/429 에는 넣지 않는다 - synthesis.py 와 같은 규약).
 """
 
+import hashlib
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
 from fastapi.responses import JSONResponse
@@ -30,6 +39,17 @@ from core.quota import (
     charge_synthesis_quota,
     client_ip_from_request,
     refunded_balance,
+)
+from core.synthesis_budget import (
+    budget_exceeded_response_body,
+    daily_budget_exceeded,
+    record_api_calls,
+)
+from core.synthesis_lock import (
+    NOOP_RELEASE,
+    acquire_synthesis_lock,
+    duplicate_request_response_body,
+    lock_subject,
 )
 from services.result_quality import (
     charged_tier,
@@ -62,6 +82,94 @@ def _get_service():
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+ENDPOINT_SYNTHESIZE = "hair-color/synthesize"
+ENDPOINT_BY_PERSONAL_COLOR = "hair-color/synthesize-by-personal-color"
+
+
+def _request_key(
+    image_data: bytes,
+    color_name: str,
+    color_hex: str,
+    additional_instructions: Optional[str] = None,
+) -> str:
+    """중복 요청 잠금용 키 (같은 사진 + 같은 컬러 + 같은 추가 요청).
+
+    스타일 합성의 cache_key 와 같은 방식(SHA-256, 부분마다 "|" 구분)이고,
+    "hair-color" 접두 부분으로 스타일 합성 키와 섞이지 않게 한다.
+    """
+    h = hashlib.sha256()
+    for part in (
+        b"hair-color",
+        image_data,
+        color_name.encode("utf-8"),
+        (color_hex or "").upper().lstrip("#").encode("utf-8"),
+        (additional_instructions or "").encode("utf-8"),
+    ):
+        h.update(part)
+        h.update(b"|")
+    return h.hexdigest()
+
+
+def _charge_mode(user_id: Optional[str], quota: Optional[dict] = None) -> str:
+    """구조화 로그의 mode 값 (credits=회원 과금, device=비로그인)"""
+    if quota and quota.get("mode"):
+        return str(quota["mode"])
+    return "credits" if user_id else "device"
+
+
+def _pre_charge_guard(
+    endpoint: str,
+    user_id: Optional[str],
+    device_id: Optional[str],
+    request_key: str,
+    start_time: float,
+):
+    """일 예산 상한 + 중복 요청 잠금 (과금 전에 호출한다).
+
+    Returns:
+        (rejection, release_lock)
+        - rejection 이 있으면 그대로 반환한다 (503 예산 / 409 중복). release 는 no-op
+        - 없으면 진행. release_lock() 은 호출부가 finally 에서 부른다
+    """
+    # 예산은 잠금보다 먼저 본다 (거절될 요청이 잠금을 잡으면 안 된다). 회원은 전원 통과
+    if user_id is None and daily_budget_exceeded(endpoint=endpoint):
+        log_structured(
+            "hair_color_synthesis_failed",
+            {
+                "endpoint": endpoint,
+                "mode": _charge_mode(user_id),
+                "reason": "daily_budget_exceeded",
+                "status_code": 503,
+                "processing_time": round(time.time() - start_time, 2),
+                "authenticated": False,
+            },
+        )
+        return (
+            JSONResponse(status_code=503, content=budget_exceeded_response_body()),
+            NOOP_RELEASE,
+        )
+
+    acquired, release_lock = acquire_synthesis_lock(
+        lock_subject(user_id, device_id), request_key, endpoint=endpoint
+    )
+    if not acquired:
+        log_structured(
+            "hair_color_synthesis_failed",
+            {
+                "endpoint": endpoint,
+                "mode": _charge_mode(user_id),
+                "reason": "duplicate_in_flight",
+                "status_code": 409,
+                "processing_time": round(time.time() - start_time, 2),
+                "authenticated": user_id is not None,
+            },
+        )
+        return (
+            JSONResponse(status_code=409, content=duplicate_request_response_body()),
+            NOOP_RELEASE,
+        )
+    return None, release_lock
 
 
 # ========== Response Models ==========
@@ -253,8 +361,13 @@ async def synthesize_hair_color(
     - 처리 시간
 
     **Rate Limit:** 5 requests per minute
+
+    사전 거절: 503 daily_budget_exceeded (비로그인, 일 예산 상한) /
+    409 synthesis_in_progress (같은 요청 진행 중) - 둘 다 과금 전이다.
     """
     start_time = time.time()
+    # 잠금을 잡기 전에 빠져나가는 경로가 있으므로 기본값은 no-op
+    release_lock: Callable[[], None] = NOOP_RELEASE
 
     try:
         # ========== 1. 입력 검증 (과금 전에 수행) ==========
@@ -302,23 +415,37 @@ async def synthesize_hair_color(
                 color_hex = "#8B4513"  # Default brown if not found
                 logger.warning(f"컬러 미발견, 기본값 사용: {color_name} -> {color_hex}")
 
-        # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
+        # ========== 2. 일 예산 상한 + 중복 요청 잠금 (과금 전) ==========
+        rejection, release_lock = _pre_charge_guard(
+            ENDPOINT_SYNTHESIZE,
+            user_id,
+            device_id,
+            _request_key(image_data, color_name, color_hex, additional_instructions),
+            start_time,
+        )
+        if rejection is not None:
+            return rejection
+
+        # ========== 3. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
         quota_error, quota, refund = charge_synthesis_quota(
             user_id,
             device_id,
             client_ip_from_request(request),
-            endpoint="hair-color/synthesize",
+            endpoint=ENDPOINT_SYNTHESIZE,
         )
         if quota_error is not None:
             return quota_error
 
         tier = charged_tier(quota)
 
-        # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
+        # ========== 4. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
         try:
             log_structured(
                 "hair_color_synthesis_start",
                 {
+                    "endpoint": ENDPOINT_SYNTHESIZE,
+                    "mode": _charge_mode(user_id, quota),
+                    "tier": tier,
                     "color_name": color_name,
                     "color_hex": color_hex,
                     "file_size_kb": round(len(image_data) / 1024, 2),
@@ -332,6 +459,9 @@ async def synthesize_hair_color(
                 additional_instructions=additional_instructions,
                 image_size=image_size_for(tier),
             )
+            api_calls = result.get("api_calls", 0)
+            # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
+            record_api_calls(api_calls, endpoint=ENDPOINT_SYNTHESIZE)
             if result["success"]:
                 result["image_base64"], result["image_format"] = finalize_image(
                     result, tier
@@ -346,9 +476,13 @@ async def synthesize_hair_color(
             log_structured(
                 "hair_color_synthesis_success",
                 {
+                    "endpoint": ENDPOINT_SYNTHESIZE,
+                    "mode": _charge_mode(user_id, quota),
                     "color_name": color_name,
+                    "api_calls": api_calls,
                     "processing_time": processing_time,
                     "tier": tier,
+                    "authenticated": user_id is not None,
                 },
             )
 
@@ -368,7 +502,19 @@ async def synthesize_hair_color(
             refund()
             log_structured(
                 "hair_color_synthesis_failed",
-                {"color_name": color_name, "message": result["message"]},
+                {
+                    "endpoint": ENDPOINT_SYNTHESIZE,
+                    "mode": _charge_mode(user_id, quota),
+                    "color_name": color_name,
+                    "message": result["message"],
+                    "reason": "synthesis_rejected",
+                    "failure_reason": result.get("failure_reason"),
+                    "status_code": 422,
+                    "api_calls": api_calls,
+                    "processing_time": processing_time,
+                    "refunded": True,
+                    "authenticated": user_id is not None,
+                },
             )
 
             return JSONResponse(
@@ -403,6 +549,9 @@ async def synthesize_hair_color(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+    finally:
+        # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
+        release_lock()
 
 
 @router.post("/hair-color/synthesize-by-personal-color", tags=["hair_color"])
@@ -434,8 +583,11 @@ async def synthesize_recommended_color(
     - 적용된 컬러 정보
 
     **Rate Limit:** 5 requests per minute
+
+    사전 거절: /hair-color/synthesize 와 같다 (503 예산 / 409 중복, 과금 전).
     """
     start_time = time.time()
+    release_lock: Callable[[], None] = NOOP_RELEASE
 
     try:
         # ========== 1. 입력 검증 (과금 전에 수행) ==========
@@ -473,19 +625,30 @@ async def synthesize_recommended_color(
             f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}"
         )
 
-        # ========== 2. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
+        # ========== 2. 일 예산 상한 + 중복 요청 잠금 (과금 전) ==========
+        rejection, release_lock = _pre_charge_guard(
+            ENDPOINT_BY_PERSONAL_COLOR,
+            user_id,
+            device_id,
+            _request_key(image_data, selected_color.name, selected_color.hex),
+            start_time,
+        )
+        if rejection is not None:
+            return rejection
+
+        # ========== 3. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
         quota_error, quota, refund = charge_synthesis_quota(
             user_id,
             device_id,
             client_ip_from_request(request),
-            endpoint="hair-color/synthesize-by-personal-color",
+            endpoint=ENDPOINT_BY_PERSONAL_COLOR,
         )
         if quota_error is not None:
             return quota_error
 
         tier = charged_tier(quota)
 
-        # ========== 3. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
+        # ========== 4. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
         try:
             synthesis_result = service.synthesize_hair_color(
                 image_data=image_data,
@@ -493,6 +656,9 @@ async def synthesize_recommended_color(
                 color_hex=selected_color.hex,
                 image_size=image_size_for(tier),
             )
+            api_calls = synthesis_result.get("api_calls", 0)
+            # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
+            record_api_calls(api_calls, endpoint=ENDPOINT_BY_PERSONAL_COLOR)
             if synthesis_result["success"]:
                 (
                     synthesis_result["image_base64"],
@@ -505,6 +671,18 @@ async def synthesize_recommended_color(
         processing_time = round(time.time() - start_time, 2)
 
         if synthesis_result["success"]:
+            log_structured(
+                "hair_color_synthesis_success",
+                {
+                    "endpoint": ENDPOINT_BY_PERSONAL_COLOR,
+                    "mode": _charge_mode(user_id, quota),
+                    "color_name": selected_color.name,
+                    "api_calls": api_calls,
+                    "processing_time": processing_time,
+                    "tier": tier,
+                    "authenticated": user_id is not None,
+                },
+            )
             return {
                 "success": True,
                 "image_base64": synthesis_result["image_base64"],
@@ -524,6 +702,22 @@ async def synthesize_recommended_color(
             }
         else:
             refund()
+            log_structured(
+                "hair_color_synthesis_failed",
+                {
+                    "endpoint": ENDPOINT_BY_PERSONAL_COLOR,
+                    "mode": _charge_mode(user_id, quota),
+                    "color_name": selected_color.name,
+                    "message": synthesis_result["message"],
+                    "reason": "synthesis_rejected",
+                    "failure_reason": synthesis_result.get("failure_reason"),
+                    "status_code": 422,
+                    "api_calls": api_calls,
+                    "processing_time": processing_time,
+                    "refunded": True,
+                    "authenticated": user_id is not None,
+                },
+            )
             return JSONResponse(
                 status_code=422,
                 content={
@@ -555,3 +749,6 @@ async def synthesize_recommended_color(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
         )
+    finally:
+        # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
+        release_lock()

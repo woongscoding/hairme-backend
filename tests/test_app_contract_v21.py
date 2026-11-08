@@ -113,10 +113,18 @@ def _hair_color_service():
 def _hair_color_request(client, path, tier):
     quota = {"mode": "credits", "balance": 9, "tier": tier}
     service = _hair_color_service()
+    # 일 예산·중복 요청 잠금은 여기의 관심사가 아니다 (test_hair_color_safeguards 가 검증)
     with patch(
         "api.endpoints.hair_color.charge_synthesis_quota",
         return_value=(None, quota, lambda: None),
-    ), patch("api.endpoints.hair_color._get_service", return_value=service):
+    ), patch("api.endpoints.hair_color._get_service", return_value=service), patch(
+        "api.endpoints.hair_color.record_api_calls"
+    ), patch(
+        "api.endpoints.hair_color.daily_budget_exceeded", return_value=False
+    ), patch(
+        "api.endpoints.hair_color.acquire_synthesis_lock",
+        return_value=(True, lambda: None),
+    ):
         if path == "/api/hair-color/synthesize":
             data = {"color_name": "밀크브라운"}
         else:
