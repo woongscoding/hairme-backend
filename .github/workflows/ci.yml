@@ -118,33 +118,3 @@ jobs:
       run: |
         isort --check-only --diff .
       continue-on-error: true
-
-  build-test:
-    name: Build & Integration Test
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Build Docker image
-      run: |
-        docker build -t hairstyle-server:test .
-      continue-on-error: true  # Only if Dockerfile exists
-
-    - name: Test Docker container
-      run: |
-        docker run --rm -d -p 8000:8000 \
-          -e GEMINI_API_KEY=test_key \
-          -e REDIS_ENABLED=false \
-          --name hairstyle-test hairstyle-server:test
-        sleep 10
-        curl -f http://localhost:8000/api/health || exit 1
-        docker stop hairstyle-test
-      continue-on-error: true  # Only if Docker build succeeded

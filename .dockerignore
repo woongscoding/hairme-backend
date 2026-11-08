@@ -54,7 +54,6 @@ mypy.ini
 
 # Documentation (not needed in runtime)
 *.md
-!data/rag/knowledge/*.md
 docs/
 
 # Development scripts (not needed in production)
@@ -71,9 +70,8 @@ scripts/validate_*.py
 scripts/manual_*.py
 scripts/reset_*.py
 
-# Lambda trainer/evaluator (separate deployment)
+# Lambda trainer (separate deployment)
 lambda_trainer/
-lambda_evaluator/
 
 # Local database
 *.db
@@ -101,7 +99,6 @@ evaluation/
 *.json
 !data_source/hairstyle_gender.json
 !data_source/style_characteristics.json
-!data_source/valid_hairstyles.json
 !data_source/trending_hairstyles.json
 !data_source/style_images/styles.json
 !data_source/style_images/image_manifest.json
