@@ -11,18 +11,16 @@ NO PyTorch - Fast cold start (MediaPipe 도 import 하지 않는다. requirement
 """
 
 import os
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from fastapi import Request
 
 from config.settings import settings
-from core.logging import logger, log_structured
-from core.monitoring import init_sentry
-from core.rate_limit import rate_limit_exceeded_handler
+from core.app_factory import (  # noqa: F401 - 테스트가 main_beauty._docs_kwargs 참조
+    create_app,
+    create_mangum_handler,
+    docs_kwargs as _docs_kwargs,
+    init_core_services,
+)
+from core.logging import logger
 
 # Lambda type identifier
 LAMBDA_TYPE = os.environ.get("LAMBDA_TYPE", "beauty")
@@ -35,143 +33,24 @@ from api.endpoints.usage import router as usage_router
 # Lambda initialization flag
 _lambda_initialized = False
 
-
-# ========== Initialize Sentry (if configured) ==========
-sentry_enabled = init_sentry()
-if sentry_enabled:
-    logger.info("Sentry error tracking enabled")
-
-
-# ========== Rate Limiter Initialization ==========
-limiter = Limiter(key_func=get_remote_address)
-
 # ========== Service Startup Status Tracking ==========
 # "gemini" = GEMINI_API_KEY 설정됨 (google-genai Client 는 호출 시점에 생성)
 startup_status = {"gemini": False}
 
 
-# ========== FastAPI App Initialization ==========
-def _docs_kwargs(environment: str) -> dict:
-    """Interactive API docs are disabled in production."""
-    if environment == "production":
-        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
-    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
-
-
-app = FastAPI(
+# ========== FastAPI App ==========
+# Sentry·문서 노출·한국어 429·TrustedHost/CORS/업로드 제한/보안 헤더는 공통 factory 담당
+app = create_app(
     title="BeautyMe Beauty API",
     description="Hair Color Recommendation + Synthesis (Lightweight)",
     version="1.0.0",
-    **_docs_kwargs(settings.ENVIRONMENT),
 )
-
-# Attach limiter to app state
-app.state.limiter = limiter
-# 메인 Lambda(main.py)와 같은 한국어 429 본문 (slowapi 기본 핸들러는 영어 + 제한 수치 노출)
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-
-
-# ========== Trusted Host Middleware ==========
-allowed_hosts = ["*"]
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
-
-
-# ========== CORS Middleware ==========
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
-)
-
-
-# ========== File Size Limit Middleware ==========
-# NOTE: registered BEFORE add_security_headers so the security headers
-# middleware wraps it (later registrations run *outside* earlier ones).
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.middleware("http")
-async def limit_upload_size(request: Request, call_next):
-    """Limit file upload size to prevent DoS attacks"""
-    if request.method == "POST":
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                declared_size = int(content_length)
-            except (TypeError, ValueError):
-                declared_size = 0
-
-            if declared_size > MAX_FILE_SIZE:
-                logger.warning(
-                    f"File too large: {declared_size} bytes (max: {MAX_FILE_SIZE})"
-                )
-                # HTTPException raised inside http middleware is not handled by
-                # ExceptionMiddleware, so it would surface as a plain 500.
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "detail": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
-                    },
-                )
-    return await call_next(request)
-
-
-# ========== Security Headers Middleware ==========
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    """Add security headers to all responses"""
-    response = await call_next(request)
-
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "img-src 'self' data: https:; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "font-src 'self'; "
-        "connect-src 'self'; "
-        "frame-ancestors 'none';"
-    )
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-
-    if request.url.scheme == "https" or settings.ENVIRONMENT == "production":
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
-
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
-    )
-
-    if "Server" in response.headers:
-        del response.headers["Server"]
-
-    return response
 
 
 # ========== Core Service Initialization (shared) ==========
 def _init_core_services(strict_db: bool = False) -> None:
-    """Gemini 키 확인 / DynamoDB 초기화 (로컬 uvicorn startup 과 Lambda 공용)"""
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY is not set!")
-        raise RuntimeError("GEMINI_API_KEY environment variable is required")
-
-    startup_status["gemini"] = True
-    logger.info("Gemini API key configured")
-
-    try:
-        from database.dynamodb_connection import init_dynamodb
-
-        init_dynamodb()
-        logger.info("Database initialized")
-    except Exception as e:
-        if strict_db:
-            raise
-        logger.warning(f"Database initialization failed: {str(e)}")
+    """Gemini 키 확인 / DynamoDB 초기화 (startup 이벤트와 Lambda 초기화 공용)"""
+    init_core_services(startup_status, strict_db=strict_db)
 
 
 # ========== Lambda Initialization Helper ==========
@@ -261,19 +140,8 @@ async def health_check():
 
 
 # ========== Lambda Handler ==========
-# lifespan="off": Mangum 은 invocation 마다 LifespanCycle 을 생성하므로
-# lifespan="on" 이면 startup 이벤트가 매 요청마다 재실행된다.
-# Lambda 초기화는 lambda_init_middleware → ensure_lambda_initialization() 담당.
-MANGUM_LIFESPAN = "off"
-
-try:
-    from mangum import Mangum
-
-    handler = Mangum(app, lifespan=MANGUM_LIFESPAN)
-    logger.info(f"Beauty Lambda handler initialized (lifespan={MANGUM_LIFESPAN})")
-except ImportError:
-    logger.warning("Mangum not installed - Lambda handler not available")
-    handler = None
+# lifespan="off" (core.app_factory 참고). Lambda 초기화는 lambda_init_middleware 담당.
+handler = create_mangum_handler(app, "Beauty Lambda")
 
 
 # ========== Main Entry Point ==========

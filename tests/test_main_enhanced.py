@@ -213,19 +213,16 @@ class TestConstants:
 class TestSentryInitialization:
     """Test Sentry initialization"""
 
-    @patch("main.init_sentry")
+    @patch("core.app_factory.init_sentry")
     def test_sentry_initialization_called(self, mock_init_sentry):
-        """Test that Sentry initialization is called"""
+        """앱 생성(core.app_factory.create_app) 시 Sentry 초기화가 호출된다"""
         mock_init_sentry.return_value = True
 
-        # Re-import to trigger initialization
-        import importlib
-        import main
+        from core.app_factory import create_app
 
-        importlib.reload(main)
+        create_app(title="t", description="d", version="0")
 
-        # Sentry should be initialized
-        assert mock_init_sentry.called or True  # Module already loaded
+        mock_init_sentry.assert_called_once()
 
 
 class TestUploadSizeLimitIntegration:

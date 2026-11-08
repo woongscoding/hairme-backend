@@ -12,18 +12,20 @@ Features:
 import hmac
 import json
 import os
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+from fastapi import Request
 
 from config.settings import settings
+from core.app_factory import (  # noqa: F401 - 테스트가 main.<이름> 으로 참조
+    MANGUM_LIFESPAN,
+    MAX_FILE_SIZE,
+    add_security_headers,
+    create_app,
+    create_mangum_handler,
+    docs_kwargs as _docs_kwargs,
+    init_core_services,
+    limit_upload_size,
+)
 from core.logging import logger
-from core.monitoring import init_sentry
-from core.rate_limit import rate_limit_exceeded_handler
 
 # Lambda 환경 감지 - 무거운 import를 지연 로딩
 IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
@@ -46,18 +48,6 @@ from api.endpoints.fashion import router as fashion_router
 # Lambda initialization flag
 _lambda_initialized = False
 
-
-# ========== Initialize Sentry (if configured) ==========
-sentry_enabled = init_sentry()
-if sentry_enabled:
-    logger.info("✅ Sentry error tracking enabled")
-else:
-    logger.info("ℹ️  Sentry not configured - running without error tracking")
-
-
-# ========== Rate Limiter Initialization ==========
-limiter = Limiter(key_func=get_remote_address)
-
 # ========== Service Startup Status Tracking ==========
 # 필수 서비스(gemini)만 startup 시점에 기록한다. "gemini" = GEMINI_API_KEY 설정됨.
 # (Gemini 클라이언트는 google-genai Client 를 호출 시점에 만들기 때문에
@@ -67,176 +57,20 @@ limiter = Limiter(key_func=get_remote_address)
 startup_status = {"gemini": False}
 
 
-# ========== FastAPI App Initialization ==========
-def _docs_kwargs(environment: str) -> dict:
-    """
-    Interactive API docs are disabled in production.
-
-    Swagger UI / ReDoc / openapi.json expose the full internal API surface
-    (admin routes, request schemas), so they are only served outside production.
-    """
-    if environment == "production":
-        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
-    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
-
-
-app = FastAPI(
+# ========== FastAPI App ==========
+# Sentry·문서 노출·한국어 429·TrustedHost/CORS/업로드 제한/보안 헤더는 공통 factory 담당
+app = create_app(
     title=settings.APP_TITLE,
     description=settings.APP_DESCRIPTION,
     version=settings.APP_VERSION,
-    **_docs_kwargs(settings.ENVIRONMENT),
 )
-
-# Attach limiter to app state
-# 429 본문은 앱 화면에 그대로 노출되므로 slowapi 기본(영어) 핸들러를 쓰지 않는다.
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-
-
-# ========== Trusted Host Middleware ==========
-# Prevent Host Header Injection attacks
-allowed_hosts = ["*"]  # Default: allow all
-if settings.ENVIRONMENT == "production":
-    # Production: Allow all hosts (TrustedHostMiddleware causes issues with ALB health checks)
-    # TODO: Revisit this once we configure custom domain
-    allowed_hosts = ["*"]
-    logger.info(f"🔒 Trusted hosts: {allowed_hosts}")
-
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
-
-
-# ========== CORS Middleware ==========
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins_list,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
-)
-
-
-# ========== File Size Limit Middleware ==========
-# NOTE: registered BEFORE add_security_headers so that the security headers
-# middleware wraps it (later registrations run *outside* earlier ones).
-# Without this ordering the 413 response would bypass the security headers.
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.middleware("http")
-async def limit_upload_size(request: Request, call_next):
-    """Limit file upload size to prevent DoS attacks"""
-    if request.method == "POST":
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                declared_size = int(content_length)
-            except (TypeError, ValueError):
-                declared_size = 0
-
-            if declared_size > MAX_FILE_SIZE:
-                logger.warning(
-                    f"🚫 File too large: {declared_size} bytes (max: {MAX_FILE_SIZE})"
-                )
-                # NOTE: HTTPException raised inside an http middleware is not
-                # handled by ExceptionMiddleware (it runs further in), so it
-                # would surface as a plain 500. Return a response instead.
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "detail": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"
-                    },
-                )
-    return await call_next(request)
-
-
-# ========== Security Headers Middleware ==========
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    """
-    Add security headers to all responses
-
-    Headers added:
-    - Content-Security-Policy: Prevent XSS attacks
-    - X-Frame-Options: Prevent clickjacking
-    - X-Content-Type-Options: Prevent MIME sniffing
-    - X-XSS-Protection: Enable browser XSS protection (legacy)
-    - Strict-Transport-Security: Force HTTPS (production only)
-    - Referrer-Policy: Control referrer information
-    - Permissions-Policy: Restrict browser features
-    """
-    response = await call_next(request)
-
-    # Content Security Policy
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; "
-        "img-src 'self' data: https:; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "font-src 'self'; "
-        "connect-src 'self'; "
-        "frame-ancestors 'none';"
-    )
-
-    # Prevent clickjacking
-    response.headers["X-Frame-Options"] = "DENY"
-
-    # Prevent MIME type sniffing
-    response.headers["X-Content-Type-Options"] = "nosniff"
-
-    # XSS Protection (legacy browsers)
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-
-    # HSTS - only in HTTPS/production environments
-    if request.url.scheme == "https" or settings.ENVIRONMENT == "production":
-        response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
-        )
-
-    # Referrer Policy
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-    # Permissions Policy (restrict browser features)
-    response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
-    )
-
-    # Remove server header for security (MutableHeaders doesn't have pop method)
-    # response.headers.pop("Server", None)  # Commented out - not supported
-    # Alternative: Override the Server header instead
-    if "Server" in response.headers:
-        del response.headers["Server"]
-
-    return response
+limiter = app.state.limiter
 
 
 # ========== Core Service Initialization (shared) ==========
 def _init_core_services(strict_db: bool = False) -> None:
-    """
-    Gemini 키 확인 / DynamoDB 초기화 (로컬 uvicorn startup 과 Lambda 공용).
-
-    Args:
-        strict_db: True 면 DB 초기화 실패를 그대로 전파한다 (로컬 개발용).
-                   False 면 WARNING 만 남기고 계속 진행한다 (Lambda 가용성 우선).
-    """
-    # ========== 1. Gemini API 키 검증 (필수) ==========
-    if not settings.GEMINI_API_KEY:
-        logger.error("❌ GEMINI_API_KEY is not set!")
-        raise RuntimeError("GEMINI_API_KEY environment variable is required")
-
-    startup_status["gemini"] = True
-    logger.info("✅ Gemini API 키 확인 완료")
-
-    # ========== 2. Database ==========
-    try:
-        from database.dynamodb_connection import init_dynamodb
-
-        logger.info("🔄 Initializing DynamoDB connection...")
-        init_dynamodb()
-        logger.info("✅ Database initialized")
-    except Exception as e:
-        if strict_db:
-            raise
-        logger.warning(f"⚠️ Database initialization failed: {str(e)}")
+    """Gemini 키 확인 / DynamoDB 초기화 (startup 이벤트와 Lambda 초기화 공용)"""
+    init_core_services(startup_status, strict_db=strict_db)
 
 
 # ========== Lambda Initialization Helper ==========
@@ -498,22 +332,8 @@ def warm_up() -> dict:
 
 
 # ========== Lambda Handler ==========
-# For AWS Lambda deployment using Mangum
-#
-# lifespan="off": Mangum 은 invocation 마다 LifespanCycle 을 새로 만들기 때문에
-# lifespan="on" 이면 startup 이벤트(_init_core_services)가
-# 매 요청마다 재실행된다. Lambda 초기화는 ensure_lambda_initialization() 이
-# lambda_init_middleware 에서 컨테이너당 1회만 수행한다.
-MANGUM_LIFESPAN = "off"
-
-try:
-    from mangum import Mangum
-
-    _mangum_handler = Mangum(app, lifespan=MANGUM_LIFESPAN)
-    logger.info(f"✅ Lambda handler initialized (lifespan={MANGUM_LIFESPAN})")
-except ImportError:
-    logger.warning("⚠️ Mangum not installed - Lambda handler not available")
-    _mangum_handler = None
+# For AWS Lambda deployment using Mangum (lifespan="off" - core.app_factory 참고)
+_mangum_handler = create_mangum_handler(app, "Lambda")
 
 
 # ========== 배치 잡 (EventBridge 스케줄) ==========
