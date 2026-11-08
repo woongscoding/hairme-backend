@@ -39,7 +39,6 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -50,18 +49,9 @@ from core.quota import (
     QuotaResult,
     charge_synthesis_quota,
     client_ip_from_request,
-    refunded_balance,
 )
-from core.synthesis_budget import (
-    budget_exceeded_response_body,
-    daily_budget_exceeded,
-    record_api_calls,
-)
-from core.synthesis_lock import (
-    NOOP_RELEASE,
-    acquire_synthesis_lock,
-    duplicate_request_response_body,
-)
+from core.synthesis_budget import daily_budget_exceeded, record_api_calls
+from core.synthesis_lock import NOOP_RELEASE, acquire_synthesis_lock, lock_subject
 from core.upload_validation import (
     MAX_ADDITIONAL_INSTRUCTIONS_LENGTH,
     MAX_HAIRSTYLE_NAME_LENGTH,
@@ -91,12 +81,24 @@ from services.result_quality import (
     is_preview,
     result_quality,
 )
+from services.synthesis_pipeline import (
+    SynthesisPipeline,
+    internal_error,
+    invalid_file_format_response,
+    refund_on_error,
+)
 from services.usage_limit_service import get_usage_limit_service
 
 router = APIRouter()
 
 # Rate limiter - synthesis is expensive, so limit more strictly
 limiter = Limiter(key_func=get_remote_address)
+
+ENDPOINT_SYNTHESIZE = "synthesize"
+
+# 중복 요청 판정의 주체 (회원 "user:<id>" / 비로그인 "device:<id>").
+# 염색 합성과 같은 규칙이라 core.synthesis_lock 의 것을 그대로 쓴다.
+_lock_subject = lock_subject
 
 
 def _charge_quota(
@@ -119,6 +121,24 @@ def _charge_quota(
         endpoint=endpoint,
         credit_service_factory=get_credit_service,
         usage_service_factory=get_usage_limit_service,
+    )
+
+
+def _pipeline(user_id: Optional[str], start_time: float) -> SynthesisPipeline:
+    """이 요청의 공통 단계 (예산·잠금·호출 집계·실패 로그 - services.synthesis_pipeline).
+
+    예산/잠금/집계/로그 함수를 호출 시점에 이 모듈의 이름으로 넘긴다
+    (_charge_quota 와 같은 이유 - api.endpoints.synthesis.* patch 가 그대로 동작).
+    """
+    return SynthesisPipeline(
+        endpoint=ENDPOINT_SYNTHESIZE,
+        failed_event="synthesis_failed",
+        user_id=user_id,
+        start_time=start_time,
+        log=log_structured,
+        budget_exceeded=daily_budget_exceeded,
+        acquire_lock=acquire_synthesis_lock,
+        record_calls=record_api_calls,
     )
 
 
@@ -162,27 +182,6 @@ def _safe_disclosure() -> str:
     except Exception as e:
         logger.warning(f"대가성 문구 조회 실패 (무시): {str(e)}")
         return ""
-
-
-def _lock_subject(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
-    """중복 요청 판정의 주체. 회원은 user_id, 비로그인은 device_id.
-
-    잠금 키는 이 값을 해시해서 만들므로 원문이 저장소에 남지 않는다.
-    """
-    if user_id:
-        return f"user:{user_id}"
-    trimmed = (device_id or "").strip()
-    return f"device:{trimmed}" if trimmed else None
-
-
-def _charge_mode(user_id: Optional[str], quota: Optional[dict] = None) -> str:
-    """구조화 로그의 mode 값 (credits=회원 과금, device=비로그인 레거시).
-
-    캐시 히트는 과금 경로를 타지 않으므로 호출부에서 "cache" 를 직접 넣는다.
-    """
-    if quota and quota.get("mode"):
-        return str(quota["mode"])
-    return "credits" if user_id else "device"
 
 
 def _store_cached_result(
@@ -343,6 +342,7 @@ async def synthesize_hairstyle(
     # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
     release_lock: Callable[[], None] = NOOP_RELEASE
     signal = _SignalContext(analysis_id, rec_rank, hairstyle_id)
+    pipeline = _pipeline(user_id, start_time)
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -388,8 +388,8 @@ async def synthesize_hairstyle(
         log_structured(
             "synthesis_start",
             {
-                "endpoint": "synthesize",
-                "mode": _charge_mode(user_id),
+                "endpoint": ENDPOINT_SYNTHESIZE,
+                "mode": pipeline.mode(),
                 "tier": tier,
                 "cache_key": cache_key[:16],
                 "hairstyle_name": hairstyle_name,
@@ -409,12 +409,12 @@ async def synthesize_hairstyle(
                 cached["image_format"],
                 hairstyle_name,
             )
-            cached_time = round(time.time() - start_time, 2)
+            cached_time = pipeline.elapsed()
 
             log_structured(
                 "synthesis_success",
                 {
-                    "endpoint": "synthesize",
+                    "endpoint": ENDPOINT_SYNTHESIZE,
                     "mode": "cache",
                     "cache_key": cache_key[:16],
                     "hairstyle_name": hairstyle_name,
@@ -446,68 +446,24 @@ async def synthesize_hairstyle(
                 "disclosure": _safe_disclosure(),
             }
 
-        # ===== 3. 일 예산 상한 (비로그인만 - 회원은 전원 통과) =====
-        # 잠금 획득보다 먼저 확인한다 (거절될 요청이 잠금을 잡으면 안 된다)
-        if user_id is None and daily_budget_exceeded(endpoint="synthesize"):
-            log_structured(
-                "synthesis_failed",
-                {
-                    "endpoint": "synthesize",
-                    "mode": _charge_mode(user_id),
-                    "cache_key": cache_key[:16],
-                    "reason": "daily_budget_exceeded",
-                    "status_code": 503,
-                    "processing_time": round(time.time() - start_time, 2),
-                    "authenticated": False,
-                },
-            )
-            return JSONResponse(
-                status_code=503, content=budget_exceeded_response_body()
-            )
-
-        # ===== 4. 중복 요청 잠금 (과금보다 먼저 - 거절된 요청은 과금되면 안 된다) =====
-        acquired, release_lock = acquire_synthesis_lock(
-            _lock_subject(user_id, device_id),
-            cache_key,
-            endpoint="synthesize",
+        # ===== 3~4. 일 예산 상한(비로그인만, 503) + 중복 요청 잠금(409) =====
+        # 둘 다 과금보다 먼저 - 거절된 요청은 과금되면 안 된다 (환불할 것도 없다)
+        log_key = {"cache_key": cache_key[:16]}
+        rejection, release_lock = pipeline.pre_charge_guard(
+            device_id, cache_key, log_fields=log_key
         )
-        if not acquired:
-            log_structured(
-                "synthesis_failed",
-                {
-                    "endpoint": "synthesize",
-                    "mode": _charge_mode(user_id),
-                    "cache_key": cache_key[:16],
-                    "reason": "duplicate_in_flight",
-                    "status_code": 409,
-                    "processing_time": round(time.time() - start_time, 2),
-                    "authenticated": user_id is not None,
-                },
-            )
-            return JSONResponse(
-                status_code=409, content=duplicate_request_response_body()
-            )
+        if rejection is not None:
+            return rejection
 
         # ===== 5. 과금 (크레딧 또는 레거시 일일 제한) =====
         quota_error, quota, refund = _charge_quota(
             user_id,
             device_id,
             client_ip_from_request(request),
-            endpoint="synthesize",
+            endpoint=ENDPOINT_SYNTHESIZE,
         )
         if quota_error is not None:
-            log_structured(
-                "synthesis_failed",
-                {
-                    "endpoint": "synthesize",
-                    "mode": _charge_mode(user_id),
-                    "cache_key": cache_key[:16],
-                    "reason": "quota_denied",
-                    "status_code": quota_error.status_code,
-                    "processing_time": round(time.time() - start_time, 2),
-                    "authenticated": user_id is not None,
-                },
-            )
+            pipeline.log_rejected("quota_denied", quota_error.status_code, log_key)
             return quota_error
 
         # 실제 등급은 차감 결과로 확정 (조회 후 유료분이 다른 요청에 먼저 쓰였을 수 있다)
@@ -516,7 +472,8 @@ async def synthesize_hairstyle(
             cache_key = storage.build_cache_key(*cache_parts, f"tier:{tier}".encode())
 
         # ===== 6. 합성 (과금 이후의 모든 실패 경로에서 환불 보장) =====
-        try:
+        # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파
+        with refund_on_error(refund):
             service = get_synthesis_service()
             result = service.synthesize_hairstyle(
                 image_data=image_data,
@@ -526,39 +483,21 @@ async def synthesize_hairstyle(
                 image_size=image_size_for(tier),
             )
 
-            processing_time = round(time.time() - start_time, 2)
-            api_calls = result.get("api_calls", 0)
+            processing_time = pipeline.elapsed()
             # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
-            record_api_calls(api_calls, endpoint="synthesize")
+            api_calls = pipeline.record_gemini_calls(result)
 
             if not result["success"]:
-                refund()
                 logger.warning(f"⚠️ 합성 실패: {result['message']}")
-                log_structured(
-                    "synthesis_failed",
-                    {
-                        "endpoint": "synthesize",
-                        "mode": _charge_mode(user_id, quota),
-                        "cache_key": cache_key[:16],
-                        "reason": "synthesis_rejected",
-                        "status_code": 422,
-                        "api_calls": api_calls,
-                        "processing_time": processing_time,
-                        "refunded": True,
-                        "authenticated": user_id is not None,
-                    },
-                )
-                return JSONResponse(
-                    status_code=422,
-                    content={
-                        "success": False,
-                        "error": "synthesis_rejected",
-                        "message": result["message"],
-                        "processing_time": processing_time,
-                        # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
-                        "refunded": True,
-                        "balance": refunded_balance(quota),
-                    },
+                # 환불 → 실패 로그 → 422 (환불 뒤 예외가 나도 _refund_once 로 1회)
+                return pipeline.reject_synthesis(
+                    result,
+                    quota,
+                    refund,
+                    api_calls,
+                    processing_time,
+                    # 등급 확정으로 cache_key 가 바뀌었을 수 있어 다시 만든다
+                    log_fields={"cache_key": cache_key[:16]},
                 )
 
             # 무료 등급은 워터마크 (캐시·마이페이지에도 워터마크본이 남는다)
@@ -573,17 +512,13 @@ async def synthesize_hairstyle(
                 image_format,
                 hairstyle_name,
             )
-        except Exception:
-            # Gemini 타임아웃/저장 예외 등 - 사용자에게 결과가 없으므로 환불 후 전파
-            refund()
-            raise
 
         logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
         log_structured(
             "synthesis_success",
             {
-                "endpoint": "synthesize",
-                "mode": _charge_mode(user_id, quota),
+                "endpoint": ENDPOINT_SYNTHESIZE,
+                "mode": pipeline.mode(quota),
                 "tier": tier,
                 "policy": (quota or {}).get("policy"),
                 "cache_key": cache_key[:16],
@@ -617,14 +552,7 @@ async def synthesize_hairstyle(
         }
 
     except InvalidFileFormatException as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": "invalid_file_format",
-                "message": str(e),
-            },
-        )
+        return invalid_file_format_response(e)
     except HTTPException:
         raise
     except Exception as e:
@@ -632,19 +560,16 @@ async def synthesize_hairstyle(
         log_structured(
             "synthesis_failed",
             {
-                "endpoint": "synthesize",
-                "mode": _charge_mode(user_id),
+                "endpoint": ENDPOINT_SYNTHESIZE,
+                "mode": pipeline.mode(),
                 "reason": "internal_error",
                 "status_code": 500,
                 "error_message": str(e),
-                "processing_time": round(time.time() - start_time, 2),
+                "processing_time": pipeline.elapsed(),
                 "authenticated": user_id is not None,
             },
         )
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
+        raise internal_error()
     finally:
         # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
         release_lock()

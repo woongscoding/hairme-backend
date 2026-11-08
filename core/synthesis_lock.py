@@ -61,8 +61,8 @@ LockResult = Tuple[bool, Callable[[], None]]
 def lock_subject(user_id: Optional[str], device_id: Optional[str]) -> Optional[str]:
     """중복 요청 판정의 주체. 회원은 "user:<id>", 비로그인은 "device:<id>".
 
-    api/endpoints/synthesis.py 의 _lock_subject 와 같은 규칙이다 (염색 합성이 쓴다.
-    tests/test_hair_color_safeguards.py 가 두 구현이 같은 값을 내는지 확인한다).
+    두 합성 엔드포인트가 services.synthesis_pipeline 을 통해 함께 쓴다
+    (api/endpoints/synthesis.py 의 _lock_subject 는 이 함수의 별칭).
     잠금 키는 이 값을 해시해서 만들므로 원문이 저장소에 남지 않는다.
     """
     if user_id:
