@@ -20,7 +20,6 @@ def fresh_ddb(monkeypatch):
     monkeypatch.setattr(ddb, "dynamodb_table", None)
     monkeypatch.setattr(ddb, "dynamodb_enabled", False)
     monkeypatch.setattr(ddb, "_last_init_attempt_at", None)
-    monkeypatch.setattr(ddb, "redis_client", None)
     yield ddb
 
 

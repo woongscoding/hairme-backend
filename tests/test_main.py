@@ -58,7 +58,6 @@ class TestHealthCheck:
                     "checks": {
                         "system": {"cpu": {"percent": 50}},
                         "dynamodb": {"status": "healthy"},
-                        "circuit_breaker": {"state": "closed"},
                         "gemini_api": {"status": "skipped"},
                     },
                     "check_duration_ms": 50,
@@ -89,7 +88,7 @@ class TestHealthCheck:
         # Verify checks sub-structure
         assert "system" in data["checks"]
         assert "dynamodb" in data["checks"]
-        assert "circuit_breaker" in data["checks"]
+        assert "circuit_breaker" not in data["checks"]
         assert "gemini_api" in data["checks"]
 
     def test_optional_services_report_lazy_load_state(self, client):
@@ -204,8 +203,8 @@ class TestEnsureLambdaInitialization:
             main._lambda_initialized = False
 
             with patch("main.IS_LAMBDA", True), patch(
-                "database.init_database", return_value=False
-            ) as mock_init_db, patch("core.cache.init_redis", return_value=False):
+                "database.dynamodb_connection.init_dynamodb", return_value=False
+            ) as mock_init_db:
                 main.ensure_lambda_initialization()
                 main.ensure_lambda_initialization()
                 main.ensure_lambda_initialization()
@@ -224,7 +223,7 @@ class TestEnsureLambdaInitialization:
             main._lambda_initialized = False
 
             with patch("main.IS_LAMBDA", False), patch(
-                "database.init_database"
+                "database.dynamodb_connection.init_dynamodb"
             ) as mock_init_db:
                 main.ensure_lambda_initialization()
 

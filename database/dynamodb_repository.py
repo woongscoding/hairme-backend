@@ -1,14 +1,8 @@
-"""DynamoDB implementation of AnalysisRepository"""
+"""DynamoDB analysis repository (maps an analysis result to a DynamoDB item)"""
 
 import math
 from typing import Optional, Dict, Any
-from database.repository import AnalysisRepository
-from database.dynamodb_connection import (
-    save_analysis,
-    get_analysis,
-    save_feedback,
-    get_feedback_stats,
-)
+from database.dynamodb_connection import save_analysis
 from core.logging import logger
 
 
@@ -32,8 +26,8 @@ def _optional_float(value: Any) -> Optional[float]:
     return number
 
 
-class DynamoDBAnalysisRepository(AnalysisRepository):
-    """DynamoDB implementation of AnalysisRepository"""
+class DynamoDBAnalysisRepository:
+    """Saves analysis results to DynamoDB"""
 
     def save_analysis(
         self,
@@ -149,17 +143,3 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
         except Exception as e:
             logger.error(f"❌ DynamoDB 저장 실패: {str(e)}")
             return None
-
-    def get_analysis(self, analysis_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve analysis result from DynamoDB"""
-        return get_analysis(analysis_id)
-
-    def save_feedback(
-        self, analysis_id: str, style_index: int, feedback: str, naver_clicked: bool
-    ) -> bool:
-        """Save user feedback to DynamoDB"""
-        return save_feedback(analysis_id, style_index, feedback, naver_clicked)
-
-    def get_feedback_statistics(self) -> Dict[str, Any]:
-        """Get aggregated feedback statistics from DynamoDB"""
-        return get_feedback_stats()

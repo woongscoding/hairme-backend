@@ -16,7 +16,6 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from services.circuit_breaker import get_circuit_breaker_status, reset_circuit_breakers
 from core.auth import verify_admin_api_key
 import logging
 
@@ -103,62 +102,6 @@ async def get_feedback_stats(
 
     except Exception as e:
         logger.error(f"❌ 피드백 통계 조회 실패: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
-
-
-@router.get("/admin/circuit-breaker-status")
-@limiter.limit("10/minute")
-async def get_circuit_status(
-    request: Request, api_key: str = Depends(verify_admin_api_key)
-):
-    """
-    Circuit Breaker 상태 조회
-
-    Returns:
-        - gemini_api: Gemini API Circuit Breaker 상태
-            - state: 현재 상태 (closed/open/half-open)
-            - fail_counter: 현재 실패 횟수
-            - fail_max: 최대 허용 실패 횟수
-            - timeout_duration: 타임아웃 시간 (초)
-            - is_open: Circuit이 Open 상태인지 여부
-            - is_closed: Circuit이 Closed 상태인지 여부
-            - is_half_open: Circuit이 Half-Open 상태인지 여부
-    """
-    try:
-        status = get_circuit_breaker_status()
-
-        logger.info(f"⚡ Circuit Breaker 상태 조회: {status}")
-
-        return {"success": True, **status}
-
-    except Exception as e:
-        logger.error(f"❌ Circuit Breaker 상태 조회 실패: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
-
-
-@router.post("/admin/circuit-breaker-reset")
-@limiter.limit("5/minute")
-async def reset_circuit(request: Request, api_key: str = Depends(verify_admin_api_key)):
-    """
-    Circuit Breaker 수동 리셋 (관리자 전용)
-
-    모든 Circuit Breaker를 강제로 닫힌 상태로 리셋합니다.
-    """
-    try:
-        reset_circuit_breakers()
-
-        logger.warning(f"⚠️ [ADMIN] Circuit Breaker 수동 리셋 실행됨")
-
-        return {"success": True, "message": "All circuit breakers have been reset"}
-
-    except Exception as e:
-        logger.error(f"❌ Circuit Breaker 리셋 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",

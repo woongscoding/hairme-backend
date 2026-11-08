@@ -48,7 +48,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 | **ECR** | Docker 컨테이너 레지스트리 |
 | **Mangum** | AWS Lambda용 ASGI 어댑터 |
 | **SlowAPI** | 엔드포인트별 Rate Limiting |
-| **pybreaker** | Circuit Breaker 패턴 (Gemini API 보호) |
 | **Sentry** | 에러 트래킹 및 성능 모니터링 |
 
 ### 비용 및 성능
@@ -87,10 +86,10 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 │                                                        │
 │  ┌─────────────────────────────────────────────────┐   │
 │  │              Services                           │   │
-│  │  FaceDetection  │ GeminiAnalysis │ PersonalColor│   │
+│  │  FaceDetection  │ BodyFashion    │ PersonalColor│   │
 │  │  HairColor │ HairstyleSynthesis │ BeautyConsult│   │
 │  │  HybridRecommender │ UsageLimit │ TrendingStyle│   │
-│  │  CircuitBreaker │ MLOps │ CreditService        │   │
+│  │  PlayBilling    │ MLOps │ CreditService        │   │
 │  └─────────────────────────────────────────────────┘   │
 └──────────┬─────────┬──────────┬──────────┬─────────────┘
            │         │          │          │
@@ -119,7 +118,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 
 ## 주요 기능
 
-- **얼굴 분석** - MediaPipe 478포인트 얼굴 메시 + Gemini Vision 하이브리드 분석
+- **얼굴 분석** - MediaPipe 478포인트 얼굴 메시 기반 분석
 - **퍼스널컬러 진단** - ITA 기반 피부톤 분석 (봄웜/여름쿨/가을웜/겨울쿨)
 - **AI 헤어스타일 추천** - PyTorch ML 모델 + Sentence Transformer 임베딩
 - **헤어스타일 합성** - Gemini 2.5 Flash Image로 헤어스타일 적용 미리보기
@@ -128,7 +127,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 - **피드백 시스템** - 좋아요/싫어요 추적 + MLOps 재학습 파이프라인
 - **사용량 관리** - 디바이스별 일일 합성 횟수 제한
 - **재학습 품질 게이트** - 홀드아웃 평가를 통과한 모델만 자동 승격
-- **Circuit Breaker** - Gemini API 장애 시 자동 폴백
 
 ---
 
@@ -204,8 +202,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 |--------|----------|------|
 | `GET` | `/api/admin/mlops-status` | MLOps 파이프라인 상태 |
 | `GET` | `/api/admin/feedback-stats` | DynamoDB 기반 피드백 통계 |
-| `GET` | `/api/admin/circuit-breaker-status` | Circuit Breaker 상태 |
-| `POST` | `/api/admin/circuit-breaker-reset` | Circuit Breaker 수동 리셋 |
 
 ---
 
@@ -215,8 +211,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 
 | 서비스 | 설명 | 실패 시 동작 |
 |--------|------|-------------|
-| **FaceDetectionService** | 얼굴 감지 (MediaPipe → Gemini 폴백) | `RuntimeError` - 서버 시작 불가 |
-| **GeminiAnalysisService** | Gemini Vision 기반 AI 분석 (Circuit Breaker 보호) | `RuntimeError` - 서버 시작 불가 |
+| **FaceDetectionService** | 얼굴 감지 (MediaPipe) | `RuntimeError` - 서버 시작 불가 |
 | **HybridRecommender** | PyTorch ML + Gemini 하이브리드 추천 엔진 | `RuntimeError` - 서버 시작 불가 |
 
 ### 핵심 비즈니스 서비스
@@ -238,11 +233,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 | **Sentence Transformer** | 스타일 임베딩 생성 | 경고 로그 - 임베딩 없이 진행 |
 | **ReasonGenerator** | 템플릿 기반 추천 이유 생성 | 경고 로그 - 기본 설명 사용 |
 | **Feedback Collector** | 사용자 피드백 저장 + S3 적재 | 경고 로그 - 피드백 비활성화 |
-
-**Circuit Breaker 보호:**
-- Gemini API 호출은 Circuit Breaker 패턴으로 보호 (pybreaker)
-- 5회 연속 실패 → Circuit OPEN (60초 타임아웃)
-- 상태 전환 시 로깅 (open/close/half-open)
 
 ---
 
@@ -278,7 +268,6 @@ GEMINI_API_KEY=your_gemini_api_key_here
 USE_DYNAMODB=true
 AWS_REGION=ap-northeast-2
 DYNAMODB_TABLE_NAME=hairme-analysis
-MODEL_NAME=gemini-2.5-flash
 ```
 
 ### 3. 의존성 설치
@@ -328,22 +317,21 @@ pip install pytest pytest-cov black flake8
 uvicorn main:app --reload --log-level debug
 ```
 
-#### 옵션 2: Docker
+#### 옵션 2: Lambda 로컬 테스트
 
-```bash
-docker build -t beautyme-backend:dev .
-
-docker run -p 8000:8000 \
-  -e GEMINI_API_KEY=$GEMINI_API_KEY \
-  -e USE_DYNAMODB=false \
-  beautyme-backend:dev
-```
-
-#### 옵션 3: Lambda 로컬 테스트
+Lambda 베이스 이미지에 내장된 Runtime Interface Emulator 로 컨테이너를 띄워
+배포 워크플로와 같은 `/api/health` 이벤트를 보낸다.
 
 ```bash
 docker build -f Dockerfile.lambda -t beautyme-lambda:local .
-./scripts/test_lambda_local.sh --verbose
+docker run --rm -p 9000:8080 \
+  -e GEMINI_API_KEY=$GEMINI_API_KEY \
+  -e USE_DYNAMODB=false \
+  beautyme-lambda:local
+
+# 다른 터미널에서
+curl -s http://localhost:9000/2015-03-31/functions/function/invocations \
+  -d '{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1"}},"rawPath":"/api/health","headers":{}}'
 ```
 
 ### 테스트 실행
@@ -436,9 +424,9 @@ docker tag hairme-lambda-proxy:latest \
 docker push \
   <account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/hairme-lambda-proxy:latest
 
-# 3. Lambda 함수 업데이트
+# 3. Lambda 함수 업데이트 (함수 이름은 hairme-analyze, hairme-lambda-proxy 는 ECR 저장소 이름)
 aws lambda update-function-code \
-  --function-name hairme-lambda-proxy \
+  --function-name hairme-analyze \
   --image-uri <account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/hairme-lambda-proxy:latest \
   --region ap-northeast-2
 ```
@@ -448,14 +436,14 @@ aws lambda update-function-code \
 ```bash
 # Lambda 함수 상태 확인
 aws lambda get-function \
-  --function-name hairme-lambda-proxy \
+  --function-name hairme-analyze \
   --region ap-northeast-2
 
 # 헬스 체크
 curl https://<function-url>/api/health
 
 # 로그 모니터링
-aws logs tail /aws/lambda/hairme-lambda-proxy --follow
+aws logs tail /aws/lambda/hairme-analyze --follow
 ```
 
 ---
@@ -533,7 +521,6 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow
 | `USE_DYNAMODB` | DynamoDB 사용 여부 | `false` |
 | `AWS_REGION` | AWS 리전 | `ap-northeast-2` |
 | `DYNAMODB_TABLE_NAME` | 분석 결과 테이블명 | `hairme-analysis` |
-| `MODEL_NAME` | Gemini 모델명 | `gemini-2.5-flash` |
 
 ### 사용량 관리
 
@@ -583,8 +570,6 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
 | `ALLOWED_ORIGINS` | CORS 허용 출처 (쉼표 구분) | `http://localhost:3000` |
-| `REDIS_URL` | Redis 캐시 URL | `None` |
-| `CACHE_TTL` | 캐시 TTL (초) | `86400` |
 
 ---
 
@@ -637,7 +622,7 @@ aws logs tail /aws/lambda/hairme-lambda-proxy --follow
 ```bash
 # 옵션 1: Provisioned Concurrency 사용 (비용 발생)
 aws lambda put-provisioned-concurrency-config \
-  --function-name hairme-lambda-proxy \
+  --function-name hairme-analyze \
   --provisioned-concurrent-executions 1
 
 # 옵션 2: 콜드 스타트 허용 (대부분의 요청은 웜 상태)
@@ -664,20 +649,16 @@ aws dynamodb describe-table \
 
 #### 3. Gemini API 오류
 
-**증상:** `Gemini API call failed` 또는 Circuit Breaker OPEN
+**증상:** 합성/염색 요청이 Gemini 오류로 실패
 
 **해결:**
 ```bash
 # 1. API 키 설정 확인
 echo $GEMINI_API_KEY
 
-# 2. Circuit Breaker 상태 확인 (Admin API)
-curl -H "X-Admin-API-Key: $ADMIN_API_KEY" \
-  http://localhost:8000/api/admin/circuit-breaker-status
-
-# 3. Circuit Breaker 수동 리셋
-curl -X POST -H "X-Admin-API-Key: $ADMIN_API_KEY" \
-  http://localhost:8000/api/admin/circuit-breaker-reset
+# 2. deep 헬스 체크 (이미지 모델 메타데이터 조회로 키·모델 접근 확인, Admin API Key 필요)
+curl -H "X-API-Key: $ADMIN_API_KEY" \
+  "http://localhost:8000/api/health?deep=true"
 ```
 
 #### 4. MediaPipe Import 오류
@@ -709,7 +690,7 @@ export LOG_LEVEL=DEBUG
 python -m uvicorn main:app --log-level debug
 
 # CloudWatch 로그 확인 (Lambda)
-aws logs tail /aws/lambda/hairme-lambda-proxy --follow --filter-pattern "ERROR"
+aws logs tail /aws/lambda/hairme-analyze --follow --filter-pattern "ERROR"
 ```
 
 ---

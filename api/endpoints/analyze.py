@@ -21,7 +21,7 @@ from core.exceptions import (
     MultipleFacesException,
     InvalidFileFormatException,
 )
-from core.cache import calculate_image_hash, get_cached_result, save_to_cache
+from core.hashing import calculate_image_hash
 from core.jwt_auth import get_optional_user_id
 from core.upload_validation import validate_file_extension, validate_image_upload
 from services.rec_exploration import EXPERIMENT_ID
@@ -50,9 +50,7 @@ def save_to_database(
     gender: Optional[str] = None,
 ) -> Optional[Union[int, str]]:
     """
-    Save analysis result to database using Repository pattern
-
-    DynamoDB is the only backend.
+    Save analysis result to DynamoDB
 
     Args:
         image_hash: SHA256 hash of the image
@@ -66,10 +64,10 @@ def save_to_database(
     Returns:
         Analysis ID (UUID string) if successful, None otherwise
     """
-    from database.repository import get_repository
+    from database.dynamodb_repository import DynamoDBAnalysisRepository
 
     try:
-        repo = get_repository()
+        repo = DynamoDBAnalysisRepository()
         analysis_id = repo.save_analysis(
             image_hash=image_hash,
             analysis_result=analysis_result,
@@ -142,18 +140,6 @@ async def analyze_face(
                 "method": "ml_only",
             },
         )
-
-        # Check cache
-        cached_result = get_cached_result(image_hash)
-        if cached_result:
-            total_time = round(time.time() - start_time, 2)
-            return {
-                "success": True,
-                "data": cached_result,
-                "processing_time": total_time,
-                "cached": True,
-                "method": "ml",
-            }
 
         # Face detection using MediaPipe
         face_detection_start = time.time()
@@ -235,9 +221,6 @@ async def analyze_face(
                 gender=gender,
                 base_url=str(request.base_url),
             )
-
-        # Cache result
-        save_to_cache(image_hash, analysis_result)
 
         # Save to database
         total_time = round(time.time() - start_time, 2)

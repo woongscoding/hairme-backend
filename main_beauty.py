@@ -48,7 +48,8 @@ if sentry_enabled:
 limiter = Limiter(key_func=get_remote_address)
 
 # ========== Service Startup Status Tracking ==========
-startup_status = {"mediapipe": False, "gemini": False}
+# "gemini" = GEMINI_API_KEY 설정됨 (google-genai Client 는 호출 시점에 생성)
+startup_status = {"gemini": False}
 
 
 # ========== FastAPI App Initialization ==========
@@ -156,32 +157,23 @@ async def add_security_headers(request: Request, call_next):
 
 # ========== Core Service Initialization (shared) ==========
 def _init_core_services(strict_db: bool = False) -> None:
-    """Gemini / Database / Cache 초기화 (로컬 uvicorn startup 과 Lambda 공용)"""
+    """Gemini 키 확인 / DynamoDB 초기화 (로컬 uvicorn startup 과 Lambda 공용)"""
     if not settings.GEMINI_API_KEY:
         logger.error("GEMINI_API_KEY is not set!")
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
-    try:
-        import google.generativeai as genai
-
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        startup_status["gemini"] = True
-        logger.info("Gemini API configured")
-    except Exception as e:
-        logger.error(f"Gemini API setup failed: {str(e)}")
-        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
+    startup_status["gemini"] = True
+    logger.info("Gemini API key configured")
 
     try:
-        from database import init_database
-        from core.cache import init_redis
+        from database.dynamodb_connection import init_dynamodb
 
-        init_database()
-        init_redis()
-        logger.info("Database and cache initialized")
+        init_dynamodb()
+        logger.info("Database initialized")
     except Exception as e:
         if strict_db:
             raise
-        logger.warning(f"Database/cache initialization failed: {str(e)}")
+        logger.warning(f"Database initialization failed: {str(e)}")
 
 
 # ========== Lambda Initialization Helper ==========

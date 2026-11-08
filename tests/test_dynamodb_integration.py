@@ -109,7 +109,7 @@ def dynamodb_connection():
 
     과거에는 모듈 import 시점에 os.environ["USE_DYNAMODB"]="true" 를 설정했는데,
     수집(collection) 단계에서 실행되므로 세션 전체 환경을 오염시켜
-    다른 테스트 모듈(TestClient startup -> init_database)까지 DynamoDB 분기를
+    다른 테스트 모듈(TestClient startup -> init_dynamodb)까지 DynamoDB 분기를
     타게 만들었다. 여기서는 fixture 안에서만 환경을 바꾸고, 모듈 전역
     (dynamodb_resource/table/enabled)도 원래 값으로 되돌린다.
 

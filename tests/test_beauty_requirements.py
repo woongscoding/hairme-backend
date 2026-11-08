@@ -22,13 +22,10 @@ DIST_TO_MODULE = {
     "pyjwt": "jwt",
     "pillow": "PIL",
     "opencv-python-headless": "cv2",
-    "google-generativeai": "google",
     "google-genai": "google",
     "python-multipart": "multipart",
     "sentry-sdk": "sentry_sdk",
-    "pyyaml": "yaml",
     "pydantic-settings": "pydantic_settings",
-    "scikit-learn": "sklearn",
 }
 
 # 선언된 패키지가 끌고 오는 것이 확실한 모듈 (직접 선언 불필요)
@@ -39,9 +36,8 @@ PROVIDED_BY_DECLARED = {
     "google": "google-genai",
     "absl": "mediapipe",
     "matplotlib": "mediapipe",
-    "grpc": "google-generativeai",
-    # config/secrets.py 의 requests: google-generativeai(google-api-core) 하위 의존성으로 이미지에 포함됨 (2026-09-10 이미지 확인)
-    "requests": "google-generativeai",
+    # config/secrets.py 의 requests: google-genai 의 필수 의존성 (requests>=2.28.1)
+    "requests": "google-genai",
 }
 
 OUR_TOP_LEVEL = {

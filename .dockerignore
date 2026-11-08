@@ -98,7 +98,6 @@ data_quality/
 evaluation/
 *.json
 !data_source/hairstyle_gender.json
-!data_source/style_characteristics.json
 !data_source/trending_hairstyles.json
 !data_source/style_images/styles.json
 !data_source/style_images/image_manifest.json

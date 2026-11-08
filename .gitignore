@@ -54,7 +54,6 @@ models/hairstyle_recommender_v2.pt/
 data_source/*.json
 !data_source/valid_hairstyles.json
 !data_source/trending_hairstyles.json
-!data_source/style_characteristics.json
 !data_source/excluded_styles.json
 data_source/*.npz
 !data_source/style_embeddings.npz

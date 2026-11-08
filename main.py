@@ -45,10 +45,6 @@ from api.endpoints.products import router as products_router
 from api.endpoints.events import router as events_router
 from api.endpoints.fashion import router as fashion_router
 
-# 무거운 모듈은 필요할 때 로드 (Lambda init 타임아웃 방지)
-genai = None
-MediaPipeFaceAnalyzer = None
-
 # Lambda initialization flag
 _lambda_initialized = False
 
@@ -65,16 +61,12 @@ else:
 limiter = Limiter(key_func=get_remote_address)
 
 # ========== Service Startup Status Tracking ==========
-# 필수 서비스(gemini)만 startup 시점에 기록한다.
-# mediapipe/ml_service 는 lazy 로딩이라 startup 플래그로는 실제 상태를 알 수 없고,
-# core/dependencies.py 가 로드 성공 시 True 로 갱신하는 용도로만 남겨둔다.
+# 필수 서비스(gemini)만 startup 시점에 기록한다. "gemini" = GEMINI_API_KEY 설정됨.
+# (Gemini 클라이언트는 google-genai Client 를 호출 시점에 만들기 때문에
+#  startup 에서 할 수 있는 검증은 키 존재 여부뿐이다.)
 # 헬스 응답의 optional 서비스 상태는 _optional_services_status() 가
 # 요청 시점에 lazy 싱글톤을 직접 조회해 만든다.
-startup_status = {
-    "mediapipe": False,
-    "gemini": False,
-    "ml_service": False,
-}
+startup_status = {"gemini": False}
 
 
 # ========== FastAPI App Initialization ==========
@@ -222,10 +214,10 @@ async def add_security_headers(request: Request, call_next):
 # ========== Core Service Initialization (shared) ==========
 def _init_core_services(strict_db: bool = False) -> None:
     """
-    Gemini / Database / Cache 초기화 (로컬 uvicorn startup 과 Lambda 공용).
+    Gemini 키 확인 / DynamoDB 초기화 (로컬 uvicorn startup 과 Lambda 공용).
 
     Args:
-        strict_db: True 면 DB/캐시 초기화 실패를 그대로 전파한다 (로컬 개발용).
+        strict_db: True 면 DB 초기화 실패를 그대로 전파한다 (로컬 개발용).
                    False 면 WARNING 만 남기고 계속 진행한다 (Lambda 가용성 우선).
     """
     # ========== 1. Gemini API 키 검증 (필수) ==========
@@ -233,28 +225,20 @@ def _init_core_services(strict_db: bool = False) -> None:
         logger.error("❌ GEMINI_API_KEY is not set!")
         raise RuntimeError("GEMINI_API_KEY environment variable is required")
 
+    startup_status["gemini"] = True
+    logger.info("✅ Gemini API 키 확인 완료")
+
+    # ========== 2. Database ==========
     try:
-        import google.generativeai as genai
+        from database.dynamodb_connection import init_dynamodb
 
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        startup_status["gemini"] = True
-        logger.info("✅ Gemini API 설정 완료")
-    except Exception as e:
-        logger.error(f"❌ Gemini API 설정 실패: {str(e)}")
-        raise RuntimeError(f"Gemini API initialization failed: {str(e)}")
-
-    # ========== 2. Database & Cache ==========
-    try:
-        from database import init_database  # DynamoDB 전용 (MySQL 경로 제거됨)
-        from core.cache import init_redis
-
-        init_database()
-        init_redis()
-        logger.info("✅ Database and cache initialized")
+        logger.info("🔄 Initializing DynamoDB connection...")
+        init_dynamodb()
+        logger.info("✅ Database initialized")
     except Exception as e:
         if strict_db:
             raise
-        logger.warning(f"⚠️ Database/cache initialization failed: {str(e)}")
+        logger.warning(f"⚠️ Database initialization failed: {str(e)}")
 
 
 # ========== Lambda Initialization Helper ==========
@@ -413,7 +397,7 @@ async def health_check(request: Request, deep: bool = False):
     Enhanced health check endpoint with actual service validation
 
     Query parameters:
-    - deep: If true, runs comprehensive checks including Gemini API ping (slower).
+    - deep: If true, also checks Gemini API access (models.get metadata lookup).
             Requires a valid X-API-Key (admin key). When the key is missing or
             invalid the request is silently downgraded to a shallow check
             (deep_denied=true) so external monitors keep working.
@@ -423,7 +407,6 @@ async def health_check(request: Request, deep: bool = False):
     - startup: Services initialized during startup
     - checks: Real-time connectivity checks
     - system: CPU, memory, disk metrics
-    - circuit_breaker: Circuit breaker state
     """
     from core.health_check import get_health_check_service
 
@@ -479,7 +462,7 @@ def warm_up() -> dict:
     """
     무거운 lazy loader 들을 미리 로드해 첫 요청 지연(콜드 스타트 후 8초)을 줄인다.
 
-    - ensure_lambda_initialization(): Gemini/DB/캐시 (컨테이너당 1회)
+    - ensure_lambda_initialization(): Gemini 키 확인/DB (컨테이너당 1회)
     - get_face_detection_service(): MediaPipe 로드
     - get_hybrid_service(): torch 모델 + S3 모델 다운로드
 
@@ -523,7 +506,7 @@ def warm_up() -> dict:
 # For AWS Lambda deployment using Mangum
 #
 # lifespan="off": Mangum 은 invocation 마다 LifespanCycle 을 새로 만들기 때문에
-# lifespan="on" 이면 startup 이벤트(init_database + genai.configure + init_redis)가
+# lifespan="on" 이면 startup 이벤트(_init_core_services)가
 # 매 요청마다 재실행된다. Lambda 초기화는 ensure_lambda_initialization() 이
 # lambda_init_middleware 에서 컨테이너당 1회만 수행한다.
 MANGUM_LIFESPAN = "off"

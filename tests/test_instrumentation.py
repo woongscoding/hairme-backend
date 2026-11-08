@@ -426,9 +426,7 @@ class TestFeedbackPersistence:
         table = MagicMock()
         with patch.object(db, "dynamodb_enabled", True), patch.object(
             db, "dynamodb_table", table
-        ), patch.object(db, "redis_client", None), patch.object(
-            db, "_save_feedback_to_s3"
-        ):
+        ), patch.object(db, "_save_feedback_to_s3"):
             ok = db.save_feedback(**kwargs)
         return ok, table.update_item.call_args.kwargs
 

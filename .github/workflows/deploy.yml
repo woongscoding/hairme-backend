@@ -220,7 +220,6 @@ jobs:
                DYNAMODB_USAGE_TABLE_NAME: "hairstyle_usage",
                ALLOWED_ORIGINS: $allowed_origins,
                LOG_LEVEL: "INFO",
-               MODEL_NAME: "gemini-2.5-flash",
                ENVIRONMENT: "production",
                PHOTO_S3_BUCKET: "hairme-photos-364042451408",
                MLOPS_ENABLED: "true",

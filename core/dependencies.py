@@ -1,8 +1,11 @@
-"""Dependency injection providers for FastAPI (ML-only mode)"""
+"""Dependency injection providers for FastAPI (ML-only mode)
 
-import os
+Each provider lazily creates a module-level singleton on first use.
+The module globals are also read (without triggering a load) by main.py's
+root and health endpoints to report whether a service is loaded yet.
+"""
+
 from typing import Optional, TYPE_CHECKING
-from functools import lru_cache
 
 if TYPE_CHECKING:
     from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
@@ -11,42 +14,13 @@ if TYPE_CHECKING:
 
 from core.logging import logger
 
-# ========== Global Service Instances (Initialized at Startup) ==========
+# ========== Lazy Singleton Instances ==========
 _mediapipe_analyzer: Optional["MediaPipeFaceAnalyzer"] = None
 _face_detection_service: Optional["FaceDetectionService"] = None
 _hybrid_service: Optional["MLRecommendationService"] = None
 
 
-# ========== Initialization Functions (Called from main.py) ==========
-def init_services(
-    mediapipe_analyzer: Optional["MediaPipeFaceAnalyzer"] = None,
-    hybrid_service: Optional["MLRecommendationService"] = None,
-) -> None:
-    """
-    Initialize global service instances (ML-only mode)
-
-    Called from main.py startup event
-
-    Args:
-        mediapipe_analyzer: MediaPipe face analyzer
-        hybrid_service: ML recommendation service
-    """
-    global _mediapipe_analyzer, _face_detection_service
-    global _hybrid_service
-
-    _mediapipe_analyzer = mediapipe_analyzer
-    _hybrid_service = hybrid_service
-
-    # Initialize services with dependencies (lazy import)
-    from services.face_detection_service import FaceDetectionService
-
-    _face_detection_service = FaceDetectionService(mediapipe_analyzer)
-
-    logger.info("✅ 의존성 주입 서비스 초기화 완료 (ML-only mode)")
-
-
 # ========== Dependency Providers (for FastAPI Depends) ==========
-@lru_cache()
 def get_mediapipe_analyzer() -> "MediaPipeFaceAnalyzer":
     """
     Get MediaPipeFaceAnalyzer instance (Lazy Initialization)
@@ -57,14 +31,9 @@ def get_mediapipe_analyzer() -> "MediaPipeFaceAnalyzer":
         from models.mediapipe_analyzer import MediaPipeFaceAnalyzer
 
         _mediapipe_analyzer = MediaPipeFaceAnalyzer()
-        # Update startup status
-        import main
-
-        main.startup_status["mediapipe"] = True
     return _mediapipe_analyzer
 
 
-@lru_cache()
 def get_face_detection_service() -> "FaceDetectionService":
     """
     Get FaceDetectionService instance (Lazy Initialization)
@@ -80,7 +49,6 @@ def get_face_detection_service() -> "FaceDetectionService":
     return _face_detection_service
 
 
-@lru_cache()
 def get_hybrid_service() -> "MLRecommendationService":
     """
     Get recommendation service instance (Lazy Initialization)
@@ -93,11 +61,6 @@ def get_hybrid_service() -> "MLRecommendationService":
             from services.hybrid_recommender import get_ml_recommendation_service
 
             _hybrid_service = get_ml_recommendation_service()
-
-            # Update startup status
-            import main
-
-            main.startup_status["ml_service"] = True
 
             logger.info("✅ MLRecommendationService initialized successfully")
         except Exception as e:

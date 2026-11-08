@@ -5,7 +5,6 @@ Provides comprehensive health checks for all critical services:
 - DynamoDB connectivity
 - Gemini API availability
 - System metrics (CPU, memory)
-- Circuit Breaker status
 """
 
 import logging
@@ -15,6 +14,9 @@ from datetime import datetime
 import psutil
 
 logger = logging.getLogger(__name__)
+
+# deep 헬스 체크의 Gemini 메타데이터 조회 HTTP 타임아웃 (초)
+GEMINI_HEALTH_TIMEOUT_SECONDS = 10
 
 
 class HealthCheckService:
@@ -82,26 +84,29 @@ class HealthCheckService:
 
     async def check_gemini_api(self) -> Dict[str, Any]:
         """
-        Check Gemini API availability with lightweight ping
+        Check Gemini API availability with a metadata lookup (no generation)
+
+        google-genai ``models.get`` 로 이미지 생성 모델의 메타데이터만 조회한다.
+        키 인증과 모델 접근 권한을 확인하며 토큰 과금이 없다.
 
         Returns:
-            Dict with status, latency, and model info
+            Dict with status and latency
         """
         from config.settings import settings
 
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
 
             start_time = time.time()
 
-            # Configure API
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-
-            # Use lightweight text generation (no image)
-            model = genai.GenerativeModel(settings.MODEL_NAME)
-
-            # Minimal request to test API connectivity
-            response = model.generate_content("test")
+            client = genai.Client(
+                api_key=settings.GEMINI_API_KEY,
+                http_options=types.HttpOptions(
+                    timeout=GEMINI_HEALTH_TIMEOUT_SECONDS * 1000
+                ),
+            )
+            client.models.get(model=settings.GEMINI_IMAGE_MODEL)
 
             latency_ms = round((time.time() - start_time) * 1000, 2)
 
@@ -168,33 +173,6 @@ class HealthCheckService:
 
             return {"status": "unavailable"}
 
-    def get_circuit_breaker_status(self) -> Dict[str, Any]:
-        """
-        Get Circuit Breaker status
-
-        Returns:
-            Dict with circuit breaker state and failure count
-        """
-        try:
-            from services.circuit_breaker import gemini_breaker
-
-            return {
-                "status": "healthy",
-                "state": str(gemini_breaker.current_state),
-                "fail_counter": gemini_breaker.fail_counter,
-                "fail_max": gemini_breaker.fail_max,
-                "last_failure": (
-                    str(gemini_breaker.last_failure_time)
-                    if hasattr(gemini_breaker, "last_failure_time")
-                    else None
-                ),
-            }
-
-        except Exception as e:
-            logger.error(f"❌ Circuit breaker status error: {str(e)}")
-
-            return {"status": "unavailable"}
-
     async def comprehensive_health_check(
         self, include_expensive_checks: bool = False
     ) -> Dict[str, Any]:
@@ -202,7 +180,7 @@ class HealthCheckService:
         Run comprehensive health check
 
         Args:
-            include_expensive_checks: If True, runs Gemini API check (adds ~1-2s)
+            include_expensive_checks: If True, runs Gemini API check (models.get, ~1s)
 
         Returns:
             Dict with all health check results
@@ -219,17 +197,14 @@ class HealthCheckService:
         # 1. System metrics (fast, always run)
         health_result["checks"]["system"] = self.get_system_metrics()
 
-        # 2. Circuit Breaker status (fast, always run)
-        health_result["checks"]["circuit_breaker"] = self.get_circuit_breaker_status()
-
-        # 3. DynamoDB check (moderate cost, always run)
+        # 2. DynamoDB check (moderate cost, always run)
         dynamodb_result = await self.check_dynamodb()
         health_result["checks"]["dynamodb"] = dynamodb_result
 
         if dynamodb_result["status"] == "unhealthy":
             health_result["status"] = "degraded"
 
-        # 4. Gemini API check (expensive, optional)
+        # 3. Gemini API check (expensive, optional)
         if include_expensive_checks:
             gemini_result = await self.check_gemini_api()
             health_result["checks"]["gemini_api"] = gemini_result

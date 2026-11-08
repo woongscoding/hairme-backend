@@ -3,7 +3,7 @@
 import os
 import logging
 from typing import Any, Dict, List, Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from config.secrets import get_secret_or_env, is_aws_environment
 
 logger = logging.getLogger(__name__)
@@ -17,10 +17,6 @@ class Settings(BaseSettings):
     ADMIN_API_KEY: Optional[str] = None  # For admin endpoints authentication
     OPENAI_API_KEY: Optional[str] = None  # LangGraph 챗봇 (임베딩 + LLM)
     TAVILY_API_KEY: Optional[str] = None  # 챗봇 web_search 노드
-
-    # Database Configuration (legacy MySQL - 더 이상 사용되지 않음, 하위 호환용 필드)
-    DATABASE_URL: Optional[str] = None
-    DB_PASSWORD: Optional[str] = None
 
     # DynamoDB Configuration
     # USE_DYNAMODB: 배포 호환용 플래그. DynamoDB가 유일한 백엔드이므로
@@ -194,19 +190,12 @@ class Settings(BaseSettings):
     DYNAMODB_AFFILIATE_CLICKS_TABLE_NAME: str = "hairme-affiliate-clicks"
 
     # MLOps Configuration
+    # 재학습 임계치/Trainer Lambda/SNS 토픽은 services/mlops 가 os.getenv 로 직접 읽는다.
     MLOPS_ENABLED: bool = False  # MLOps 파이프라인 활성화
-    MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷
-    MLOPS_RETRAIN_THRESHOLD: int = 100  # 재학습 트리거 피드백 수
-    MLOPS_TRAINER_LAMBDA: str = "hairme-model-trainer"  # Trainer Lambda 함수명
-    MLOPS_SNS_TOPIC_ARN: str = ""  # 알림용 SNS 토픽 (선택)
-
-    # Redis Configuration
-    REDIS_URL: Optional[str] = None
-    CACHE_TTL: int = 86400  # 24 hours in seconds
+    MLOPS_S3_BUCKET: str = "hairme-mlops"  # MLOps S3 버킷 (rec_engagement 가 읽음)
 
     # Security Settings
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated list
-    API_KEY: Optional[str] = None
 
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -218,7 +207,6 @@ class Settings(BaseSettings):
         ]
 
     # Gemini Model Configuration
-    MODEL_NAME: str = "gemini-2.5-flash"
     # 이미지 생성(합성/염색) 전용 모델.
     # gemini-3.1-flash-image 는 2026-10-06 지원 종료 예고(종료일 미정) → Nano Banana 2.1.
     # 11/06 비교(운영 프롬프트, 6장): 얼굴·구도 유지 개선, 장당 약 $0.067 → $0.036,
@@ -227,49 +215,6 @@ class Settings(BaseSettings):
     # Nano Banana 생각 수준 ("minimal" | "medium" ... , 빈 값이면 모델 기본값 medium).
     # 기본 medium 은 최대 27초까지 걸려 minimal 로 고정한다. low 는 이 모델이 거부한다.
     GEMINI_IMAGE_THINKING_LEVEL: str = "minimal"
-
-    # ML Model Paths
-    ML_MODEL_PATH: str = "models/final_model.pth"
-    ML_ENCODER_PATH: str = "models/encoders.pkl"
-
-    # ML Model Version Management
-    MODEL_ENVIRONMENT: str = (
-        "production"  # production, staging, or archive/vX_YYYY-MM-DD
-    )
-    MODEL_BASE_PATH: str = "models"
-
-    @property
-    def active_model_path(self) -> str:
-        """Get the active model path based on MODEL_ENVIRONMENT"""
-        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
-            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/model.pth"
-        elif self.MODEL_ENVIRONMENT.startswith("archive/"):
-            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/model.pt"
-        else:
-            # Fallback to legacy path
-            return self.ML_MODEL_PATH
-
-    @property
-    def active_encoder_path(self) -> str:
-        """Get the active encoder path based on MODEL_ENVIRONMENT"""
-        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
-            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/encoders.pkl"
-        else:
-            # Fallback to legacy path
-            return self.ML_ENCODER_PATH
-
-    @property
-    def model_metadata_path(self) -> Optional[str]:
-        """Get the metadata file path for the current model environment"""
-        if self.MODEL_ENVIRONMENT in ["production", "staging"]:
-            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/metadata.json"
-        elif self.MODEL_ENVIRONMENT.startswith("archive/"):
-            return f"{self.MODEL_BASE_PATH}/{self.MODEL_ENVIRONMENT}/metadata.json"
-        else:
-            return None
-
-    # Sentence Transformer Configuration
-    SENTENCE_TRANSFORMER_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
     # Logging Configuration
     LOG_LEVEL: str = "INFO"
@@ -285,15 +230,10 @@ class Settings(BaseSettings):
     )
     APP_VERSION: str = "23.0.0"
 
-    # Constants
-    CONFIDENCE_THRESHOLD_VERY_HIGH: float = 0.90
-    CONFIDENCE_THRESHOLD_HIGH: float = 0.85
-    CONFIDENCE_THRESHOLD_MEDIUM: float = 0.75
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # .env에 모르는 변수가 있어도 ValidationError 내지 않음
+    # .env에 모르는 변수가 있어도 ValidationError 내지 않음
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     def __init__(self, **kwargs: Any) -> None:
         """

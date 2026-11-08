@@ -1,8 +1,7 @@
 """
 DynamoDB connection and operations for HairMe Backend
 
-This module provides DynamoDB operations that are compatible with the existing
-MySQL-based interface, allowing seamless migration from RDS to DynamoDB.
+This module provides the DynamoDB operations used for analysis/feedback storage.
 
 Environment Variables:
     - AWS_REGION: AWS region for DynamoDB (default: ap-northeast-2)
@@ -53,11 +52,6 @@ try:
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
-
-try:
-    from core.cache import redis_client
-except ImportError:
-    redis_client = None
 
 from config.settings import settings
 from core.logging import logger, log_structured
@@ -230,9 +224,6 @@ def _get_table():
 def save_analysis(data: Dict[str, Any]) -> Optional[str]:
     """
     Save analysis result to DynamoDB
-
-    This function provides MySQL-compatible interface for saving analysis data.
-    Maps AnalysisHistory model fields to DynamoDB attributes.
 
     Args:
         data: Dictionary containing analysis data with keys:
@@ -524,14 +515,6 @@ def save_feedback(
             },
         )
 
-        # ========== Invalidate Statistics Cache ==========
-        if redis_client:
-            try:
-                redis_client.delete("feedback_stats")
-                logger.info("✅ 통계 캐시 무효화 완료")
-            except Exception as e:
-                logger.warning(f"⚠️ 캐시 무효화 실패: {str(e)}")
-
         # ========== MLOps: S3 피드백 저장 (학습용) ==========
         try:
             _save_feedback_to_s3(analysis_id, style_index, feedback)
@@ -646,23 +629,10 @@ def get_feedback_stats() -> Dict[str, Any]:
         }
 
     try:
-        # ========== Redis Cache Layer (5-minute TTL) ==========
-        # Reduces expensive scan() operations
-        cache_key = "feedback_stats"
-
-        if redis_client:
-            try:
-                cached_stats = redis_client.get(cache_key)
-                if cached_stats:
-                    logger.info("✅ 통계 캐시 히트 (DynamoDB scan 생략)")
-                    return json.loads(cached_stats)
-            except Exception as e:
-                logger.warning(f"⚠️ Redis 캐시 조회 실패: {str(e)}")
-
-        # ========== DynamoDB Scan (Cache Miss) ==========
+        # ========== DynamoDB Scan ==========
         # TODO (Long-term): Replace with DynamoDB Streams + Lambda for real-time aggregation
         # or use separate aggregate table (feedback-stats) to avoid full table scan
-        logger.info("🔍 통계 캐시 미스, DynamoDB scan 시작...")
+        logger.info("🔍 통계 조회: DynamoDB scan 시작...")
 
         response = table.scan()
         items = response.get("Items", [])
@@ -741,18 +711,6 @@ def get_feedback_stats() -> Dict[str, Any]:
             "dislike_counts": dislike_counts,
             "recent_feedbacks": recent_data,
         }
-
-        # ========== Save to Redis Cache (TTL: 5 minutes) ==========
-        if redis_client:
-            try:
-                redis_client.setex(
-                    cache_key,
-                    300,  # 5 minutes TTL
-                    json.dumps(result, ensure_ascii=False),
-                )
-                logger.info("✅ 통계 캐시 저장 완료 (TTL: 5분)")
-            except Exception as e:
-                logger.warning(f"⚠️ Redis 캐시 저장 실패: {str(e)}")
 
         return result
 

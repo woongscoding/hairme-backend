@@ -75,11 +75,8 @@ class TestAnalyzeEndpoint:
         app.dependency_overrides.pop(get_face_detection_service, None)
         app.dependency_overrides.pop(get_hybrid_service, None)
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
     @patch("api.endpoints.analyze.save_to_database", return_value=1)
-    def test_analyze_with_valid_image(
-        self, mock_save_db, mock_cache, client, sample_image_bytes
-    ):
+    def test_analyze_with_valid_image(self, mock_save_db, client, sample_image_bytes):
         """Test analysis with valid image"""
         files = {"file": ("test.jpg", sample_image_bytes, "image/jpeg")}
 
@@ -113,31 +110,7 @@ class TestAnalyzeEndpoint:
         # Should handle invalid format gracefully (InvalidFileFormatException -> 400)
         assert response.status_code in [400, 422, 500]
 
-    @patch("api.endpoints.analyze.get_cached_result")
-    def test_analyze_uses_cache_when_available(
-        self, mock_get_cache, client, sample_image_bytes
-    ):
-        """Test that analysis uses cached results when available"""
-        # Setup cache hit
-        cached_result = {
-            "analysis": {"face_shape": "계란형", "personal_color": "봄웜"},
-            "recommendations": [],
-        }
-        mock_get_cache.return_value = cached_result
-
-        files = {"file": ("test.jpg", sample_image_bytes, "image/jpeg")}
-        response = client.post("/api/analyze", files=files)
-
-        assert response.status_code == 200
-        data = response.json()
-        # When cache is hit, face_detector.detect_face should NOT be called
-        assert self.mock_face_detector.detect_face.call_count == 0
-        assert data.get("cached") is True
-
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
-    def test_analyze_handles_no_face_detected(
-        self, mock_cache, client, sample_image_bytes
-    ):
+    def test_analyze_handles_no_face_detected(self, client, sample_image_bytes):
         """Test handling when no face is detected"""
         # Override the face detector to return no face
         no_face_detector = _make_mock_face_detector(has_face=False)
@@ -149,10 +122,7 @@ class TestAnalyzeEndpoint:
         # Should return 400 (NoFaceDetectedException)
         assert response.status_code == 400
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
-    def test_analyze_handles_multiple_faces(
-        self, mock_cache, client, sample_image_bytes
-    ):
+    def test_analyze_handles_multiple_faces(self, client, sample_image_bytes):
         """Test handling when multiple faces are detected"""
         # Override the face detector to return multiple faces
         multi_face_detector = _make_mock_face_detector(has_face=True, face_count=2)
@@ -184,9 +154,8 @@ class TestImageProcessing:
         app.dependency_overrides.pop(get_face_detection_service, None)
         app.dependency_overrides.pop(get_hybrid_service, None)
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
     @patch("api.endpoints.analyze.save_to_database", return_value=1)
-    def test_accepts_jpg_images(self, mock_save_db, mock_cache, client):
+    def test_accepts_jpg_images(self, mock_save_db, client):
         """Test that JPG images are accepted"""
         img = Image.new("RGB", (640, 480), color="white")
         img_bytes = io.BytesIO()
@@ -199,9 +168,8 @@ class TestImageProcessing:
         # Should accept JPG
         assert response.status_code in [200, 500]  # 500 if services not initialized
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
     @patch("api.endpoints.analyze.save_to_database", return_value=1)
-    def test_accepts_png_images(self, mock_save_db, mock_cache, client):
+    def test_accepts_png_images(self, mock_save_db, client):
         """Test that PNG images are accepted"""
         img = Image.new("RGB", (640, 480), color="white")
         img_bytes = io.BytesIO()
@@ -214,9 +182,8 @@ class TestImageProcessing:
         # Should accept PNG
         assert response.status_code in [200, 500]
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
     @patch("api.endpoints.analyze.save_to_database", return_value=1)
-    def test_processes_large_images(self, mock_save_db, mock_cache, client):
+    def test_processes_large_images(self, mock_save_db, client):
         """Test processing of large images (should be resized)"""
         # Create large image
         img = Image.new("RGB", (3000, 4000), color="white")
@@ -247,10 +214,7 @@ class TestNoFaceWithRealDetectionService:
         app.dependency_overrides.pop(get_face_detection_service, None)
         app.dependency_overrides.pop(get_hybrid_service, None)
 
-    @patch("api.endpoints.analyze.get_cached_result", return_value=None)
-    def test_v1_no_face_is_400_without_gemini(
-        self, mock_cache, client, sample_image_bytes
-    ):
+    def test_v1_no_face_is_400_without_gemini(self, client, sample_image_bytes):
         fake_genai = MagicMock()
         with patch.dict(sys.modules, {"google.generativeai": fake_genai}):
             response = client.post(

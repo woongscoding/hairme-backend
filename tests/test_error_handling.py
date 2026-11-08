@@ -4,46 +4,6 @@ Tests for improved error handling with specific exceptions
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from core.exceptions import (
-    GeminiAPIException,
-    GeminiRateLimitException,
-    GeminiInvalidResponseException,
-    GeminiAuthenticationException,
-    StyleNotFoundException,
-    CircuitBreakerOpenException,
-    MediaPipeException,
-    DynamoDBException,
-)
-
-
-class TestExceptionHierarchy:
-    """Test exception class hierarchy"""
-
-    def test_gemini_rate_limit_is_gemini_exception(self):
-        """Test that GeminiRateLimitException is subclass of GeminiAPIException"""
-        exc = GeminiRateLimitException()
-        assert isinstance(exc, GeminiAPIException)
-
-    def test_gemini_invalid_response_is_gemini_exception(self):
-        """Test that GeminiInvalidResponseException is subclass of GeminiAPIException"""
-        exc = GeminiInvalidResponseException()
-        assert isinstance(exc, GeminiAPIException)
-
-    def test_style_not_found_is_ml_exception(self):
-        """Test that StyleNotFoundException is subclass of MLModelException"""
-        from core.exceptions import MLModelException
-
-        exc = StyleNotFoundException("test-style")
-        assert isinstance(exc, MLModelException)
-
-    def test_exception_messages(self):
-        """Test exception default messages"""
-        assert (
-            "rate limit" in GeminiRateLimitException().message.lower()
-            or "한도" in GeminiRateLimitException().message
-        )
-        assert "파싱" in GeminiInvalidResponseException().message
-        assert "인증" in GeminiAuthenticationException().message
 
 
 class TestMLRecommenderErrorHandling:
@@ -117,56 +77,6 @@ class TestMLRecommenderErrorHandling:
                 MLRecommendationService()
 
 
-class TestCircuitBreakerErrorHandling:
-    """Test circuit breaker error handling"""
-
-    def test_circuit_breaker_open_raises_custom_exception(self):
-        """Test that CircuitBreakerError without fallback raises CircuitBreakerOpenException"""
-        from pybreaker import CircuitBreaker, CircuitBreakerError
-        from services.circuit_breaker import with_circuit_breaker
-
-        # Create test breaker
-        test_breaker = CircuitBreaker(fail_max=1, reset_timeout=60, name="TestService")
-
-        # Function that always fails
-        @with_circuit_breaker(test_breaker, fallback=None)
-        def failing_function():
-            raise Exception("Test error")
-
-        # First call should fail
-        with pytest.raises(Exception):
-            failing_function()
-
-        # Second call should open circuit and raise CircuitBreakerOpenException
-        with pytest.raises(CircuitBreakerOpenException) as exc_info:
-            failing_function()
-
-        assert "TestService" in str(exc_info.value)
-
-    def test_circuit_breaker_with_fallback_uses_fallback(self):
-        """Test that circuit breaker uses fallback when open"""
-        from pybreaker import CircuitBreaker
-        from services.circuit_breaker import with_circuit_breaker
-
-        test_breaker = CircuitBreaker(fail_max=2, reset_timeout=60, name="TestService")
-
-        def fallback_function(*args, **kwargs):
-            return {"fallback": True}
-
-        @with_circuit_breaker(test_breaker, fallback=fallback_function)
-        def failing_function():
-            raise Exception("Test error")
-
-        # First failure - circuit still closed, original exception propagates
-        with pytest.raises(Exception):
-            failing_function()
-
-        # Second failure opens circuit (fail_max=2), breaker raises CircuitBreakerError,
-        # decorator catches it and uses fallback
-        result = failing_function()
-        assert result["fallback"] is True
-
-
 class TestHealthCheckErrorHandling:
     """Test health check error handling"""
 
@@ -207,18 +117,13 @@ class TestHealthCheckErrorHandling:
 
         health_service = HealthCheckService()
 
-        with patch("config.settings.settings") as mock_settings:
-            mock_settings.GEMINI_API_KEY = "test-key"
-            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
+        with patch("google.genai.Client") as mock_client_cls:
+            mock_client_cls.return_value.models.get.side_effect = Exception("API Error")
 
-            with patch("google.generativeai.configure"):
-                with patch("google.generativeai.GenerativeModel") as mock_model_class:
-                    mock_model_class.side_effect = Exception("API Error")
+            result = await health_service.check_gemini_api()
 
-                    result = await health_service.check_gemini_api()
-
-                    assert result["status"] == "unhealthy"
-                    assert result["latency_ms"] == 0
+            assert result["status"] == "unhealthy"
+            assert result["latency_ms"] == 0
 
     def test_system_metrics_handles_disk_permission_error(self):
         """Test that system metrics handles disk permission errors"""

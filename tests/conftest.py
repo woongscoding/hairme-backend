@@ -5,8 +5,6 @@ import sys
 
 # Set environment variables BEFORE importing main
 os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
-os.environ.setdefault("REDIS_ENABLED", "false")
-os.environ.setdefault("ML_MODEL_PATH", "models/test_model.pt")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
 os.environ["TESTING"] = "true"  # Skip .env file loading during tests
 
@@ -135,11 +133,8 @@ def client_with_mocks():
     app.dependency_overrides[get_face_detection_service] = lambda: mock_face_detector
     app.dependency_overrides[get_hybrid_service] = lambda: mock_ml_recommender
 
-    with patch("core.cache.redis_client") as mock_redis:
-        mock_redis.get.return_value = None  # No cache hit
-
-        with TestClient(app) as test_client:
-            yield test_client
+    with TestClient(app) as test_client:
+        yield test_client
 
     # Clean up overrides
     app.dependency_overrides.pop(get_face_detection_service, None)
@@ -203,44 +198,12 @@ def sample_image_file(sample_image_bytes):
 
 # ========== Mock External Services ==========
 @pytest.fixture
-def mock_gemini_api():
-    """Mock Gemini API responses"""
-    with patch("google.generativeai.GenerativeModel") as mock:
-        mock_model = Mock()
-        mock_response = Mock()
-        mock_response.text = """```json
-{
-  "face_shape": "계란형",
-  "personal_color": "봄웜",
-  "recommended_hairstyles": [
-    {"name": "레이어드 컷", "reason": "얼굴형과 잘 어울림"},
-    {"name": "시스루 뱅", "reason": "이마 비율 보완"},
-    {"name": "웨이브 펌", "reason": "부드러운 인상"}
-  ]
-}
-```"""
-        mock_model.generate_content.return_value = mock_response
-        mock.return_value = mock_model
-        yield mock
-
-
-@pytest.fixture
 def mock_mediapipe():
     """Mock MediaPipe face analyzer"""
     with patch("models.mediapipe_analyzer.MediaPipeFaceAnalyzer") as mock:
         mock_analyzer = Mock()
         mock_analyzer.analyze_face.return_value = create_mock_face_features()
         mock.return_value = mock_analyzer
-        yield mock
-
-
-@pytest.fixture
-def mock_redis():
-    """Mock Redis client"""
-    with patch("core.cache.redis_client") as mock:
-        mock.get.return_value = None
-        mock.setex.return_value = True
-        mock.ping.return_value = True
         yield mock
 
 

@@ -81,42 +81,38 @@ class TestHealthCheckService:
 
     @pytest.mark.asyncio
     async def test_check_gemini_api_success(self, health_service):
-        """Test successful Gemini API health check"""
+        """deep 체크는 google-genai models.get 메타데이터 조회만 한다 (생성 호출 없음)"""
         with patch("config.settings.settings") as mock_settings:
             mock_settings.GEMINI_API_KEY = "test-key"
-            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
+            mock_settings.GEMINI_IMAGE_MODEL = "test-image-model"
 
-            with patch("google.generativeai.configure"):
-                with patch("google.generativeai.GenerativeModel") as mock_model_class:
-                    # Mock model response
-                    mock_response = Mock()
-                    mock_response.text = "test response"
+            with patch("google.genai.Client") as mock_client_cls:
+                client = mock_client_cls.return_value
 
-                    mock_model = Mock()
-                    mock_model.generate_content.return_value = mock_response
-                    mock_model_class.return_value = mock_model
+                result = await health_service.check_gemini_api()
 
-                    result = await health_service.check_gemini_api()
-
-                    assert result["status"] == "healthy"
-                    assert result["latency_ms"] >= 0  # >0 flakes on fast machines
+                assert result["status"] == "healthy"
+                assert result["latency_ms"] >= 0  # >0 flakes on fast machines
+                assert mock_client_cls.call_args.kwargs["api_key"] == "test-key"
+                client.models.get.assert_called_once_with(model="test-image-model")
+                client.models.generate_content.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_check_gemini_api_error(self, health_service):
         """Test Gemini API check with API error"""
         with patch("config.settings.settings") as mock_settings:
             mock_settings.GEMINI_API_KEY = "test-key"
-            mock_settings.MODEL_NAME = "gemini-1.5-flash-latest"
+            mock_settings.GEMINI_IMAGE_MODEL = "test-image-model"
 
-            with patch("google.generativeai.configure"):
-                with patch("google.generativeai.GenerativeModel") as mock_model_class:
-                    # Mock API error
-                    mock_model_class.side_effect = Exception("API Error")
+            with patch("google.genai.Client") as mock_client_cls:
+                mock_client_cls.return_value.models.get.side_effect = Exception(
+                    "API Error"
+                )
 
-                    result = await health_service.check_gemini_api()
+                result = await health_service.check_gemini_api()
 
-                    assert result["status"] == "unhealthy"
-                    assert result["latency_ms"] == 0
+                assert result["status"] == "unhealthy"
+                assert result["latency_ms"] == 0
 
     def test_get_system_metrics_success(self, health_service):
         """Test system metrics retrieval"""
@@ -138,19 +134,6 @@ class TestHealthCheckService:
         assert "percent" in result["memory"]
         assert result["memory"]["total_mb"] > 0
 
-    def test_get_circuit_breaker_status(self, health_service):
-        """Test circuit breaker status retrieval"""
-        with patch("services.circuit_breaker.gemini_breaker") as mock_breaker:
-            mock_breaker.current_state = "closed"
-            mock_breaker.fail_counter = 0
-            mock_breaker.fail_max = 5
-
-            result = health_service.get_circuit_breaker_status()
-
-            assert result["state"] == "closed"
-            assert result["fail_counter"] == 0
-            assert result["fail_max"] == 5
-
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_basic(self, health_service):
         """Test comprehensive health check without deep check"""
@@ -158,32 +141,27 @@ class TestHealthCheckService:
             health_service, "check_dynamodb", new_callable=AsyncMock
         ) as mock_dynamodb:
             with patch.object(health_service, "get_system_metrics") as mock_system:
-                with patch.object(
-                    health_service, "get_circuit_breaker_status"
-                ) as mock_cb:
-                    # Mock successful responses
-                    mock_dynamodb.return_value = {"status": "healthy"}
-                    mock_system.return_value = {"cpu": {"percent": 50}}
-                    mock_cb.return_value = {"state": "closed"}
+                # Mock successful responses
+                mock_dynamodb.return_value = {"status": "healthy"}
+                mock_system.return_value = {"cpu": {"percent": 50}}
 
-                    result = await health_service.comprehensive_health_check(
-                        include_expensive_checks=False
-                    )
+                result = await health_service.comprehensive_health_check(
+                    include_expensive_checks=False
+                )
 
-                    # Verify structure
-                    assert "status" in result
-                    assert "timestamp" in result
-                    assert "checks" in result
-                    assert "check_duration_ms" in result
+                # Verify structure
+                assert "status" in result
+                assert "timestamp" in result
+                assert "checks" in result
+                assert "check_duration_ms" in result
 
-                    # Verify checks
-                    assert "system" in result["checks"]
-                    assert "dynamodb" in result["checks"]
-                    assert "circuit_breaker" in result["checks"]
-                    assert "gemini_api" in result["checks"]
+                # Verify checks
+                assert "system" in result["checks"]
+                assert "dynamodb" in result["checks"]
+                assert "gemini_api" in result["checks"]
 
-                    # Gemini should be skipped
-                    assert result["checks"]["gemini_api"]["status"] == "skipped"
+                # Gemini should be skipped
+                assert result["checks"]["gemini_api"]["status"] == "skipped"
 
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_deep(self, health_service):
@@ -195,27 +173,23 @@ class TestHealthCheckService:
                 health_service, "check_gemini_api", new_callable=AsyncMock
             ) as mock_gemini:
                 with patch.object(health_service, "get_system_metrics") as mock_system:
-                    with patch.object(
-                        health_service, "get_circuit_breaker_status"
-                    ) as mock_cb:
-                        # Mock successful responses
-                        mock_dynamodb.return_value = {"status": "healthy"}
-                        mock_gemini.return_value = {
-                            "status": "healthy",
-                            "latency_ms": 100,
-                        }
-                        mock_system.return_value = {"cpu": {"percent": 50}}
-                        mock_cb.return_value = {"state": "closed"}
+                    # Mock successful responses
+                    mock_dynamodb.return_value = {"status": "healthy"}
+                    mock_gemini.return_value = {
+                        "status": "healthy",
+                        "latency_ms": 100,
+                    }
+                    mock_system.return_value = {"cpu": {"percent": 50}}
 
-                        result = await health_service.comprehensive_health_check(
-                            include_expensive_checks=True
-                        )
+                    result = await health_service.comprehensive_health_check(
+                        include_expensive_checks=True
+                    )
 
-                        # Gemini should be checked
-                        assert result["checks"]["gemini_api"]["status"] == "healthy"
+                    # Gemini should be checked
+                    assert result["checks"]["gemini_api"]["status"] == "healthy"
 
-                        # Gemini check should be called
-                        mock_gemini.assert_called_once()
+                    # Gemini check should be called
+                    mock_gemini.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_comprehensive_health_check_degraded(self, health_service):
@@ -224,21 +198,17 @@ class TestHealthCheckService:
             health_service, "check_dynamodb", new_callable=AsyncMock
         ) as mock_dynamodb:
             with patch.object(health_service, "get_system_metrics") as mock_system:
-                with patch.object(
-                    health_service, "get_circuit_breaker_status"
-                ) as mock_cb:
-                    # Mock DynamoDB failure
-                    mock_dynamodb.return_value = {
-                        "status": "unhealthy",
-                        "error": "Connection failed",
-                    }
-                    mock_system.return_value = {"cpu": {"percent": 50}}
-                    mock_cb.return_value = {"state": "closed"}
+                # Mock DynamoDB failure
+                mock_dynamodb.return_value = {
+                    "status": "unhealthy",
+                    "error": "Connection failed",
+                }
+                mock_system.return_value = {"cpu": {"percent": 50}}
 
-                    result = await health_service.comprehensive_health_check()
+                result = await health_service.comprehensive_health_check()
 
-                    # Status should be degraded
-                    assert result["status"] == "degraded"
+                # Status should be degraded
+                assert result["status"] == "degraded"
 
 
 class TestHealthCheckEndpoint:
@@ -268,7 +238,6 @@ class TestHealthCheckEndpoint:
                     "checks": {
                         "system": {"cpu": {"percent": 50}},
                         "dynamodb": {"status": "healthy"},
-                        "circuit_breaker": {"state": "closed"},
                         "gemini_api": {"status": "skipped"},
                     },
                     "check_duration_ms": 50,
@@ -297,7 +266,6 @@ class TestHealthCheckEndpoint:
                     "checks": {
                         "system": {"cpu": {"percent": 50}},
                         "dynamodb": {"status": "healthy"},
-                        "circuit_breaker": {"state": "closed"},
                         "gemini_api": {"status": "healthy", "latency_ms": 100},
                     },
                     "check_duration_ms": 150,
@@ -349,7 +317,6 @@ class TestHealthCheckDeepAuth:
                 "checks": {
                     "system": {"cpu": {"percent": 50}},
                     "dynamodb": {"status": "healthy"},
-                    "circuit_breaker": {"state": "closed"},
                     "gemini_api": {"status": "skipped"},
                 },
                 "check_duration_ms": 50,

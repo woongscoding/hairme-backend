@@ -10,11 +10,7 @@ python-multipart==0.0.20
 cryptography==43.0.3  # admob_ssv_service 서명 검증
 boto3==1.35.0
 
-# Redis Caching
-redis==5.0.1
-
 # Google Gemini AI
-google-generativeai>=0.8.0
 google-genai>=1.52.0
 
 # Image Processing (NO PyTorch, NO scikit-learn for ML)
@@ -39,8 +35,6 @@ mangum==0.17.0
 # Utils
 pydantic==2.10.0
 pydantic-settings==2.1.0
-pyyaml==6.0.1
-pybreaker==1.0.1
 slowapi==0.1.9
 psutil==5.9.6
 
