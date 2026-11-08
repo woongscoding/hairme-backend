@@ -6,12 +6,10 @@ MediaPipe 분석 결과 (얼굴형 + 피부톤)로 학습된 ML 모델을 사용
 
 Author: HairMe ML Team
 Date: 2025-11-08
-Version: 1.2.0 (Normalized Label Support - v5)
+Version: 1.3.0 (v6 Multi-Token Attention 전용)
 
-v1.2.0 변경사항:
-- 라벨 정규화 모델(v5) 지원 추가
-- 모델 출력 역변환 로직 (0~1 → 10~95)
-- Sigmoid 출력층 지원
+- 서빙 모델은 RecommendationModelV6 (Sigmoid 0~1 출력 → 10~95 역변환)
+- v4/v5 체크포인트는 더 이상 로드하지 않는다 (명시적 에러)
 """
 
 import json
@@ -23,20 +21,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import List, Dict, Set, Tuple, Optional, TYPE_CHECKING
+from typing import List, Dict, Set, Optional
 import logging
-import sys
 from difflib import SequenceMatcher
 
-# TYPE_CHECKING을 사용하여 런타임에는 import하지 않음
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
-
-# 프로젝트 루트 경로 추가
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from utils.style_preprocessor import normalize_style_name
 
 logger = logging.getLogger(__name__)
 
@@ -145,11 +134,6 @@ SKIN_FEATURE_STATS = {
 }
 
 
-def denormalize_score(normalized: float) -> float:
-    """0~1 점수를 원본 스케일로 역변환 (10~95)"""
-    return normalized * LABEL_RANGE + LABEL_MIN
-
-
 def scale_input_features(face_features: np.ndarray, skin_features: np.ndarray) -> tuple:
     """
     추론 입력을 학습 데이터 분포에 맞게 스케일링
@@ -211,30 +195,6 @@ def scale_input_features(face_features: np.ndarray, skin_features: np.ndarray) -
         skin_scaled[idx] = np.clip(skin_scaled[idx], min_val, max_val)
 
     return face_scaled, skin_scaled
-
-
-class AttentionLayer(nn.Module):
-    """
-    Multi-head self-attention layer for multi-token inputs
-
-    Note: 이 레이어는 여러 토큰 간의 상호작용을 학습합니다.
-    단일 토큰에 적용하면 identity 연산이 되므로, 최소 2개 이상의 토큰이 필요합니다.
-    """
-
-    def __init__(self, embed_dim: int, num_heads: int = 8, dropout: float = 0.1):
-        super().__init__()
-        self.attention = nn.MultiheadAttention(
-            embed_dim=embed_dim, num_heads=num_heads, dropout=dropout, batch_first=True
-        )
-        self.norm = nn.LayerNorm(embed_dim)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Self-attention across multiple tokens
-        attn_out, _ = self.attention(x, x, x)
-        # Residual connection + layer norm
-        x = self.norm(x + self.dropout(attn_out))
-        return x
 
 
 class MultiTokenAttentionLayer(nn.Module):
@@ -317,263 +277,6 @@ class MultiTokenAttentionLayer(nn.Module):
         output = tokens.reshape(batch_size, -1)
 
         return output
-
-
-class RecommendationModel(nn.Module):
-    """
-    연속형 변수 기반 추천 모델 v4
-
-    입력:
-    - face_features: [batch, 6] - MediaPipe 얼굴 측정값
-    - skin_features: [batch, 2] - MediaPipe 피부 측정값
-    - style_emb: [batch, 384] - 헤어스타일 임베딩
-
-    Note:
-    - use_attention=True는 기존 체크포인트 호환성을 위해 유지
-    - 단일 토큰 attention은 실질적으로 LayerNorm+Dropout과 동일 (identity에 가까움)
-    - 새로운 학습 시에는 RecommendationModelV6 사용 권장
-    """
-
-    def __init__(
-        self,
-        face_feat_dim: int = 6,
-        skin_feat_dim: int = 2,
-        style_embed_dim: int = 384,
-        use_attention: bool = True,  # 기존 체크포인트 호환성 유지
-        dropout_rate: float = 0.3,
-    ):
-        super().__init__()
-
-        self.face_feat_dim = face_feat_dim
-        self.skin_feat_dim = skin_feat_dim
-        self.style_embed_dim = style_embed_dim
-
-        # Input projection layers
-        self.face_projection = nn.Sequential(
-            nn.Linear(face_feat_dim, 64),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5),
-        )
-
-        self.skin_projection = nn.Sequential(
-            nn.Linear(skin_feat_dim, 32),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5),
-        )
-
-        # Total dimension after projection
-        self.total_dim = 64 + 32 + style_embed_dim  # 96 + 384 = 480
-
-        # Attention layer (단일 토큰 - 실질적으로 LayerNorm+Dropout)
-        # WARNING: 이 구조는 의미 없는 attention 적용임
-        # 새로운 모델에서는 MultiTokenAttentionLayer 사용 권장
-        self.use_attention = use_attention
-        if use_attention:
-            self.attention = AttentionLayer(
-                embed_dim=self.total_dim, num_heads=8, dropout=0.1
-            )
-
-        # Feature fusion network
-        self.fc1 = nn.Linear(self.total_dim, 256)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.dropout1 = nn.Dropout(dropout_rate)
-
-        self.fc2 = nn.Linear(256, 128)
-        self.bn2 = nn.BatchNorm1d(128)
-        self.dropout2 = nn.Dropout(dropout_rate * 0.7)
-
-        # Residual connection
-        self.residual_proj = nn.Linear(self.total_dim, 128)
-
-        self.fc3 = nn.Linear(128, 64)
-        self.bn3 = nn.BatchNorm1d(64)
-        self.dropout3 = nn.Dropout(dropout_rate * 0.5)
-
-        self.fc4 = nn.Linear(64, 32)
-        self.fc_out = nn.Linear(32, 1)
-
-    def forward(
-        self,
-        face_features: torch.Tensor,
-        skin_features: torch.Tensor,
-        style_emb: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass"""
-        # Project features
-        face_proj = self.face_projection(face_features)
-        skin_proj = self.skin_projection(skin_features)
-
-        # Concatenate all features
-        x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
-
-        # Apply attention if enabled (단일 토큰이므로 실질적으로 LayerNorm)
-        if self.use_attention:
-            x_att = x.unsqueeze(1)
-            x_att = self.attention(x_att)
-            x = x_att.squeeze(1)
-
-        # Store for residual
-        residual = self.residual_proj(x)
-
-        # Main network
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = torch.relu(x)
-        x = self.dropout1(x)
-
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = torch.relu(x)
-        x = self.dropout2(x)
-
-        # Add residual connection
-        x = x + residual
-
-        x = self.fc3(x)
-        x = self.bn3(x)
-        x = torch.relu(x)
-        x = self.dropout3(x)
-
-        x = self.fc4(x)
-        x = torch.relu(x)
-
-        x = self.fc_out(x)
-
-        # 스케일링 적용 (학습 시 30~90점 범위)
-        # 클램핑 제거 - 원본 점수를 유지하여 Top-K 내에서 Min-Max 정규화 가능하게 함
-        x = (x - 29.0) * 7.5 + 60.0
-        # 참고: 클램핑은 recommend_top_k에서 Min-Max 정규화 후 적용
-
-        return x.squeeze(-1)
-
-
-class NormalizedRecommendationModel(nn.Module):
-    """
-    정규화된 라벨 기반 추천 모델 v5
-
-    핵심 특징:
-    - 출력층에 Sigmoid 활성화 함수 사용 (0~1 출력 보장)
-    - 추론 시 역변환 필요 (0~1 → 10~95)
-
-    입력:
-    - face_features: [batch, 6] - MediaPipe 얼굴 측정값
-    - skin_features: [batch, 2] - MediaPipe 피부 측정값
-    - style_emb: [batch, 384] - 헤어스타일 임베딩
-
-    Note:
-    - use_attention=True는 기존 체크포인트 호환성을 위해 유지
-    - 단일 토큰 attention은 실질적으로 LayerNorm+Dropout과 동일 (identity에 가까움)
-    - 새로운 학습 시에는 RecommendationModelV6 사용 권장
-    """
-
-    def __init__(
-        self,
-        face_feat_dim: int = 6,
-        skin_feat_dim: int = 2,
-        style_embed_dim: int = 384,
-        use_attention: bool = True,  # 기존 체크포인트 호환성 유지
-        dropout_rate: float = 0.3,
-    ):
-        super().__init__()
-
-        self.face_feat_dim = face_feat_dim
-        self.skin_feat_dim = skin_feat_dim
-        self.style_embed_dim = style_embed_dim
-
-        # Input projection layers
-        self.face_projection = nn.Sequential(
-            nn.Linear(face_feat_dim, 64),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5),
-        )
-
-        self.skin_projection = nn.Sequential(
-            nn.Linear(skin_feat_dim, 32),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate * 0.5),
-        )
-
-        self.total_dim = 64 + 32 + style_embed_dim  # 480
-
-        # Attention layer (단일 토큰 - 실질적으로 LayerNorm+Dropout)
-        # WARNING: 이 구조는 의미 없는 attention 적용임
-        # 새로운 모델에서는 MultiTokenAttentionLayer 사용 권장
-        self.use_attention = use_attention
-        if use_attention:
-            self.attention = AttentionLayer(
-                embed_dim=self.total_dim, num_heads=8, dropout=0.1
-            )
-
-        self.fc1 = nn.Linear(self.total_dim, 256)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.dropout1 = nn.Dropout(dropout_rate)
-
-        self.fc2 = nn.Linear(256, 128)
-        self.bn2 = nn.BatchNorm1d(128)
-        self.dropout2 = nn.Dropout(dropout_rate * 0.7)
-
-        self.residual_proj = nn.Linear(self.total_dim, 128)
-
-        self.fc3 = nn.Linear(128, 64)
-        self.bn3 = nn.BatchNorm1d(64)
-        self.dropout3 = nn.Dropout(dropout_rate * 0.5)
-
-        self.fc4 = nn.Linear(64, 32)
-        self.fc_out = nn.Linear(32, 1)
-
-        # Sigmoid 활성화 함수 - 출력을 0~1로 제한
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(
-        self,
-        face_features: torch.Tensor,
-        skin_features: torch.Tensor,
-        style_emb: torch.Tensor,
-    ) -> torch.Tensor:
-        """Forward pass - 출력 범위: 0~1 (Sigmoid)"""
-        face_proj = self.face_projection(face_features)
-        skin_proj = self.skin_projection(skin_features)
-
-        x = torch.cat([face_proj, skin_proj, style_emb], dim=1)
-
-        # Apply attention if enabled (단일 토큰이므로 실질적으로 LayerNorm)
-        if self.use_attention:
-            x_att = x.unsqueeze(1)
-            x_att = self.attention(x_att)
-            x = x_att.squeeze(1)
-
-        residual = self.residual_proj(x)
-
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = torch.relu(x)
-        x = self.dropout1(x)
-
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = torch.relu(x)
-        x = self.dropout2(x)
-
-        x = x + residual
-
-        x = self.fc3(x)
-        x = self.bn3(x)
-        x = torch.relu(x)
-        x = self.dropout3(x)
-
-        x = self.fc4(x)
-        x = torch.relu(x)
-
-        x = self.fc_out(x)
-
-        # Sigmoid로 0~1 출력 보장
-        x = self.sigmoid(x)
-
-        return x.squeeze(-1)
 
 
 class RecommendationModelV6(nn.Module):
@@ -761,6 +464,8 @@ class MLHairstyleRecommender:
                 self.attention_type = "single_token"
 
             # 모델 클래스 선택
+            # 재학습 모델은 version 이 "v6" 이 아닐 수 있어(트레이너가 새 버전명을 씀)
+            # attention_type == "multi_token" 도 v6 로 인정한다.
             if self.model_version == "v6" or self.attention_type == "multi_token":
                 # V6: Multi-Token Attention
                 token_dim = config.get("token_dim", 128)
@@ -771,16 +476,14 @@ class MLHairstyleRecommender:
                 logger.info(
                     f"  - 사용 모델: RecommendationModelV6 (Multi-Token Attention)"
                 )
-            elif self.is_normalized_model:
-                # V5: Normalized + Single-Token Attention
-                self.model = NormalizedRecommendationModel()
-                logger.info(
-                    "  - 사용 모델: NormalizedRecommendationModel (v5 - Sigmoid 출력)"
-                )
             else:
-                # V4: Legacy
-                self.model = RecommendationModel()
-                logger.info("  - 사용 모델: RecommendationModel (v4)")
+                # v4/v5(single-token) 모델 클래스는 제거됨
+                raise ValueError(
+                    "지원하지 않는 모델 체크포인트입니다 "
+                    f"(version={self.model_version}, "
+                    f"attention_type={self.attention_type}). "
+                    "v6(multi_token) 체크포인트만 지원합니다."
+                )
 
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                 self.model.load_state_dict(checkpoint["model_state_dict"])
@@ -815,9 +518,6 @@ class MLHairstyleRecommender:
         # 3. 성별 메타데이터 로드 (NEW)
         logger.info(f"📂 성별 메타데이터 로딩: {gender_metadata_path}")
         try:
-            import json
-            import os
-
             if os.path.exists(gender_metadata_path):
                 with open(gender_metadata_path, "r", encoding="utf-8") as f:
                     self.gender_metadata = json.load(f)
@@ -845,29 +545,6 @@ class MLHairstyleRecommender:
             f"{len(self.allowed_indices)}개 (제외: {excluded_count}개, "
             f"denylist={len(self.excluded_styles)}개)"
         )
-
-        # 4. 실시간 임베딩용 SentenceTransformer 로드 (Lambda에서는 스킵)
-        import os
-
-        is_lambda = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
-
-        if not is_lambda:
-            logger.info(
-                "🔄 실시간 임베딩 모델 로딩 (paraphrase-multilingual-MiniLM-L12-v2)..."
-            )
-            try:
-                from sentence_transformers import SentenceTransformer
-
-                self.sentence_model = SentenceTransformer(
-                    "paraphrase-multilingual-MiniLM-L12-v2"
-                )
-                logger.info("✅ 실시간 임베딩 모델 준비 완료")
-            except Exception as e:
-                logger.error(f"❌ 실시간 임베딩 모델 로드 실패: {str(e)}")
-                self.sentence_model = None
-        else:
-            logger.info("🔧 Lambda 환경 - 실시간 임베딩 모델 스킵")
-            self.sentence_model = None
 
     def _encode_face_shape(self, face_shape: str) -> np.ndarray:
         """얼굴형을 one-hot 인코딩 (6차원 - 모델과 일치)"""
@@ -968,86 +645,6 @@ class MLHairstyleRecommender:
             return True
 
         return False
-
-    def _get_style_embedding(self, style_name: str) -> np.ndarray:
-        """
-        스타일 임베딩 가져오기 (DB 조회 또는 실시간 생성)
-
-        Args:
-            style_name: 헤어스타일명 (정규화된 이름 권장)
-
-        Returns:
-            임베딩 벡터 (384,) 또는 None
-        """
-        # 1. DB 조회 (Fast Path)
-        if style_name in self.style_to_idx:
-            idx = self.style_to_idx[style_name]
-            return self.embeddings[idx]
-
-        # 2. 실시간 생성 (Slow Path)
-        if self.sentence_model:
-            logger.info(f"🆕 새로운 스타일 발견: '{style_name}' -> 실시간 임베딩 생성")
-            try:
-                embedding = self.sentence_model.encode(style_name)
-                return embedding
-            except Exception as e:
-                logger.error(f"❌ 임베딩 생성 실패 ({style_name}): {str(e)}")
-                return None
-
-        return None
-
-    def predict_score(self, face_shape: str, skin_tone: str, hairstyle: str) -> float:
-        """
-        특정 헤어스타일의 추천 점수 예측 (띄어쓰기 정규화 적용)
-
-        Args:
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-            hairstyle: 헤어스타일명
-
-        Returns:
-            추천 점수 (0-100)
-        """
-        # 띄어쓰기 정규화 적용
-        normalized_style = normalize_style_name(hairstyle)
-
-        # 임베딩 가져오기 (DB or 실시간)
-        style_embedding = self._get_style_embedding(normalized_style)
-
-        if style_embedding is None:
-            # 원본 이름으로도 시도
-            style_embedding = self._get_style_embedding(hairstyle)
-
-            if style_embedding is None:
-                logger.warning(f"임베딩 생성 불가: '{hairstyle}'")
-                return 0.0
-
-        # 개별 특징 벡터 생성
-        face_vec = self._encode_face_shape(face_shape)  # (4,)
-        tone_vec = self._encode_skin_tone(skin_tone)  # (4,)
-
-        # 모델 추론 - 3개의 개별 텐서로 전달
-        with torch.no_grad():
-            face_tensor = torch.FloatTensor(face_vec).unsqueeze(0).to(self.device)
-            skin_tensor = torch.FloatTensor(tone_vec).unsqueeze(0).to(self.device)
-            style_tensor = (
-                torch.FloatTensor(style_embedding).unsqueeze(0).to(self.device)
-            )
-
-            score_tensor = self.model(face_tensor, skin_tensor, style_tensor)
-            score = score_tensor.cpu().item()
-
-        # 정규화 모델(v5)인 경우 역변환 적용 (0~1 → 10~95)
-        if self.is_normalized_model:
-            score = denormalize_score(score)
-
-        # 10-95 범위로 클리핑 (정규화 모델) 또는 0-100 (기존 모델)
-        if self.is_normalized_model:
-            score = max(LABEL_MIN, min(LABEL_MAX, score))
-        else:
-            score = max(0.0, min(100.0, score))
-
-        return round(score, 2)
 
     def _build_candidate_indices(self, k: int = 3) -> List[int]:
         """
@@ -1324,7 +921,9 @@ class MLHairstyleRecommender:
 
         # 점수 스케일링 처리
         # - v5 정규화 모델: 이미 10~95 범위이므로 원본 점수 그대로 사용
-        # - v4 기존 모델: Min-Max 정규화로 75~95 범위로 스케일링
+        # - 비정규화 모델(config.normalized 가 없거나 False): Min-Max 로 75~95 스케일링
+        #   번들 v6·트레이너 산출물은 항상 normalized=True 라 운영에서는 타지 않지만,
+        #   config 에 normalized 가 빠진 v6 체크포인트를 위해 남겨 둔다.
         if self.is_normalized_model:
             # v5 정규화 모델: 원본 점수 그대로 사용 (이미 10~95 범위)
             logger.info(f"[SCORE] v5 정규화 모델 - 원본 점수 사용")
@@ -1376,77 +975,6 @@ class MLHairstyleRecommender:
         )
 
         return top_k_recommendations
-
-    def batch_predict(
-        self, face_shape: str, skin_tone: str, hairstyles: List[str]
-    ) -> Dict[str, float]:
-        """
-        여러 헤어스타일의 점수를 한 번에 예측 (띄어쓰기 정규화 적용)
-
-        Args:
-            face_shape: 얼굴형
-            skin_tone: 피부톤
-            hairstyles: 헤어스타일 리스트
-
-        Returns:
-            {헤어스타일: 점수} 딕셔너리
-        """
-        results = {}
-
-        # 1. 임베딩 수집 (DB or 실시간)
-        valid_styles = []
-        batch_embeddings = []
-
-        for style in hairstyles:
-            normalized = normalize_style_name(style)
-            embedding = self._get_style_embedding(normalized)
-
-            if embedding is None:
-                # 원본 이름으로도 시도
-                embedding = self._get_style_embedding(style)
-
-            if embedding is not None:
-                valid_styles.append(style)
-                batch_embeddings.append(embedding)
-            else:
-                logger.warning(f"임베딩 생성 불가로 건너뜀: {style}")
-
-        if not valid_styles:
-            logger.warning("유효한 헤어스타일이 없습니다")
-            return results
-
-        # 2. 얼굴형과 피부톤 특징 벡터 생성
-        face_vec = self._encode_face_shape(face_shape)  # (4,)
-        tone_vec = self._encode_skin_tone(skin_tone)  # (4,)
-
-        batch_embeddings = np.array(batch_embeddings, dtype=np.float32)
-
-        # 3. 배치 추론 - 3개의 개별 텐서로 전달
-        with torch.no_grad():
-            batch_size = len(valid_styles)
-            face_batch = np.tile(face_vec, (batch_size, 1))
-            skin_batch = np.tile(tone_vec, (batch_size, 1))
-
-            face_tensor = torch.FloatTensor(face_batch).to(self.device)
-            skin_tensor = torch.FloatTensor(skin_batch).to(self.device)
-            style_tensor = torch.FloatTensor(batch_embeddings).to(self.device)
-
-            scores_tensor = self.model(face_tensor, skin_tensor, style_tensor)
-            scores = scores_tensor.cpu().numpy().flatten()
-
-        # 정규화 모델(v5)인 경우 역변환 적용 (0~1 → 10~95)
-        if self.is_normalized_model:
-            scores = scores * LABEL_RANGE + LABEL_MIN
-
-        # 4. 결과 저장
-        for style, score in zip(valid_styles, scores):
-            if self.is_normalized_model:
-                score_clipped = max(LABEL_MIN, min(LABEL_MAX, float(score)))
-            else:
-                score_clipped = max(0.0, min(100.0, float(score)))
-            results[style] = round(score_clipped, 2)
-
-        return results
 
 
 # ========== 싱글톤 인스턴스 (전역 사용) ==========
@@ -1582,56 +1110,3 @@ def get_ml_recommender() -> MLHairstyleRecommender:
         logger.info("✅ ML 추천기 준비 완료")
 
     return _recommender_instance
-
-
-# ========== 유틸리티 함수 (analyze.py 호환) ==========
-
-# Confidence threshold 상수
-CONFIDENCE_THRESHOLD_VERY_HIGH = 0.90
-CONFIDENCE_THRESHOLD_HIGH = 0.85
-CONFIDENCE_THRESHOLD_MEDIUM = 0.75
-
-
-def predict_ml_score(face_shape: str, skin_tone: str, hairstyle: str) -> float:
-    """
-    ML 모델로 특정 헤어스타일의 추천 점수 예측
-
-    Args:
-        face_shape: 얼굴형 (예: "계란형")
-        skin_tone: 피부톤 (예: "봄웜")
-        hairstyle: 헤어스타일명 (예: "시스루뱅 단발")
-
-    Returns:
-        추천 점수 (0.0 ~ 100.0)
-    """
-    try:
-        recommender = get_ml_recommender()
-        score = recommender.predict_score(face_shape, skin_tone, hairstyle)
-        return score
-    except Exception as e:
-        logger.error(f"ML 예측 실패: {str(e)}")
-        return 85.0  # 기본값
-
-
-def get_confidence_level(score: float) -> str:
-    """
-    점수를 신뢰도 레벨 문자열로 변환
-
-    Args:
-        score: 신뢰도 점수 (0.0 ~ 1.0 또는 0.0 ~ 100.0)
-
-    Returns:
-        신뢰도 레벨 문자열 ("매우 높음", "높음", "보통", "낮음")
-    """
-    # 0~100 범위 점수를 0~1로 정규화
-    if score > 1.0:
-        score = score / 100.0
-
-    if score >= CONFIDENCE_THRESHOLD_VERY_HIGH:
-        return "매우 높음"
-    elif score >= CONFIDENCE_THRESHOLD_HIGH:
-        return "높음"
-    elif score >= CONFIDENCE_THRESHOLD_MEDIUM:
-        return "보통"
-    else:
-        return "낮음"

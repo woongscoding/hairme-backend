@@ -10,9 +10,6 @@ Version: 1.0.0
 
 import random
 import logging
-from typing import Optional, Dict, List
-from pathlib import Path
-import json
 
 from config.settings import settings
 
@@ -55,106 +52,6 @@ class ReasonGenerator:
             "{style}이(가) 사랑스러운 하트형 얼굴에 잘 어울립니다",
         ],
     }
-
-    # ========== 피부톤별 보조 설명 ==========
-    SKIN_TONE_COMPLEMENTS = {
-        "봄웜": [
-            "따뜻한 피부톤과 잘 어울립니다",
-            "봄 웜톤 피부를 더욱 화사하게 만들어줍니다",
-            "밝고 따뜻한 피부톤과 조화롭습니다",
-        ],
-        "가을웜": [
-            "깊이 있는 웜톤 피부와 잘 맞습니다",
-            "가을 웜톤 피부를 더욱 고급스럽게 보이게 합니다",
-            "차분한 웜톤 피부와 조화를 이룹니다",
-        ],
-        "여름쿨": [
-            "시원한 피부톤에 청량한 느낌을 더합니다",
-            "여름 쿨톤 피부를 더욱 청아하게 만들어줍니다",
-            "부드러운 쿨톤 피부와 잘 어울립니다",
-        ],
-        "겨울쿨": [
-            "선명한 쿨톤 피부와 완벽하게 어울립니다",
-            "겨울 쿨톤 피부를 더욱 도드라지게 만들어줍니다",
-            "차가운 피부톤과 멋진 조화를 이룹니다",
-        ],
-    }
-
-    # ========== 스타일 특성 (추후 확장 가능) ==========
-    STYLE_CHARACTERISTICS: Dict[str, List[str]] = {}
-
-    def __init__(self, characteristics_path: Optional[str] = None):
-        """
-        초기화
-
-        Args:
-            characteristics_path: 스타일 특성 JSON 파일 경로 (선택)
-        """
-        self.characteristics_path = characteristics_path
-
-        # 스타일 특성 파일이 있으면 로드
-        if characteristics_path:
-            self._load_characteristics(characteristics_path)
-
-    def _load_characteristics(self, path: str):
-        """스타일 특성 데이터 로드"""
-        try:
-            file_path = Path(path)
-            if file_path.exists():
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.STYLE_CHARACTERISTICS = data
-                logger.info(
-                    f"✅ 스타일 특성 로드 완료: {len(self.STYLE_CHARACTERISTICS)}개"
-                )
-            else:
-                logger.warning(f"⚠️ 스타일 특성 파일 없음: {path}")
-        except Exception as e:
-            logger.error(f"❌ 스타일 특성 로드 실패: {str(e)}")
-
-    def generate(
-        self,
-        face_shape: str,
-        skin_tone: str,
-        hairstyle: str,
-        include_skin_tone: bool = True,
-    ) -> str:
-        """
-        추천 이유 생성
-
-        Args:
-            face_shape: 얼굴형 (계란형, 둥근형, 각진형, 긴형, 하트형)
-            skin_tone: 피부톤 (봄웜, 가을웜, 여름쿨, 겨울쿨)
-            hairstyle: 헤어스타일명
-            include_skin_tone: 피부톤 설명 포함 여부
-
-        Returns:
-            추천 이유 문자열 (30자 내외)
-        """
-        # 1. 얼굴형 템플릿 선택
-        face_templates = self.FACE_TEMPLATES.get(
-            face_shape, self.FACE_TEMPLATES["계란형"]  # 기본값
-        )
-        face_reason = random.choice(face_templates).format(style=hairstyle)
-
-        # 2. 스타일 특성 추가 (있는 경우)
-        characteristics = self.STYLE_CHARACTERISTICS.get(hairstyle, [])
-        if characteristics:
-            # 특성 1-2개만 사용
-            char_text = ", ".join(characteristics[:2])
-            face_reason += f" ({char_text})"
-
-        # 3. 피부톤 보조 설명 추가 (옵션)
-        if include_skin_tone:
-            skin_complements = self.SKIN_TONE_COMPLEMENTS.get(skin_tone, [])
-            if skin_complements:
-                skin_text = random.choice(skin_complements)
-                # 길이 체크 (총 60자 이내)
-                combined = f"{face_reason}. {skin_text}"
-                if len(combined) <= 60:
-                    return combined
-
-        return face_reason
 
     def generate_simple(self, face_shape: str, skin_tone: str, hairstyle: str) -> str:
         """
@@ -211,43 +108,14 @@ class ReasonGenerator:
         # "AI"라는 단어를 제거하고 더 자연스럽게 표현
         return f"{base_reason} {confidence}"
 
-    def add_characteristic(self, hairstyle: str, characteristics: List[str]):
-        """
-        특정 스타일의 특성 추가
-
-        Args:
-            hairstyle: 헤어스타일명
-            characteristics: 특성 리스트 (예: ["입체감", "볼륨감"])
-        """
-        self.STYLE_CHARACTERISTICS[hairstyle] = characteristics
-
-    def save_characteristics(self, path: str):
-        """
-        스타일 특성을 JSON 파일로 저장
-
-        Args:
-            path: 저장할 파일 경로
-        """
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.STYLE_CHARACTERISTICS, f, ensure_ascii=False, indent=2)
-            logger.info(f"✅ 스타일 특성 저장 완료: {path}")
-        except Exception as e:
-            logger.error(f"❌ 스타일 특성 저장 실패: {str(e)}")
-
 
 # ========== 싱글톤 인스턴스 ==========
 _reason_generator_instance = None
 
 
-def get_reason_generator(
-    characteristics_path: Optional[str] = "data_source/style_characteristics.json",
-) -> ReasonGenerator:
+def get_reason_generator() -> ReasonGenerator:
     """
     ReasonGenerator 싱글톤 인스턴스 가져오기
-
-    Args:
-        characteristics_path: 스타일 특성 JSON 파일 경로
 
     Returns:
         ReasonGenerator 인스턴스
@@ -256,7 +124,7 @@ def get_reason_generator(
 
     if _reason_generator_instance is None:
         logger.info("🔧 추천 이유 생성기 초기화 중...")
-        _reason_generator_instance = ReasonGenerator(characteristics_path)
+        _reason_generator_instance = ReasonGenerator()
         logger.info("✅ 추천 이유 생성기 준비 완료")
 
     return _reason_generator_instance
@@ -282,7 +150,7 @@ if __name__ == "__main__":
     print("\n=== 추천 이유 생성 테스트 ===\n")
 
     for face, skin, style in test_cases:
-        reason = generator.generate(face, skin, style)
+        reason = generator.generate_simple(face, skin, style)
         print(f"[{face}] + [{skin}] + [{style}]")
         print(f"  → {reason}")
         print()

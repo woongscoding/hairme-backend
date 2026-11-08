@@ -11,9 +11,6 @@ Date: 2025-11-11
 Version: 1.0.0
 """
 
-import re
-from typing import List, Dict
-
 
 def normalize_style_name(style_name: str) -> str:
     """
@@ -42,75 +39,6 @@ def normalize_style_name(style_name: str) -> str:
     normalized = style_name.strip().replace(" ", "")
 
     return normalized
-
-
-def normalize_style_list(styles: List[str]) -> List[str]:
-    """
-    여러 스타일명을 일괄 정규화
-
-    Args:
-        styles: 스타일명 리스트
-
-    Returns:
-        정규화된 스타일명 리스트
-    """
-    return [normalize_style_name(s) for s in styles]
-
-
-def normalize_training_data(data: Dict) -> Dict:
-    """
-    학습 데이터의 모든 스타일명을 정규화
-
-    Args:
-        data: 학습 데이터 딕셔너리
-
-    Returns:
-        정규화된 학습 데이터
-    """
-    normalized_data = {
-        "metadata": data["metadata"].copy(),
-        "statistics": data["statistics"].copy() if "statistics" in data else {},
-        "training_data": [],
-    }
-
-    # 각 이미지의 조합에서 스타일명 정규화
-    for image_data in data["training_data"]:
-        normalized_image = {
-            "image_id": image_data["image_id"],
-            "face_shape": image_data["face_shape"],
-            "skin_tone": image_data["skin_tone"],
-            "combinations": [],
-        }
-
-        for combo in image_data["combinations"]:
-            normalized_combo = combo.copy()
-            # 스타일명 정규화
-            normalized_combo["hairstyle"] = normalize_style_name(combo["hairstyle"])
-            normalized_image["combinations"].append(normalized_combo)
-
-        normalized_data["training_data"].append(normalized_image)
-
-    return normalized_data
-
-
-def get_unique_styles(data: Dict) -> List[str]:
-    """
-    학습 데이터에서 고유한 스타일명 추출 (정규화 후)
-
-    Args:
-        data: 학습 데이터 딕셔너리
-
-    Returns:
-        고유 스타일명 리스트 (정렬됨)
-    """
-    styles = set()
-
-    for image_data in data["training_data"]:
-        for combo in image_data["combinations"]:
-            normalized = normalize_style_name(combo["hairstyle"])
-            styles.add(normalized)
-
-    return sorted(list(styles))
 
 
 if __name__ == "__main__":

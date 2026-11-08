@@ -11,12 +11,6 @@ Version: 2.0.0 (ML-only mode)
 import logging
 import statistics
 from typing import List, Dict, Optional, Any, Tuple
-import sys
-from pathlib import Path
-
-# 프로젝트 루트 경로 추가
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.settings import settings
 from services import rec_engagement, rec_exploration
@@ -631,10 +625,6 @@ class MLRecommendationService:
         return result
 
 
-# ========== 하위 호환성을 위한 별칭 ==========
-HybridRecommendationService = MLRecommendationService
-
-
 # ========== 싱글톤 인스턴스 ==========
 _ml_service_instance = None
 
@@ -654,16 +644,3 @@ def get_ml_recommendation_service() -> MLRecommendationService:
         logger.info("✅ ML 추천 서비스 준비 완료")
 
     return _ml_service_instance
-
-
-def create_hybrid_service(gemini_api_key: str = None) -> MLRecommendationService:
-    """
-    ML 추천 서비스 인스턴스 생성 (하위 호환성)
-
-    Args:
-        gemini_api_key: 사용 안함 (하위 호환성 유지)
-
-    Returns:
-        MLRecommendationService 인스턴스
-    """
-    return get_ml_recommendation_service()

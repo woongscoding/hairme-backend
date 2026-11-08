@@ -110,54 +110,6 @@ class TestMediaPipeAnalyzer:
             self._cleanup_mediapipe()
 
 
-class TestMLModel:
-    """Test ML model predictions"""
-
-    @patch("models.ml_recommender.get_ml_recommender")
-    def test_ml_score_prediction(self, mock_get_recommender):
-        """Test ML model score prediction"""
-        from models.ml_recommender import predict_ml_score
-
-        # Mock recommender
-        mock_recommender = MagicMock()
-        mock_recommender.predict_score.return_value = 85.0
-        mock_get_recommender.return_value = mock_recommender
-
-        score = predict_ml_score("계란형", "봄웜", "레이어드 컷")
-
-        assert isinstance(score, (int, float))
-        assert 0 <= score <= 100
-
-    @patch("models.ml_recommender.get_ml_recommender")
-    def test_ml_score_fallback_on_error(self, mock_get_recommender):
-        """Test ML score prediction falls back to default on error"""
-        from models.ml_recommender import predict_ml_score
-
-        # Mock recommender to raise exception
-        mock_get_recommender.side_effect = Exception("Model not loaded")
-
-        score = predict_ml_score("계란형", "봄웜", "레이어드 컷")
-
-        # Should return default value (85.0)
-        assert score == 85.0
-
-    def test_get_confidence_level(self):
-        """Test confidence level conversion"""
-        from models.ml_recommender import get_confidence_level
-
-        # Test with 0-100 scale
-        assert get_confidence_level(95) == "매우 높음"
-        assert get_confidence_level(88) == "높음"
-        assert get_confidence_level(80) == "보통"
-        assert get_confidence_level(60) == "낮음"
-
-        # Test with 0-1 scale
-        assert get_confidence_level(0.95) == "매우 높음"
-        assert get_confidence_level(0.88) == "높음"
-        assert get_confidence_level(0.80) == "보통"
-        assert get_confidence_level(0.60) == "낮음"
-
-
 class TestRecommendationModelV6:
     """Test RecommendationModelV6 with Multi-Token Attention"""
 
@@ -211,6 +163,25 @@ class TestRecommendationModelV6:
         # Output should be (batch_size, token_dim * 3) = (batch_size, 384)
         assert output.shape == (batch_size, 384)
 
+    @pytest.mark.parametrize(
+        "checkpoint",
+        [
+            {"config": {"version": "v5", "normalized": True}, "model_state_dict": {}},
+            {"config": {"version": "v4"}, "model_state_dict": {}},
+            {},  # config 없는 구형 state_dict
+        ],
+    )
+    def test_non_v6_checkpoint_is_rejected(self, tmp_path, checkpoint):
+        """v4/v5(single-token) 체크포인트는 조용히 다른 모델로 만들지 않고 명시적으로 거부"""
+        import torch
+        from models.ml_recommender import MLHairstyleRecommender
+
+        path = tmp_path / "legacy.pt"
+        torch.save(checkpoint, path)
+
+        with pytest.raises(ValueError, match="v6"):
+            MLHairstyleRecommender(model_path=str(path))
+
 
 class TestHybridRecommender:
     """Test hybrid (ML) recommendation service"""
@@ -220,10 +191,10 @@ class TestHybridRecommender:
         return_value=None,
     )
     def test_service_initialization(self, mock_init):
-        """Test that MLRecommendationService (aliased as HybridRecommendationService) initializes"""
-        from services.hybrid_recommender import HybridRecommendationService
+        """Test that MLRecommendationService initializes"""
+        from services.hybrid_recommender import MLRecommendationService
 
-        service = HybridRecommendationService()
+        service = MLRecommendationService()
         assert service is not None
         mock_init.assert_called_once()
 
