@@ -268,6 +268,8 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             "mediapipe_hue_value",
             "mediapipe_confidence",
             "mediapipe_features_complete",
+            "mediapipe_head_yaw",
+            "mediapipe_head_pitch",
         ]
         for field in mediapipe_fields:
             if field in data and data[field] is not None:

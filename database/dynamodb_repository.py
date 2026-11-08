@@ -96,6 +96,10 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
                 data["mediapipe_confidence"] = mp_features.confidence
                 data["mediapipe_features_complete"] = True
 
+                # 고개 각도 (2026-11-08~). 이 필드가 있는 행은 3D 거리로 잰 측정값이다
+                data["mediapipe_head_yaw"] = getattr(mp_features, "head_yaw", None)
+                data["mediapipe_head_pitch"] = getattr(mp_features, "head_pitch", None)
+
                 logger.info(
                     f"✅ MediaPipe 연속형 변수 포함: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}"
                 )

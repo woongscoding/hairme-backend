@@ -41,6 +41,10 @@ class MediaPipeFaceFeatures:
     gender: str = "neutral"  # "male", "female", "neutral" (추론 실패 시)
     gender_confidence: float = 0.0  # 성별 추론 신뢰도
 
+    # 고개 각도 (도). 좌우(yaw)·상하(pitch). 정면이면 0에 가깝다
+    head_yaw: float = 0.0
+    head_pitch: float = 0.0
+
     def to_dict(self) -> dict:
         """dict로 변환 (로깅 및 DB 저장용)"""
         return {
@@ -57,6 +61,8 @@ class MediaPipeFaceFeatures:
             "skin_features": self.skin_features,
             "gender": self.gender,
             "gender_confidence": self.gender_confidence,
+            "head_yaw": self.head_yaw,
+            "head_pitch": self.head_pitch,
         }
 
 
@@ -174,7 +180,9 @@ class MediaPipeFaceAnalyzer:
             logger.info(
                 f"✅ MediaPipe 분석 완료: {face_shape} (신뢰도: {final_confidence:.0%}), "
                 f"피부톤: {skin_tone} (ITA: {ita_value:.1f}°), "
-                f"성별: {gender} (신뢰도: {gender_confidence:.0%})"
+                f"성별: {gender} (신뢰도: {gender_confidence:.0%}), "
+                f"고개 yaw={measurements['head_yaw']:.0f}° "
+                f"pitch={measurements['head_pitch']:.0f}°"
             )
             logger.debug(f"  Face features: {face_features}")
             logger.debug(f"  Skin features: {skin_features}")
@@ -193,6 +201,8 @@ class MediaPipeFaceAnalyzer:
                 skin_features=skin_features,
                 gender=gender,
                 gender_confidence=round(gender_confidence, 2),
+                head_yaw=round(measurements["head_yaw"], 1),
+                head_pitch=round(measurements["head_pitch"], 1),
             )
 
         except Exception as e:
@@ -207,16 +217,25 @@ class MediaPipeFaceAnalyzer:
     #   forehead_ratio 평균 0.845 ± 0.026 (p5 0.80 ~ p95 0.89)
     # 이전의 교과서식 절대 임계값(예: 각진형 jaw_ratio > 0.95)은 이 분포에서 도달이
     # 불가능해 10개월간 96.6%가 계란형으로 분류됐다. 아래 값은 위 분포의 분위수다.
-    # 같은 데이터에 적용하면 계란형 49% / 둥근형 20% / 긴형 19% / 각진형 10% / 하트형 1%.
     # 재도출: hairme-analysis 의 mediapipe_face_ratio·jaw_ratio·forehead_ratio 분위수.
+    #
+    # 2026-11-08 하트형 규칙 수정: 이전 규칙(이마·턱 모두 좁음)은 다이아몬드형 조건이었고,
+    # 이마와 턱 폭은 서로 반대로 움직여(상관 -0.45) 1%만 걸렸다. 하트형은 넓은 이마 +
+    # 좁은 턱이다. 측정값 13,943건(2025-11~2026-11)에 적용하면
+    # 계란형 43% / 둥근형 21% / 긴형 18% / 각진형 11% / 하트형 9%.
     LONG_FACE_RATIO = 1.275  # p80 초과 → 긴형
     ROUND_FACE_RATIO = 1.185  # p20 미만 → 둥근형
     SQUARE_JAW_RATIO = 0.805  # p80 초과 → 각진형
     HEART_JAW_RATIO = 0.766  # p25 미만이고
-    HEART_FOREHEAD_RATIO = 0.829  # p25 미만이면 → 하트형
+    HEART_FOREHEAD_RATIO = 0.861  # p75 초과면 → 하트형
     # 신뢰도: 경계에서 0.60, 경계로부터 아래 폭만큼 멀어지면 0.90
     _FACE_RATIO_CONF_SPAN = 0.10
     _JAW_RATIO_CONF_SPAN = 0.04
+
+    # 고개 각도: 측정은 3D 거리라 각도에 거의 영향받지 않지만, 많이 돌아가면 반대쪽
+    # 윤곽 랜드마크가 가려져 추정이 부정확해진다. 이 각도를 넘으면 신뢰도를 낮춘다.
+    POSE_LIMIT_DEG = 25.0
+    POSE_LIMITED_CONFIDENCE = 0.5
 
     @classmethod
     def classify_from_ratios(
@@ -237,15 +256,15 @@ class MediaPipeFaceAnalyzer:
                 cls.ROUND_FACE_RATIO - face_ratio, cls._FACE_RATIO_CONF_SPAN
             )
 
-        # 2순위: 이마·턱이 모두 좁음 → 하트형
+        # 2순위: 이마는 넓고 턱은 좁음 → 하트형
         if (
             jaw_ratio < cls.HEART_JAW_RATIO
-            and forehead_ratio < cls.HEART_FOREHEAD_RATIO
+            and forehead_ratio > cls.HEART_FOREHEAD_RATIO
         ):
-            narrowness = (cls.HEART_JAW_RATIO - jaw_ratio) + (
-                cls.HEART_FOREHEAD_RATIO - forehead_ratio
+            margin = (cls.HEART_JAW_RATIO - jaw_ratio) + (
+                forehead_ratio - cls.HEART_FOREHEAD_RATIO
             )
-            return "하트형", conf(narrowness, cls._JAW_RATIO_CONF_SPAN)
+            return "하트형", conf(margin, cls._JAW_RATIO_CONF_SPAN)
 
         # 3순위: 턱이 넓음 → 각진형
         if jaw_ratio > cls.SQUARE_JAW_RATIO:
@@ -269,10 +288,11 @@ class MediaPipeFaceAnalyzer:
         """
         h, w = image_shape
 
-        # 랜드마크를 픽셀 좌표로 변환
+        # 랜드마크를 픽셀 단위 3D 좌표로 변환. MediaPipe의 z는 x와 같은 축척
+        # (이미지 너비 기준)이라 w를 곱한다.
         def get_point(idx):
             lm = landmarks.landmark[idx]
-            return (int(lm.x * w), int(lm.y * h))
+            return (lm.x * w, lm.y * h, lm.z * w)
 
         # 주요 포인트 추출
         forehead_top = get_point(self.FOREHEAD_TOP)
@@ -284,9 +304,11 @@ class MediaPipeFaceAnalyzer:
         left_jaw = get_point(self.LEFT_JAW)
         right_jaw = get_point(self.RIGHT_JAW)
 
-        # 거리 계산
-        def distance(p1, p2):
-            return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+        # 3D 거리. 2D(사진 평면) 거리는 고개를 15° 돌리거나 숙이면 face_ratio가
+        # ±0.04 변해 사람 간 차이(표준편차 0.06)와 맞먹었다. 3D 거리는 각도와 무관하고,
+        # 정면 사진에서는 2D 거리와 같아(쓰는 점들이 정면에서 거의 같은 깊이) 기존
+        # 임계값을 그대로 쓸 수 있다.
+        distance = math.dist
 
         # 측정값
         face_height = distance(forehead_top, chin_bottom)
@@ -294,6 +316,10 @@ class MediaPipeFaceAnalyzer:
         forehead_width = distance(left_forehead, right_forehead)
         cheekbone_width = distance(left_cheek, right_cheek)
         jaw_width = distance(left_jaw, right_jaw)
+
+        head_yaw, head_pitch = self.estimate_head_pose(
+            left_cheek, right_cheek, forehead_top, chin_bottom
+        )
 
         # 얼굴 비율
         face_ratio = face_height / face_width if face_width > 0 else 1.0
@@ -312,19 +338,59 @@ class MediaPipeFaceAnalyzer:
             "jaw_width": jaw_width,
             "forehead_ratio": forehead_ratio,
             "jaw_ratio": jaw_ratio,
+            "head_yaw": head_yaw,
+            "head_pitch": head_pitch,
         }
 
         face_shape, confidence = self.classify_from_ratios(
             face_ratio, forehead_ratio, jaw_ratio
         )
+        confidence = self.limit_confidence_by_pose(confidence, head_yaw, head_pitch)
 
         logger.debug(
             f"얼굴형 측정: ratio={face_ratio:.2f}, "
             f"forehead_ratio={forehead_ratio:.2f}, "
-            f"jaw_ratio={jaw_ratio:.2f} → {face_shape} ({confidence:.0%})"
+            f"jaw_ratio={jaw_ratio:.2f}, yaw={head_yaw:.0f}°, "
+            f"pitch={head_pitch:.0f}° → {face_shape} ({confidence:.0%})"
         )
 
         return face_shape, confidence, measurements
+
+    @staticmethod
+    def estimate_head_pose(
+        left_cheek: Tuple[float, float, float],
+        right_cheek: Tuple[float, float, float],
+        forehead_top: Tuple[float, float, float],
+        chin_bottom: Tuple[float, float, float],
+    ) -> Tuple[float, float]:
+        """랜드마크 깊이(z)로 고개 각도(도)를 추정한다.
+
+        yaw: 좌우 광대 점의 깊이 차이. 정면이면 대칭이라 0.
+        pitch: 이마 꼭대기와 턱끝의 깊이 차이. 정면에서 두 점은 거의 같은 깊이다
+        (MediaPipe 표준 얼굴 모델 기준 1° 미만).
+        """
+        yaw = math.degrees(
+            math.atan2(right_cheek[2] - left_cheek[2], right_cheek[0] - left_cheek[0])
+        )
+        pitch = math.degrees(
+            math.atan2(
+                chin_bottom[2] - forehead_top[2], chin_bottom[1] - forehead_top[1]
+            )
+        )
+        return yaw, pitch
+
+    @classmethod
+    def limit_confidence_by_pose(
+        cls, confidence: float, head_yaw: float, head_pitch: float
+    ) -> float:
+        """고개가 많이 돌아간 사진은 신뢰도를 낮춘다 (판정 자체는 그대로)."""
+        if max(abs(head_yaw), abs(head_pitch)) > cls.POSE_LIMIT_DEG:
+            logger.info(
+                f"고개 각도가 커서 얼굴형 신뢰도를 낮춤: yaw={head_yaw:.0f}°, "
+                f"pitch={head_pitch:.0f}°"
+            )
+            return min(confidence, cls.POSE_LIMITED_CONFIDENCE)
+        return confidence
 
     def _analyze_skin_tone(
         self, image: Any, landmarks, image_shape: Tuple[int, int]
