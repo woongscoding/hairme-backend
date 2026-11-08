@@ -492,7 +492,7 @@ class TestImageSizeConfig:
 
     def test_no_image_size_leaves_model_default(self):
         service = self._service()
-        service.synthesize_with_reference(self._jpeg(), self._jpeg())
+        service.synthesize_hairstyle(self._jpeg(), "리프컷")
         config = service._client.models.generate_content.call_args.kwargs["config"]
         assert config.image_config is None
 

@@ -95,12 +95,6 @@ GEMINI_B64 = _png_b64()
 def _hair_color_service():
     service = MagicMock()
     service.get_color_by_name.return_value = {"hex": "#C4A484"}
-    recommended = MagicMock()
-    recommended.name = "밀크브라운"
-    recommended.hex = "#C4A484"
-    recommended.level = "7"
-    recommended.description = ""
-    service.get_recommendations.return_value = MagicMock(recommended=[recommended])
     service.synthesize_hair_color.side_effect = lambda **kwargs: {
         "success": True,
         "image_base64": GEMINI_B64,
@@ -125,23 +119,16 @@ def _hair_color_request(client, path, tier):
         "api.endpoints.hair_color.acquire_synthesis_lock",
         return_value=(True, lambda: None),
     ):
-        if path == "/api/hair-color/synthesize":
-            data = {"color_name": "밀크브라운"}
-        else:
-            data = {"personal_color": "봄웜", "color_index": "0"}
         response = client.post(
             path,
             files={"file": ("face.jpg", _jpeg_bytes(), "image/jpeg")},
-            data=data,
+            data={"color_name": "밀크브라운"},
             headers=_auth(),
         )
     return response, service
 
 
-HAIR_COLOR_PATHS = [
-    "/api/hair-color/synthesize",
-    "/api/hair-color/synthesize-by-personal-color",
-]
+HAIR_COLOR_PATHS = ["/api/hair-color/synthesize"]
 
 
 class TestHairColorTier:

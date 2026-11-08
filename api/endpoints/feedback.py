@@ -1,8 +1,9 @@
-"""Feedback submission and statistics endpoints (DynamoDB-only)"""
+"""Feedback submission endpoint (DynamoDB-only)
 
-import time
+통계 조회는 관리자용 GET /api/admin/feedback-stats (routers/admin.py) 를 쓴다.
+"""
+
 from fastapi import APIRouter, HTTPException, Request
-from typing import Dict, Any, Optional
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -10,7 +11,6 @@ from core.logging import logger, log_structured
 from database.dynamodb_connection import (
     save_feedback,
     get_analysis,
-    get_feedback_stats as get_dynamodb_stats,
 )
 from api.dependencies import FeedbackRequest, FeedbackResponse
 
@@ -19,59 +19,14 @@ router = APIRouter()
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
-# ========== Public feedback stats: identifier stripping + TTL cache ==========
-# 공개 통계 응답에서 절대 노출하면 안 되는 식별자 필드
-# (analysis_id가 노출되면 타인의 분석 결과에 피드백을 남길 수 있음)
-_PUBLIC_STATS_HIDDEN_FIELDS = frozenset(
-    {"id", "analysis_id", "image_hash", "user_id", "device_id", "ip_address"}
-)
 
-# 전체 스캔 비용 DoS 완화용 in-process 캐시 (Lambda 컨테이너별로 분리됨 - 의도된 동작)
-_PUBLIC_STATS_CACHE_TTL_SECONDS = 60
-_public_stats_cache: Dict[str, Any] = {}
-
-# 캐시 키 (단일 백엔드지만 기존 키 이름을 유지한다)
-_STATS_CACHE_KEY = "dynamodb"
-
-
-def _strip_public_identifiers(stats: Dict[str, Any]) -> Dict[str, Any]:
-    """공개 통계 응답에서 recent_feedbacks의 식별자 필드를 제거한다"""
-    sanitized = dict(stats)
-    recent = sanitized.get("recent_feedbacks") or []
-
-    sanitized["recent_feedbacks"] = [
-        {k: v for k, v in item.items() if k not in _PUBLIC_STATS_HIDDEN_FIELDS}
-        for item in recent
-        if isinstance(item, dict)
-    ]
-    return sanitized
-
-
-def _get_cached_public_stats(backend: str) -> Optional[Dict[str, Any]]:
-    """TTL 이내의 캐시된 공개 통계를 반환 (없으면 None)"""
-    entry = _public_stats_cache.get(backend)
-    if not entry:
-        return None
-
-    if time.monotonic() - entry["ts"] > _PUBLIC_STATS_CACHE_TTL_SECONDS:
-        return None
-
-    return entry["data"]
-
-
-def _set_cached_public_stats(backend: str, data: Dict[str, Any]) -> None:
-    """공개 통계를 in-process 캐시에 저장"""
-    _public_stats_cache[backend] = {"data": data, "ts": time.monotonic()}
-
-
-@router.post("/feedback", response_model=FeedbackResponse)
 @router.post("/feedback/submit", response_model=FeedbackResponse)
 @limiter.limit("20/minute")  # 분당 20회 제한
 async def submit_feedback(
     request: Request, feedback_data: FeedbackRequest
 ) -> FeedbackResponse:
     """
-    User feedback submission endpoint (supports both /api/feedback and /api/feedback/submit)
+    User feedback submission endpoint (POST /api/feedback/submit)
 
     Args:
         request: Starlette Request (for SlowAPI rate limiting)
@@ -165,55 +120,6 @@ async def submit_feedback(
         raise
     except Exception as e:
         logger.error(f"❌ DynamoDB 피드백 저장 실패: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
-
-
-@router.get("/stats/feedback")
-@limiter.limit("30/minute")  # 분당 30회 제한 (통계 조회)
-async def get_feedback_stats(request: Request) -> Dict[str, Any]:
-    """
-    Feedback statistics query API
-
-    Returns:
-        - success: bool
-        - total_analysis: Total analysis record count
-        - total_feedback: Record count with feedback
-        - recent_feedbacks: Latest 5 feedback data (식별자 제거됨)
-        - like_counts: Like count by style (dict)
-        - dislike_counts: Dislike count by style (dict)
-
-    Raises:
-        HTTPException: 500 for database errors
-    """
-    # ========== In-process TTL cache (전체 스캔 비용 DoS 완화) ==========
-    cached = _get_cached_public_stats(_STATS_CACHE_KEY)
-    if cached is not None:
-        logger.info(f"📊 통계 조회 (캐시 히트, backend={_STATS_CACHE_KEY})")
-        return cached
-
-    try:
-        stats = get_dynamodb_stats()
-
-        if not stats.get("success"):
-            raise HTTPException(status_code=500, detail="통계 조회에 실패했습니다")
-
-        logger.info(
-            f"📊 통계 조회 (DynamoDB): 전체 {stats['total_analysis']}개, "
-            f"피드백 {stats['total_feedback']}개"
-        )
-
-        # 공개 엔드포인트이므로 식별자 제거 (관리자용 /api/admin/feedback-stats는 원본 유지)
-        public_stats = _strip_public_identifiers(stats)
-        _set_cached_public_stats(_STATS_CACHE_KEY, public_stats)
-        return public_stats
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ DynamoDB 통계 조회 실패: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",

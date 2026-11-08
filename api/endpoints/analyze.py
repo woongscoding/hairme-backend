@@ -18,7 +18,6 @@ from config.settings import settings
 from core.logging import logger, log_structured
 from core.exceptions import (
     NoFaceDetectedException,
-    MultipleFacesException,
     InvalidFileFormatException,
 )
 from core.hashing import calculate_image_hash
@@ -104,221 +103,6 @@ def save_to_database(
 
 
 # ========== API Endpoints ==========
-@router.post("/analyze")
-@limiter.limit("10/minute")  # 분당 10회 제한
-async def analyze_face(
-    request: Request,
-    file: UploadFile = File(...),
-    gender: str = Form("neutral"),  # 성별 파라미터 추가
-    face_detector: "FaceDetectionService" = Depends(get_face_detection_service),
-    ml_recommender: "MLRecommendationService" = Depends(get_hybrid_service),
-):
-    """
-    ML 기반 얼굴 분석 및 헤어스타일 추천 (v20.2.0: ML-only mode)
-
-    Gemini 의존성 제거 - MediaPipe + ML 모델만 사용
-    """
-    start_time = time.time()
-    image_hash = None
-
-    try:
-        validate_file_extension(file.filename)
-
-        logger.info(f"🎨 ML 분석 시작: {file.filename}, gender={gender}")
-
-        image_data = await file.read()
-        # 실제 바이트 크기 + 매직 바이트 검증 (확장자 위조/Content-Length 우회 방지)
-        validate_image_upload(image_data)
-        image_hash = calculate_image_hash(image_data)
-
-        log_structured(
-            "analysis_start",
-            {
-                "filename": file.filename,
-                "file_size_kb": round(len(image_data) / 1024, 2),
-                "image_hash": image_hash[:16],
-                "method": "ml_only",
-            },
-        )
-
-        # Face detection using MediaPipe
-        face_detection_start = time.time()
-        face_result = face_detector.detect_face(image_data)
-        face_detection_time = round((time.time() - face_detection_start) * 1000, 2)
-
-        if not face_result["has_face"]:
-            log_structured(
-                "analysis_error",
-                {"error_type": "no_face_detected", "image_hash": image_hash[:16]},
-            )
-            raise NoFaceDetectedException()
-
-        if face_result["face_count"] > 1:
-            raise MultipleFacesException(face_count=face_result["face_count"])
-
-        # Extract MediaPipe features
-        mp_features = face_result.get("features", None)
-        if not mp_features:
-            raise HTTPException(
-                status_code=500, detail="MediaPipe 얼굴 분석에 실패했습니다."
-            )
-
-        face_shape = mp_features.face_shape
-        skin_tone = mp_features.skin_tone
-        detected_gender = (
-            mp_features.gender if hasattr(mp_features, "gender") else gender
-        )
-
-        # MediaPipe 실제 측정값 추출
-        face_features = getattr(mp_features, "face_features", None)
-        skin_features = getattr(mp_features, "skin_features", None)
-
-        logger.info(
-            f"✅ MediaPipe 분석: {face_shape} / {skin_tone} / 성별: {detected_gender}"
-        )
-
-        # ML 기반 추천
-        ml_start = time.time()
-        recommendation_result = ml_recommender.recommend(
-            image_data=image_data,
-            face_shape=face_shape,
-            skin_tone=skin_tone,
-            face_features=face_features,
-            skin_features=skin_features,
-            gender=gender if gender != "neutral" else detected_gender,
-        )
-        ml_time = round((time.time() - ml_start) * 1000, 2)
-
-        # 분석 결과 구성
-        analysis_result = {
-            "analysis": {
-                "face_shape": face_shape,
-                "personal_color": skin_tone,
-                "gender": detected_gender,
-                "features": f"ML 모델 기반 분석 ({face_shape}, {skin_tone})",
-            },
-            "recommendations": recommendation_result.get("recommendations", []),
-        }
-
-        # Naver 검색 URL + AI 예시 이미지 URL 추가
-        style_image_service = get_style_image_service()
-        for rec in analysis_result["recommendations"]:
-            style_name = rec.get("style_name", "")
-            if gender == "male":
-                search_query = f"남자 {style_name} 헤어스타일"
-            elif gender == "female":
-                search_query = f"여자 {style_name} 헤어스타일"
-            else:
-                search_query = f"{style_name} 헤어스타일"
-            encoded_query = urllib.parse.quote(search_query)
-            rec["image_search_url"] = (
-                f"https://search.naver.com/search.naver?where=image&query={encoded_query}"
-            )
-            # AI 생성 예시 이미지 (매핑 없으면 None - 프론트는 null 처리)
-            rec["image_url"] = style_image_service.build_image_url(
-                style_name=style_name,
-                hairstyle_id=rec.get("hairstyle_id"),
-                gender=gender,
-                base_url=str(request.base_url),
-            )
-
-        # Save to database
-        total_time = round(time.time() - start_time, 2)
-        legacy_meta = recommendation_result.get("meta") or {}
-        analysis_id = save_to_database(
-            image_hash=image_hash,
-            analysis_result=analysis_result,
-            processing_time=total_time,
-            detection_method="ml",
-            mp_features=mp_features,
-            model_version=str(legacy_meta.get("model_version") or "unknown"),
-            gender=detected_gender,
-        )
-
-        if analysis_id is None:
-            logger.warning(
-                "⚠️ 데이터베이스 저장 실패 - 분석은 성공했지만 피드백을 저장할 수 없습니다. "
-                f"image_hash: {image_hash[:16]}"
-            )
-
-        legacy_recommendations = analysis_result.get("recommendations") or []
-        log_structured(
-            "analysis_complete",
-            {
-                "endpoint": "analyze",
-                "image_hash": image_hash[:16],
-                "processing_time": total_time,
-                "face_detection_time_ms": face_detection_time,
-                "ml_inference_time_ms": ml_time,
-                "method": "ml_only",
-                "model_version": str(legacy_meta.get("model_version") or "unknown"),
-                "face_shape": face_shape,
-                "personal_color": skin_tone,
-                "gender": detected_gender,
-                "top_style": (
-                    legacy_recommendations[0].get("style_name")
-                    if legacy_recommendations
-                    else None
-                ),
-                "top_score": legacy_meta.get("top_score"),
-                "score_stddev": legacy_meta.get("score_stddev"),
-                "authenticated": False,
-                "analysis_id": analysis_id,
-            },
-        )
-
-        return {
-            "success": True,
-            "data": analysis_result,
-            "analysis_id": analysis_id,
-            "processing_time": total_time,
-            "performance": {
-                "face_detection_ms": face_detection_time,
-                "ml_inference_ms": ml_time,
-                "detection_method": "mediapipe",
-            },
-            "cached": False,
-            "method": "ml",
-            "feedback_enabled": analysis_id is not None,
-        }
-
-    except (
-        NoFaceDetectedException,
-        MultipleFacesException,
-        InvalidFileFormatException,
-    ) as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": e.__class__.__name__.replace("Exception", "").lower(),
-                "message": str(e),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"분석 중 오류 발생: {str(e)}", exc_info=True)
-
-        log_structured(
-            "analysis_error",
-            {
-                "error_type": "internal_error",
-                "error_message": str(e),
-                "image_hash": image_hash[:16] if image_hash else "unknown",
-            },
-        )
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": "internal_error",
-                "message": "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-            },
-        )
-
-
 @router.post("/v2/analyze-hybrid")
 @limiter.limit("10/minute")  # 분당 10회 제한
 async def analyze_face_hybrid(
@@ -507,7 +291,7 @@ async def analyze_face_hybrid(
 
         logger.info(f"✅ ML 분석 완료 ({total_time}초)")
 
-        # 품질 수정 전후 비교용 계측 (레거시 /api/analyze 와 같은 이벤트 이름).
+        # 품질 수정 전후 비교용 계측 (analysis_complete 이벤트, 2026-11 삭제된 v1 과 같은 이름).
         # 사진/원본 식별자는 남기지 않는다 - image_hash 는 앞 16자만.
         recommendations = recommendation_result.get("recommendations") or []
         top_style = recommendations[0].get("style_name") if recommendations else None
@@ -558,7 +342,7 @@ async def analyze_face_hybrid(
 
     except (NoFaceDetectedException, InvalidFileFormatException) as e:
         # 400 의 원인(얼굴 미감지 / 파일 포맷)을 구분해서 센다.
-        # 레거시 /api/analyze 와 같은 이벤트 이름·error_type 을 쓴다.
+        # analysis_error 이벤트 이름·error_type 은 기존 대시보드 쿼리와 같게 유지한다.
         error_type = (
             "no_face_detected"
             if isinstance(e, NoFaceDetectedException)

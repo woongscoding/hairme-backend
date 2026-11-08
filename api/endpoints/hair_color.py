@@ -1,9 +1,8 @@
 """Hair Color Recommendation and Synthesis API endpoints
 
 Phase 3: 염색 추천 + 합성 API
-- 퍼스널컬러 기반 염색 추천
-- 트렌드 염색 컬러 조회
-- 가상 염색 시뮬레이션
+- 퍼스널컬러 기반 염색 추천 (GET /hair-color/{personal_color})
+- 가상 염색 시뮬레이션 (POST /hair-color/synthesize)
 
 과금 정책 (합성 계열은 core.quota 공용 로직 사용):
 - 로그인 회원 (Authorization: Bearer <JWT>): 크레딧 차감 (합성 실패 시 자동 환불)
@@ -84,7 +83,6 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 ENDPOINT_SYNTHESIZE = "hair-color/synthesize"
-ENDPOINT_BY_PERSONAL_COLOR = "hair-color/synthesize-by-personal-color"
 
 
 def _request_key(
@@ -290,44 +288,6 @@ async def get_hair_color_recommendations(
             for c in result.trends
         ],
     )
-
-
-@router.get("/hair-color/trends/all", tags=["hair_color"])
-async def get_all_trend_colors():
-    """
-    모든 트렌드 염색 컬러 조회
-
-    시즌별 트렌드 염색 컬러를 반환합니다.
-
-    **Returns:**
-    - 시즌별 트렌드 컬러 목록 (2024_winter, 2025_spring 등)
-    """
-    service = _get_service()
-    trends = service.get_all_trends()
-
-    return {"success": True, "trends": trends}
-
-
-@router.get("/hair-color/search/{color_name}", tags=["hair_color"])
-async def search_color(color_name: str):
-    """
-    염색 컬러명으로 검색
-
-    **Path Parameters:**
-    - color_name: 검색할 염색 컬러명
-
-    **Returns:**
-    - 컬러 정보 (이름, HEX, 레벨, 설명, 적합한 퍼스널컬러)
-    """
-    service = _get_service()
-    color = service.get_color_by_name(color_name)
-
-    if color is None:
-        raise HTTPException(
-            status_code=404, detail=f"'{color_name}' 컬러를 찾을 수 없습니다."
-        )
-
-    return {"success": True, "color": color}
 
 
 @router.post(
@@ -545,206 +505,6 @@ async def synthesize_hair_color(
         raise
     except Exception as e:
         logger.error(f"❌ 염색 시뮬레이션 오류: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        )
-    finally:
-        # 완료/실패/예외 어느 경로로 빠져나가도 잠금을 놓는다
-        release_lock()
-
-
-@router.post("/hair-color/synthesize-by-personal-color", tags=["hair_color"])
-@limiter.limit("5/minute")
-async def synthesize_recommended_color(
-    request: Request,
-    file: UploadFile = File(..., description="사용자 얼굴 사진"),
-    personal_color: str = Form(
-        ..., description="퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)"
-    ),
-    color_index: int = Form(0, description="추천 컬러 인덱스 (0: 첫번째 추천)"),
-    device_id: Optional[str] = Form(
-        None, description="디바이스 고유 ID (비로그인 일일 사용량 제한용)"
-    ),
-    user_id: Optional[str] = Depends(get_optional_user_id),
-):
-    """
-    퍼스널컬러 기반 추천 염색 시뮬레이션
-
-    퍼스널컬러에 맞는 추천 염색을 자동으로 적용합니다.
-
-    **Form Data:**
-    - file: 사용자 얼굴 사진
-    - personal_color: 퍼스널컬러 (봄웜/여름쿨/가을웜/겨울쿨)
-    - color_index: 추천 컬러 중 적용할 인덱스 (0부터 시작)
-
-    **Returns:**
-    - 염색 적용된 이미지
-    - 적용된 컬러 정보
-
-    **Rate Limit:** 5 requests per minute
-
-    사전 거절: /hair-color/synthesize 와 같다 (503 예산 / 409 중복, 과금 전).
-    """
-    start_time = time.time()
-    release_lock: Callable[[], None] = NOOP_RELEASE
-
-    try:
-        # ========== 1. 입력 검증 (과금 전에 수행) ==========
-        # 잘못된 요청(퍼스널컬러/인덱스/파일 오류)으로 크레딧·무료 한도가
-        # 소진되지 않도록, 모든 검증이 끝난 뒤에만 과금한다.
-        if not user_id and not (device_id or "").strip():
-            raise HTTPException(status_code=400, detail="device_id는 필수입니다.")
-
-        valid_types = ["봄웜", "여름쿨", "가을웜", "겨울쿨"]
-        if personal_color not in valid_types:
-            raise HTTPException(
-                status_code=400,
-                detail=f"유효하지 않은 퍼스널컬러입니다. 가능한 값: {valid_types}",
-            )
-
-        # Get recommendations
-        service = _get_service()
-        result = service.get_recommendations(personal_color, include_trends=False)
-
-        if color_index < 0 or color_index >= len(result.recommended):
-            raise HTTPException(
-                status_code=400,
-                detail=f"color_index가 범위를 벗어났습니다. (최대: {len(result.recommended) - 1})",
-            )
-
-        selected_color = result.recommended[color_index]
-
-        # File validation
-        validate_file_extension(file.filename)
-
-        image_data = await file.read()
-        validate_image_upload(image_data)
-
-        logger.info(
-            f"🎨 퍼스널컬러 기반 염색: {personal_color} -> {selected_color.name}"
-        )
-
-        # ========== 2. 일 예산 상한 + 중복 요청 잠금 (과금 전) ==========
-        rejection, release_lock = _pre_charge_guard(
-            ENDPOINT_BY_PERSONAL_COLOR,
-            user_id,
-            device_id,
-            _request_key(image_data, selected_color.name, selected_color.hex),
-            start_time,
-        )
-        if rejection is not None:
-            return rejection
-
-        # ========== 3. 과금 (회원: 크레딧 / 비로그인: device + IP 일일 제한) ==========
-        quota_error, quota, refund = charge_synthesis_quota(
-            user_id,
-            device_id,
-            client_ip_from_request(request),
-            endpoint=ENDPOINT_BY_PERSONAL_COLOR,
-        )
-        if quota_error is not None:
-            return quota_error
-
-        tier = charged_tier(quota)
-
-        # ========== 4. 합성 (과금 이후 모든 실패 경로에서 환불 보장) ==========
-        try:
-            synthesis_result = service.synthesize_hair_color(
-                image_data=image_data,
-                color_name=selected_color.name,
-                color_hex=selected_color.hex,
-                image_size=image_size_for(tier),
-            )
-            api_calls = synthesis_result.get("api_calls", 0)
-            # 성공/실패 모두 비용은 이미 나갔으므로 일 예산 집계에 반영한다
-            record_api_calls(api_calls, endpoint=ENDPOINT_BY_PERSONAL_COLOR)
-            if synthesis_result["success"]:
-                (
-                    synthesis_result["image_base64"],
-                    synthesis_result["image_format"],
-                ) = finalize_image(synthesis_result, tier)
-        except Exception:
-            refund()
-            raise
-
-        processing_time = round(time.time() - start_time, 2)
-
-        if synthesis_result["success"]:
-            log_structured(
-                "hair_color_synthesis_success",
-                {
-                    "endpoint": ENDPOINT_BY_PERSONAL_COLOR,
-                    "mode": _charge_mode(user_id, quota),
-                    "color_name": selected_color.name,
-                    "api_calls": api_calls,
-                    "processing_time": processing_time,
-                    "tier": tier,
-                    "authenticated": user_id is not None,
-                },
-            )
-            return {
-                "success": True,
-                "image_base64": synthesis_result["image_base64"],
-                "image_format": synthesis_result["image_format"],
-                "message": synthesis_result["message"],
-                "personal_color": personal_color,
-                "applied_color": {
-                    "name": selected_color.name,
-                    "hex": selected_color.hex,
-                    "level": selected_color.level,
-                    "description": selected_color.description,
-                },
-                "processing_time": processing_time,
-                "quota": quota,
-                "quality": result_quality(tier),
-                "is_preview": is_preview(tier),
-            }
-        else:
-            refund()
-            log_structured(
-                "hair_color_synthesis_failed",
-                {
-                    "endpoint": ENDPOINT_BY_PERSONAL_COLOR,
-                    "mode": _charge_mode(user_id, quota),
-                    "color_name": selected_color.name,
-                    "message": synthesis_result["message"],
-                    "reason": "synthesis_rejected",
-                    "failure_reason": synthesis_result.get("failure_reason"),
-                    "status_code": 422,
-                    "api_calls": api_calls,
-                    "processing_time": processing_time,
-                    "refunded": True,
-                    "authenticated": user_id is not None,
-                },
-            )
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "success": False,
-                    "error": "synthesis_rejected",
-                    "message": synthesis_result["message"],
-                    "personal_color": personal_color,
-                    "processing_time": processing_time,
-                    # 차감분은 되돌렸다는 것을 앱이 그대로 보여줄 수 있게
-                    "refunded": True,
-                    "balance": refunded_balance(quota),
-                },
-            )
-
-    except InvalidFileFormatException as e:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": "invalid_file_format",
-                "message": str(e),
-            },
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ 퍼스널컬러 기반 염색 오류: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",

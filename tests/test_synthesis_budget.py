@@ -226,7 +226,6 @@ def _synthesis_service(success=True, api_calls=1):
         "api_calls": api_calls,
     }
     service.synthesize_hairstyle.return_value = result
-    service.synthesize_with_reference.return_value = result
     return service
 
 
@@ -237,21 +236,6 @@ def _post_synthesize(client, headers=None, device_id=None):
     return client.post(
         "/api/v2/synthesize",
         files={"file": ("face.png", _png_bytes(), "image/png")},
-        data=data,
-        headers=headers or {},
-    )
-
-
-def _post_reference(client, headers=None, device_id=None):
-    data = {"gender": "male"}
-    if device_id:
-        data["device_id"] = device_id
-    return client.post(
-        "/api/v2/synthesize-with-reference",
-        files={
-            "user_photo": ("face.png", _png_bytes(), "image/png"),
-            "reference_photo": ("ref.png", _png_bytes(), "image/png"),
-        },
         data=data,
         headers=headers or {},
     )
@@ -346,24 +330,6 @@ class TestBudgetBlocksAnonymousOnly:
 
         assert response.status_code == 200
         synthesis.synthesize_hairstyle.assert_called_once()
-
-    def test_reference_endpoint_rejects_anonymous(self, client, storage):
-        synthesis = _synthesis_service()
-
-        with patch(
-            "api.endpoints.synthesis.daily_budget_exceeded", return_value=True
-        ), patch("api.endpoints.synthesis.acquire_synthesis_lock") as mock_lock, patch(
-            "api.endpoints.synthesis.get_usage_limit_service",
-            return_value=FakeUsageService(),
-        ), patch(
-            "api.endpoints.synthesis.get_synthesis_service", return_value=synthesis
-        ):
-            response = _post_reference(client, device_id=DEVICE_ID)
-
-        assert response.status_code == 503
-        assert response.json()["error"] == "daily_budget_exceeded"
-        mock_lock.assert_not_called()
-        synthesis.synthesize_with_reference.assert_not_called()
 
     def test_rejection_is_logged(self, client, storage):
         with patch(
@@ -468,31 +434,6 @@ class TestApiCallsAreAggregated:
         # 캐시는 Gemini 를 부르지 않으므로 상한 확인도 집계도 하지 않는다
         mock_check.assert_not_called()
         mock_record.assert_not_called()
-
-    def test_reference_endpoint_records_with_its_own_endpoint_name(
-        self, client, storage
-    ):
-        credit = MagicMock()
-        credit.consume_for_synthesis.return_value = (4, "free")
-
-        with patch(
-            "api.endpoints.synthesis.acquire_synthesis_lock",
-            return_value=(True, lambda: None),
-        ), patch(
-            "api.endpoints.synthesis.get_credit_service", return_value=credit
-        ), patch(
-            "api.endpoints.synthesis.get_synthesis_service",
-            return_value=_synthesis_service(api_calls=2),
-        ), patch(
-            "api.endpoints.synthesis.get_user_repository"
-        ), patch(
-            "api.endpoints.synthesis.record_api_calls"
-        ) as mock_record:
-            response = _post_reference(client, headers=AUTH)
-
-        assert response.status_code == 200
-        assert mock_record.call_args.args[0] == 2
-        assert mock_record.call_args.kwargs["endpoint"] == "synthesize-with-reference"
 
 
 class TestBudgetStoreFailureDoesNotBlock:
@@ -631,7 +572,6 @@ class TestAggregationRunsAtZeroBudget:
         "poster,endpoint_name",
         [
             (_post_synthesize, "synthesize"),
-            (_post_reference, "synthesize-with-reference"),
         ],
     )
     @pytest.mark.parametrize("success", [True, False])

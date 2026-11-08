@@ -3,11 +3,11 @@ BeautyMe Backend - Beauty Lambda (Lightweight)
 Version: 1.0.0
 
 Features:
-- Personal Color Analysis (MediaPipe + ITA algorithm)
-- Hair Color Recommendation (Gemini)
-- Beauty Consultation (Gemini)
+- Hair Color Recommendation (GET /api/hair-color/{personal_color})
+- Hair Color Synthesis (POST /api/hair-color/synthesize, Gemini)
+- Usage (GET /api/usage)
 
-NO PyTorch - Fast cold start (~10s)
+NO PyTorch - Fast cold start (MediaPipe 도 import 하지 않는다. requirements-beauty.txt 정리는 별도)
 """
 
 import os
@@ -29,9 +29,7 @@ LAMBDA_TYPE = os.environ.get("LAMBDA_TYPE", "beauty")
 IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
 # Import only beauty-related routers (NO ML, NO PyTorch)
-from api.endpoints.personal_color import router as personal_color_router
 from api.endpoints.hair_color import router as hair_color_router
-from api.endpoints.beauty import router as beauty_router
 from api.endpoints.usage import router as usage_router
 
 # Lambda initialization flag
@@ -62,7 +60,7 @@ def _docs_kwargs(environment: str) -> dict:
 
 app = FastAPI(
     title="BeautyMe Beauty API",
-    description="Personal Color + Hair Color Recommendation (Lightweight)",
+    description="Hair Color Recommendation + Synthesis (Lightweight)",
     version="1.0.0",
     **_docs_kwargs(settings.ENVIRONMENT),
 )
@@ -205,9 +203,7 @@ async def lambda_init_middleware(request: Request, call_next):
 
 
 # ========== Register Routers (Beauty Only) ==========
-app.include_router(personal_color_router, prefix="/api", tags=["personal_color"])
 app.include_router(hair_color_router, prefix="/api", tags=["hair_color"])
-app.include_router(beauty_router, prefix="/api", tags=["beauty"])
 app.include_router(usage_router, prefix="/api", tags=["usage"])
 
 
@@ -228,52 +224,30 @@ async def root():
     """Root endpoint with service status"""
     return {
         "name": "BeautyMe Beauty API",
-        "message": "Personal Color + Hair Color Recommendation",
+        "message": "Hair Color Recommendation + Synthesis",
         "version": "1.0.0",
         "lambda_type": LAMBDA_TYPE,
         "status": "running",
         "features": {
-            "personal_color": "enabled (ITA algorithm)",
             "hair_color_recommendation": "enabled",
-            "beauty_consultation": "enabled",
             "hair_color_synthesis": (
                 "enabled" if settings.GEMINI_API_KEY else "disabled"
             ),
         },
         "endpoints": {
-            "personal_color": "/api/personal-color",
             "hair_color": "/api/hair-color/{type}",
-            "beauty_analyze": "/api/beauty/analyze",
-            "beauty_consult": "/api/beauty/consult",
+            "hair_color_synthesis": "/api/hair-color/synthesize",
         },
     }
 
 
 # ========== Health Check Endpoint ==========
-def _mediapipe_loaded() -> bool:
-    """
-    MediaPipe analyzer 가 이미 로드됐는지 "로드를 유발하지 않고" 확인한다.
-
-    PersonalColorService 가 첫 요청 때 lazy 로드하므로 startup 플래그로는 알 수 없다.
-    모듈이 아직 import 되지 않았다면(=미로드) sys.modules 조회만으로 False 를 반환한다.
-    """
-    import sys
-
-    module = sys.modules.get("services.personal_color_service")
-    if module is None:
-        return False
-
-    service = getattr(module, "_personal_color_service", None)
-    return service is not None and getattr(service, "_analyzer", None) is not None
-
-
 @app.get("/api/health")
 async def health_check():
     """
-    Health check for Beauty Lambda.
+    Health check for Beauty Lambda (배포 게이트: status == "healthy").
 
     필수 서비스(gemini)가 준비되면 healthy 다.
-    MediaPipe 는 첫 요청 때 lazy 로드되므로 아직 로드되지 않아도 degraded 가 아니다.
     """
     return {
         "status": "healthy" if startup_status["gemini"] else "degraded",
@@ -282,7 +256,6 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "services": {
             "required": {"gemini": startup_status["gemini"]},
-            "optional": {"mediapipe": {"loaded": _mediapipe_loaded()}},
         },
     }
 

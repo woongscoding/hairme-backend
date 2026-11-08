@@ -87,7 +87,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 │  ┌─────────────────────────────────────────────────┐   │
 │  │              Services                           │   │
 │  │  FaceDetection  │ BodyFashion    │ PersonalColor│   │
-│  │  HairColor │ HairstyleSynthesis │ BeautyConsult│   │
+│  │  HairColor │ HairstyleSynthesis │ BodyFashion  │   │
 │  │  HybridRecommender │ UsageLimit │ TrendingStyle│   │
 │  │  PlayBilling    │ MLOps │ CreditService        │   │
 │  └─────────────────────────────────────────────────┘   │
@@ -112,7 +112,7 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 5. **PyTorch ML 모델**이 개인화된 헤어스타일 추천
 6. **Gemini 2.5 Flash Image**로 헤어스타일/헤어컬러 합성 (선택)
 7. **DynamoDB**에 분석 결과 저장
-8. 종합 뷰티 리포트 **응답** 반환
+8. 분석/합성 결과 **응답** 반환
 
 ---
 
@@ -123,7 +123,6 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 - **AI 헤어스타일 추천** - PyTorch ML 모델 + Sentence Transformer 임베딩
 - **헤어스타일 합성** - Gemini 2.5 Flash Image로 헤어스타일 적용 미리보기
 - **헤어컬러 추천/합성** - 퍼스널컬러 기반 추천 + 가상 염색 시뮬레이션
-- **뷰티 컨설팅** - 종합 분석 리포트 + AI 챗봇 상담
 - **피드백 시스템** - 좋아요/싫어요 추적 + MLOps 재학습 파이프라인
 - **사용량 관리** - 디바이스별 일일 합성 횟수 제한
 - **재학습 품질 게이트** - 홀드아웃 평가를 통과한 모델만 자동 승격
@@ -139,55 +138,30 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 | `GET` | `/` | 서비스 상태, 버전, 사용 가능한 기능 목록 |
 | `GET` | `/api/health` | 헬스 체크 (`?deep=true`로 상세 점검) |
 
-### 뷰티 컨설팅
-
-| 메서드 | 엔드포인트 | 설명 | Rate Limit |
-|--------|----------|------|-----------|
-| `POST` | `/api/beauty/analyze` | 종합 뷰티 분석 (얼굴형 + 퍼스널컬러 + 추천) | 10/min |
-| `POST` | `/api/beauty/consult` | AI 뷰티 상담 챗봇 | 30/min |
-| `POST` | `/api/beauty/report` | 종합 뷰티 분석 리포트 생성 (markdown/json) | 5/min |
-| `GET` | `/api/beauty/features` | 플랫폼 기능 및 capabilities 조회 | - |
-
-### 퍼스널컬러
-
-| 메서드 | 엔드포인트 | 설명 | Rate Limit |
-|--------|----------|------|-----------|
-| `POST` | `/api/personal-color` | 퍼스널컬러 분석 (ITA 기반 피부톤 진단) | 10/min |
-| `GET` | `/api/personal-color/{color_type}/palette` | 퍼스널컬러 타입별 컬러 팔레트 | - |
-| `GET` | `/api/personal-color/{color_type}/styling` | 퍼스널컬러별 스타일링 팁 (메이크업/패션) | - |
-| `GET` | `/api/personal-color/{color_type}/hair` | 퍼스널컬러별 추천 헤어 컬러 | - |
-| `GET` | `/api/personal-color/types` | 지원되는 퍼스널컬러 타입 목록 | - |
-
 ### 헤어 컬러
 
 | 메서드 | 엔드포인트 | 설명 | Rate Limit |
 |--------|----------|------|-----------|
 | `GET` | `/api/hair-color/{personal_color}` | 퍼스널컬러 기반 헤어 컬러 추천 | - |
-| `GET` | `/api/hair-color/trends/all` | 시즌별 트렌드 헤어 컬러 | - |
-| `GET` | `/api/hair-color/search/{color_name}` | 헤어 컬러명 검색 | - |
 | `POST` | `/api/hair-color/synthesize` | 가상 헤어 컬러 시뮬레이션 | 5/min |
-| `POST` | `/api/hair-color/synthesize-by-personal-color` | 퍼스널컬러 기반 헤어 컬러 합성 | 5/min |
 
 ### 헤어스타일 합성
 
 | 메서드 | 엔드포인트 | 설명 | Rate Limit |
 |--------|----------|------|-----------|
 | `POST` | `/api/v2/synthesize` | Gemini 2.5 Flash Image 헤어스타일 합성 | 5/min |
-| `POST` | `/api/v2/synthesize-with-reference` | 레퍼런스 이미지 기반 헤어스타일 합성 | 3/min |
 
 ### 얼굴 분석
 
 | 메서드 | 엔드포인트 | 설명 | Rate Limit |
 |--------|----------|------|-----------|
-| `POST` | `/api/analyze` | ML 기반 얼굴 분석 및 헤어스타일 추천 | 10/min |
 | `POST` | `/api/v2/analyze-hybrid` | 하이브리드 분석 (MediaPipe + ML + Gemini) | 10/min |
 
 ### 피드백
 
 | 메서드 | 엔드포인트 | 설명 | Rate Limit |
 |--------|----------|------|-----------|
-| `POST` | `/api/feedback` | 사용자 피드백 제출 | 20/min |
-| `GET` | `/api/stats/feedback` | 피드백 통계 조회 | 30/min |
+| `POST` | `/api/feedback/submit` | 사용자 피드백 제출 | 20/min |
 
 ### 사용량
 
@@ -218,10 +192,8 @@ BeautyMe Backend는 **서버리스** AI 기반 종합 뷰티 컨설팅 플랫폼
 
 | 서비스 | 설명 | 실패 시 동작 |
 |--------|------|-------------|
-| **PersonalColorService** | ITA 기반 퍼스널컬러 진단 | 경고 로그 - 퍼스널컬러 비활성화 |
 | **HairColorService** | 헤어 컬러 추천 + 트렌드 데이터 | 경고 로그 - 헤어컬러 비활성화 |
 | **HairstyleSynthesisService** | Gemini 2.5 Flash Image 합성 (리트라이 3회) | 경고 로그 - 합성 비활성화 |
-| **BeautyConsultantService** | 종합 뷰티 프로필 생성 (모든 서비스 통합) | 경고 로그 - 개별 서비스로 폴백 |
 | **UsageLimitService** | DynamoDB 기반 디바이스별 일일 합성 제한 | 경고 로그 - 제한 없이 진행 |
 | **TrendingStyleService** | 트렌드 헤어스타일 데이터 제공 | 경고 로그 - 트렌드 비활성화 |
 
@@ -292,13 +264,12 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 # 헬스 체크
 curl http://localhost:8000/api/health
 
-# 종합 뷰티 분석
-curl -X POST http://localhost:8000/api/beauty/analyze \
-  -F "file=@face_image.jpg"
+# 얼굴 분석 + 헤어스타일 추천
+curl -X POST http://localhost:8000/api/v2/analyze-hybrid \
+  -F "file=@face_image.jpg" -F "gender=female"
 
-# 퍼스널컬러 분석
-curl -X POST http://localhost:8000/api/personal-color \
-  -F "file=@face_image.jpg"
+# 퍼스널컬러 기반 염색 추천
+curl http://localhost:8000/api/hair-color/봄웜
 ```
 
 ---
@@ -585,10 +556,8 @@ aws logs tail /aws/lambda/hairme-analyze --follow
 | 엔드포인트 | 제한 |
 |-----------|------|
 | 합성 (synthesize) | 5 req/min |
-| 레퍼런스 합성 | 3 req/min |
 | 분석 (analyze) | 10 req/min |
 | 피드백 제출 | 20 req/min |
-| 뷰티 상담 | 30 req/min |
 
 ### Security Headers 미들웨어
 

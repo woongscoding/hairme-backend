@@ -33,9 +33,7 @@ from routers.admin import router as admin_router
 from api.endpoints.analyze import router as analyze_router
 from api.endpoints.feedback import router as feedback_router
 from api.endpoints.synthesis import router as synthesis_router
-from api.endpoints.personal_color import router as personal_color_router
 from api.endpoints.hair_color import router as hair_color_router
-from api.endpoints.beauty import router as beauty_router
 from api.endpoints.usage import router as usage_router
 from api.endpoints.auth import router as auth_router
 from api.endpoints.credits import router as credits_router
@@ -279,9 +277,7 @@ app.include_router(admin_router, prefix="/api", tags=["admin"])
 app.include_router(analyze_router, prefix="/api", tags=["analysis"])
 app.include_router(feedback_router, prefix="/api", tags=["feedback"])
 app.include_router(synthesis_router, prefix="/api/v2", tags=["synthesis"])
-app.include_router(personal_color_router, prefix="/api", tags=["personal_color"])
 app.include_router(hair_color_router, prefix="/api", tags=["hair_color"])
-app.include_router(beauty_router, prefix="/api", tags=["beauty"])
 app.include_router(usage_router, prefix="/api", tags=["usage"])
 app.include_router(auth_router, prefix="/api", tags=["auth"])
 app.include_router(credits_router, prefix="/api", tags=["credits"])
@@ -329,10 +325,9 @@ async def root():
             ),
         },
         "endpoints": {
-            "beauty": "/api/beauty/analyze",
-            "personal_color": "/api/personal-color/analyze",
+            "hairstyle": "/api/v2/analyze-hybrid",
+            "synthesis": "/api/v2/synthesize",
             "hair_color": "/api/hair-color/{type}",
-            "hairstyle": "/api/analyze",
         },
     }
 

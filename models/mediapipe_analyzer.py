@@ -47,7 +47,7 @@ class MediaPipeFaceFeatures:
     # ⚠️ 레거시 스케일 ITA. OpenCV 8bit L(0~255)을 L*(0~100) 자리에 그대로 넣어 계산한
     # 값이라 실제 ITA보다 크게 나온다(대략 50~90°). 그래도 ML 추천 모델 입력(skin_features),
     # DynamoDB mediapipe_ITA_value, MLOps 학습 샘플, SKIN_FEATURE_STATS 정규화가 모두 이
-    # 분포에 맞춰져 있어 바꾸면 학습/서빙 스큐가 생긴다. 피부톤 분류·밝기 판정은 ITA_corrected 를 쓴다.
+    # 분포에 맞춰져 있어 바꾸면 학습/서빙 스큐가 생긴다. 피부톤 분류는 ITA_corrected 를 쓴다.
     ITA_value: float  # 피부톤 ITA 값 (레거시 스케일, 모델 입력용)
     hue_value: float  # 색조 값 (HSV)
 

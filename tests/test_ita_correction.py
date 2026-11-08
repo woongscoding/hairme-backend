@@ -1,12 +1,11 @@
 """ITA(피부톤 각도) 단위 보정 테스트
 
 OpenCV 8bit LAB 의 L 은 0~255 라서 L* = L * 100/255 로 바꿔야 표준 ITA 가 된다.
-- 분류(봄웜/여름쿨/가을웜/겨울쿨)와 퍼스널컬러 밝기는 보정 ITA 를 쓴다.
+- 분류(봄웜/여름쿨/가을웜/겨울쿨)는 보정 ITA 를 쓴다.
 - 모델 입력(skin_features)·DB 저장(ITA_value)은 레거시 스케일을 그대로 유지한다.
 """
 
 import math
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -108,41 +107,3 @@ class TestFeaturesDataclass:
         assert d["ITA_value"] == 83.0
         assert d["skin_features"] == [83.0, 11.0]
         assert d["ITA_corrected"] == 45.2
-
-
-class TestPersonalColorBrightness:
-    def _service(self, features):
-        from services.personal_color_service import PersonalColorService
-
-        svc = PersonalColorService()
-        svc._analyzer = MagicMock()
-        svc._analyzer.analyze.return_value = features
-        svc._personal_color_data = {}
-        svc._hair_color_data = {}
-        return svc
-
-    def _features(self, legacy, corrected):
-        f = MagicMock()
-        f.skin_tone = "가을웜"
-        f.confidence = 0.9
-        f.ITA_value = legacy
-        f.ITA_corrected = corrected
-        f.hue_value = 11.0
-        return f
-
-    def test_brightness_uses_corrected_ita(self):
-        svc = self._service(self._features(legacy=83.0, corrected=35.0))
-        result = svc.analyze(b"img")
-        assert result is not None
-        assert result.brightness == "medium"
-        assert result.ita_value == 35.0
-
-    def test_dark_skin_is_muted(self):
-        svc = self._service(self._features(legacy=81.0, corrected=10.0))
-        assert svc.analyze(b"img").brightness == "muted"
-
-    def test_falls_back_to_legacy_when_corrected_missing(self):
-        svc = self._service(self._features(legacy=83.0, corrected=None))
-        result = svc.analyze(b"img")
-        assert result.brightness == "bright"
-        assert result.ita_value == 83.0

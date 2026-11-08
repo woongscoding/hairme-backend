@@ -256,9 +256,6 @@ def _synthesis_service(success=True, api_calls=1):
         "message": "적용되었습니다." if success else "얼굴을 찾지 못했습니다",
         "api_calls": api_calls,
     }
-    service.synthesize_with_reference.return_value = (
-        service.synthesize_hairstyle.return_value
-    )
     return service
 
 
@@ -270,18 +267,6 @@ def _post_synthesize(client, headers=None, device_id=None):
         "/api/v2/synthesize",
         files={"file": ("face.png", _png_bytes(), "image/png")},
         data=data,
-        headers=headers or {},
-    )
-
-
-def _post_reference(client, headers=None):
-    return client.post(
-        "/api/v2/synthesize-with-reference",
-        files={
-            "user_photo": ("face.png", _png_bytes(), "image/png"),
-            "reference_photo": ("ref.png", _png_bytes(), "image/png"),
-        },
-        data={"gender": "male"},
         headers=headers or {},
     )
 
@@ -309,24 +294,6 @@ class TestDuplicateRequestRejected:
         credit.consume_for_synthesis.assert_not_called()
         # Gemini 도 호출되지 않는다
         synthesis.synthesize_hairstyle.assert_not_called()
-
-    def test_reference_endpoint_also_rejects(self, client, storage):
-        credit = MagicMock()
-        synthesis = _synthesis_service()
-
-        with patch(
-            "api.endpoints.synthesis.acquire_synthesis_lock",
-            return_value=(False, lambda: None),
-        ), patch(
-            "api.endpoints.synthesis.get_credit_service", return_value=credit
-        ), patch(
-            "api.endpoints.synthesis.get_synthesis_service", return_value=synthesis
-        ):
-            response = _post_reference(client, headers=AUTH)
-
-        assert response.status_code == 409
-        credit.consume_for_synthesis.assert_not_called()
-        synthesis.synthesize_with_reference.assert_not_called()
 
     def test_duplicate_is_logged(self, client, storage):
         with patch(
@@ -611,12 +578,3 @@ class TestServiceCountsRealCalls:
 
         assert result["success"] is False
         assert result["api_calls"] == 0
-
-    def test_reference_synthesis_counts_calls(self):
-        service, client = self._service([self._server_error(), self._image_response()])
-
-        result = service.synthesize_with_reference(_png_bytes(), _png_bytes())
-
-        assert result["success"] is True
-        assert result["api_calls"] == 2
-        assert client.models.generate_content.call_count == 2

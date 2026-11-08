@@ -217,10 +217,6 @@ class HairColorService:
 
         return matching
 
-    def get_all_trends(self) -> Dict[str, List[Dict]]:
-        """모든 트렌드 컬러 조회"""
-        return self.TREND_COLORS
-
     def synthesize_hair_color(
         self,
         image_data: bytes,

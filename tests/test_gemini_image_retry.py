@@ -306,17 +306,13 @@ def _call(kind, responses):
     if kind == "synthesize":
         service, client = _synthesis_service(responses)
         return service.synthesize_hairstyle(_png_bytes(), "투블럭컷"), client
-    if kind == "reference":
-        service, client = _synthesis_service(responses)
-        return service.synthesize_with_reference(_png_bytes(), _png_bytes()), client
     service, client = _color_service(responses)
     return service.synthesize_hair_color(_png_bytes(), "밀크브라운", "#C4A484"), client
 
 
-KINDS = ["synthesize", "reference", "hair_color"]
+KINDS = ["synthesize", "hair_color"]
 FAIL_MESSAGES = {
     "synthesize": SYNTH_FAIL_MESSAGE,
-    "reference": SYNTH_FAIL_MESSAGE,
     "hair_color": COLOR_FAIL_MESSAGE,
 }
 

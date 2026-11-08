@@ -79,21 +79,6 @@ class TestSynthesisGeminiConfig:
         assert call.kwargs["model"] == settings.GEMINI_IMAGE_MODEL
         assert call.kwargs["config"].response_modalities == ["IMAGE"]
 
-    def test_synthesize_with_reference_uses_image_only_modality(
-        self, synthesis_service
-    ):
-        result = synthesis_service.synthesize_with_reference(
-            user_image_data=_png_bytes(),
-            reference_image_data=_png_bytes(size=(48, 48)),
-            gender="female",
-        )
-
-        assert result["success"] is True
-
-        call = synthesis_service._client.models.generate_content.call_args
-        assert call.kwargs["model"] == settings.GEMINI_IMAGE_MODEL
-        assert call.kwargs["config"].response_modalities == ["IMAGE"]
-
     def test_returned_image_is_base64_encoded(self, synthesis_service):
         raw = _png_bytes()
         synthesis_service._client.models.generate_content.return_value = (

@@ -266,22 +266,29 @@ class TestDeviceIdValidation:
 
 
 class TestValidationBeforeCharge:
-    def test_invalid_color_index_does_not_consume_usage(self, client):
+    @pytest.fixture(autouse=True)
+    def _no_rate_limit(self):
+        """분당 제한(5/minute)은 여기의 관심사가 아니다 (리미터는 테스트 간 공유된다)"""
+        from api.endpoints import hair_color as hair_color_module
+
+        previous = hair_color_module.limiter.enabled
+        hair_color_module.limiter.enabled = False
+        yield
+        hair_color_module.limiter.enabled = previous
+
+    def test_invalid_color_hex_does_not_consume_usage(self, client):
         usage = FakeUsageService()
         service = _hair_color_service(True)
-        recommendations = MagicMock()
-        recommendations.recommended = [MagicMock()]
-        service.get_recommendations.return_value = recommendations
 
         with patch("core.quota.get_usage_limit_service", return_value=usage), patch(
             "api.endpoints.hair_color._get_service", return_value=service
         ):
             response = client.post(
-                "/api/hair-color/synthesize-by-personal-color",
+                "/api/hair-color/synthesize",
                 files={"file": ("face.png", _png_bytes(), "image/png")},
                 data={
-                    "personal_color": "봄웜",
-                    "color_index": 99,
+                    "color_name": "밀크브라운",
+                    "color_hex": "not-a-hex",
                     "device_id": DEVICE_ID,
                 },
             )

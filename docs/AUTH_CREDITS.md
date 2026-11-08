@@ -76,7 +76,7 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 | POST | `/api/admin/users/{user_id}/suspend` | Admin Key | 계정 정지 (status=suspended + token_version 증가) |
 | POST | `/api/admin/users/{user_id}/reactivate` | Admin Key | 계정 정지 해제 (status=active) |
 
-`/api/v2/synthesize`, `/api/v2/synthesize-with-reference`: JWT 있으면 크레딧 차감,
+`/api/v2/synthesize`: JWT 있으면 크레딧 차감,
 없으면 기존 device_id 일일 제한 (구버전 앱 호환, 단계적 폐기 예정 - 아래 킬 스위치 참고).
 
 ## 수익화 v2.1 (2026-11) — 앱이 알아야 할 것
@@ -85,8 +85,7 @@ POST /api/v2/synthesize (Authorization: Bearer <JWT>)
 
 **출력 등급.** 구매 크레딧(`paid_credits`)으로 차감된 합성만 유료(1K, 워터마크 없음),
 나머지(비회원 무료·가입 보너스·광고 크레딧)는 무료(512px + 우하단 워터마크).
-스타일 합성(`/synthesize`, `/synthesize-with-reference`)과 염색 합성(`/hair-color/synthesize`,
-`/hair-color/synthesize-by-personal-color`) 모두 같다. 합성 성공 응답에 추가된 필드:
+스타일 합성(`/synthesize`)과 염색 합성(`/hair-color/synthesize`) 모두 같다. 합성 성공 응답에 추가된 필드:
 
 ```json
 "quota":      {"mode": "credits", "balance": 14, "tier": "paid"},

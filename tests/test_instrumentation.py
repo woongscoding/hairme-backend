@@ -339,7 +339,7 @@ class TestFeedbackDislikeReason:
         ) as mock_save, patch(
             "api.endpoints.feedback.log_structured"
         ) as mock_log:
-            response = client.post("/api/feedback", json=payload)
+            response = client.post("/api/feedback/submit", json=payload)
         return response, mock_save, mock_log
 
     def test_accepted_and_stored_and_logged(self, client):

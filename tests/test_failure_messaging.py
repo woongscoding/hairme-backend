@@ -3,7 +3,7 @@
 
 앱이 JSON 원문을 그대로 보여주던 문제를 서버 쪽에서 먼저 정리한다.
 
-- 합성 성공 4경로(스타일/레퍼런스 × 캐시히트/신규) 응답에 disclosure 포함
+- 합성 성공 2경로(스타일 합성 캐시히트/신규) 응답에 disclosure 포함
   (추천 제품이 함께 내려가므로 공정위 표시광고 문구가 빠지면 안 된다)
 - 합성 거절 422 본문에 error 코드 / refunded / balance
 - 중복 요청 409 는 "다시 시도" 를 안내한다 (받을 결과가 있다는 오해 제거)
@@ -120,9 +120,6 @@ def _synthesis_service(success=True):
         ),
         "api_calls": 1,
     }
-    service.synthesize_with_reference.return_value = (
-        service.synthesize_hairstyle.return_value
-    )
     return service
 
 
@@ -167,18 +164,6 @@ def _post_synthesize(client, headers=None, device_id=None):
         "/api/v2/synthesize",
         files={"file": ("face.png", _png_bytes(), "image/png")},
         data=data,
-        headers=headers or {},
-    )
-
-
-def _post_reference(client, headers=None):
-    return client.post(
-        "/api/v2/synthesize-with-reference",
-        files={
-            "user_photo": ("face.png", _png_bytes(), "image/png"),
-            "reference_photo": ("ref.png", _png_bytes(), "image/png"),
-        },
-        data={"gender": "male"},
         headers=headers or {},
     )
 
@@ -228,33 +213,6 @@ class TestDisclosureOnEverySuccessPath:
         assert response.json()["cached"] is True
         self._assert_disclosure(response)
 
-    def test_reference_synthesis(self, client, storage):
-        with patch(
-            "api.endpoints.synthesis.get_credit_service", return_value=_member_credit()
-        ), patch(
-            "api.endpoints.synthesis.get_synthesis_service",
-            return_value=_synthesis_service(),
-        ), patch(
-            "api.endpoints.synthesis.get_user_repository"
-        ):
-            response = _post_reference(client, headers=AUTH)
-
-        self._assert_disclosure(response)
-
-    def test_reference_synthesis_cache_hit(self, client, storage):
-        storage.get_cached_result.return_value = {
-            "image_base64": "aW1n",
-            "image_format": "png",
-        }
-
-        with patch(
-            "api.endpoints.synthesis.get_credit_service", return_value=MagicMock()
-        ):
-            response = _post_reference(client, headers=AUTH)
-
-        assert response.json()["cached"] is True
-        self._assert_disclosure(response)
-
     def test_disclosure_lookup_never_breaks_the_response(self, client, storage):
         """카탈로그가 깨져도 합성 응답은 살아 있어야 한다"""
         from api.endpoints.synthesis import _safe_disclosure
@@ -290,21 +248,6 @@ class TestRejected422Body:
         assert body["balance"] == 4 + settings.SYNTHESIS_CREDIT_COST
         assert "다시 시도" in body["message"]
         credit.grant.assert_called_once()
-
-    def test_reference_endpoint_body_matches(self, client, storage):
-        with patch(
-            "api.endpoints.synthesis.get_credit_service", return_value=_member_credit()
-        ), patch(
-            "api.endpoints.synthesis.get_synthesis_service",
-            return_value=_synthesis_service(success=False),
-        ):
-            response = _post_reference(client, headers=AUTH)
-
-        assert response.status_code == 422
-        body = response.json()
-        assert body["error"] == "synthesis_rejected"
-        assert body["refunded"] is True
-        assert body["balance"] == 4 + settings.SYNTHESIS_CREDIT_COST
 
     def test_anonymous_body_has_null_balance(self, client, storage):
         """비로그인은 크레딧 잔액 개념이 없으므로 balance 는 null (필드는 존재)"""

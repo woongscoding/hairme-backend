@@ -763,9 +763,6 @@ def synthesis_mocks():
         "message": "적용되었습니다.",
         "api_calls": 1,
     }
-    service.synthesize_with_reference.return_value = (
-        service.synthesize_hairstyle.return_value
-    )
     credit = MagicMock()
     credit.consume_for_synthesis.return_value = (4, "free")
 
@@ -917,26 +914,6 @@ class TestSynthesisSignalFields:
             )
         assert response.status_code == 200
         assert response.json()["success"] is True
-
-    def test_reference_endpoint_accepts_fields(self, client, synthesis_mocks):
-        response = client.post(
-            "/api/v2/synthesize-with-reference",
-            files={
-                "user_photo": ("face.png", _png_bytes(), "image/png"),
-                "reference_photo": ("ref.png", _png_bytes(), "image/png"),
-            },
-            data={"gender": "male", "analysis_id": ANALYSIS_ID, "hairstyle_id": "3"},
-            headers=synthesis_mocks["auth"],
-        )
-        assert response.status_code == 200
-        synthesis_mocks["record"].assert_called_once_with(
-            ANALYSIS_ID,
-            "synthesize",
-            hairstyle_id=3,
-            style_name=None,
-            rec_rank=None,
-            result_id=CACHE_KEY[:16],
-        )
 
 
 def _raise(_id):

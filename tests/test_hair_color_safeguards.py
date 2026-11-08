@@ -36,12 +36,8 @@ USER_ID = "hair-color-guard-user"
 AUTH = {"Authorization": f"Bearer {create_access_token(USER_ID)}"}
 
 SYNTHESIZE = "/api/hair-color/synthesize"
-BY_PERSONAL_COLOR = "/api/hair-color/synthesize-by-personal-color"
-PATHS = [SYNTHESIZE, BY_PERSONAL_COLOR]
-ENDPOINT_NAMES = {
-    SYNTHESIZE: "hair-color/synthesize",
-    BY_PERSONAL_COLOR: "hair-color/synthesize-by-personal-color",
-}
+PATHS = [SYNTHESIZE]
+ENDPOINT_NAMES = {SYNTHESIZE: "hair-color/synthesize"}
 
 
 @pytest.fixture(autouse=True)
@@ -70,12 +66,6 @@ def _png_bytes() -> bytes:
 def _color_service(success=True, api_calls=1):
     service = MagicMock()
     service.get_color_by_name.return_value = {"hex": "#8B4513"}
-    recommended = MagicMock()
-    recommended.name = "밀크브라운"
-    recommended.hex = "#C4A484"
-    recommended.level = "7"
-    recommended.description = ""
-    service.get_recommendations.return_value = MagicMock(recommended=[recommended])
     if success:
         service.synthesize_hair_color.return_value = {
             "success": True,
@@ -106,10 +96,7 @@ def _quota_ok():
 
 
 def _post(client, path, *, member=True, device_id=DEVICE_ID):
-    if path == SYNTHESIZE:
-        data = {"color_name": "밀크브라운"}
-    else:
-        data = {"personal_color": "봄웜", "color_index": "0"}
+    data = {"color_name": "밀크브라운"}
     if device_id:
         data["device_id"] = device_id
     return client.post(

@@ -45,7 +45,7 @@
 
 ### (a) 합성 요청에 추천 카드 정보 첨부
 
-`POST /api/v2/synthesize` (multipart form, 앱이 쓰는 실제 경로) — `POST /api/v2/synthesize-with-reference` 도 같은 필드를 받지만 앱은 호출하지 않는다.
+`POST /api/v2/synthesize` (multipart form, 앱이 쓰는 실제 경로). 레퍼런스 합성(`/api/v2/synthesize-with-reference`)은 호출이 없어 2026-11 에 삭제됐다.
 
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |

@@ -24,8 +24,14 @@ class TestFastAPIAppInitialization:
 
         # Check for key endpoints
         assert any("/api/admin" in route for route in routes)
-        assert any("/api/analyze" in route for route in routes)
-        assert any("/api/feedback" in route for route in routes)
+        assert "/api/v2/analyze-hybrid" in routes
+        assert "/api/feedback/submit" in routes
+        # 2026-11 호출 0건으로 삭제한 라우트
+        assert "/api/analyze" not in routes
+        assert "/api/feedback" not in routes
+        assert not any(
+            r.startswith(("/api/beauty", "/api/personal-color")) for r in routes
+        )
 
 
 class TestMiddleware:
@@ -228,7 +234,7 @@ class TestUploadSizeLimitIntegration:
     def test_oversized_post_returns_413_json_with_security_headers(self, client):
         """Oversized POST must get a 413 JSON body AND the security headers"""
         response = client.post(
-            "/api/analyze",
+            "/api/v2/analyze-hybrid",
             headers={"Content-Length": "20000000"},
         )
 
@@ -271,38 +277,3 @@ class TestDocsExposure:
         assert kwargs["redoc_url"] is None
         assert kwargs["openapi_url"] is None
         assert main_beauty._docs_kwargs("development")["openapi_url"] == "/openapi.json"
-
-
-class TestBeautyConsultFailure:
-    """Beauty consult must not return 200 when the backend is unavailable"""
-
-    def test_consult_returns_503_when_service_fails(self, client):
-        import api.endpoints.beauty as beauty_module
-
-        mock_service = Mock()
-        mock_service.get_consultation.return_value = {
-            "success": False,
-            "message": "상담 서비스에 일시적인 문제가 발생했습니다.",
-            "intent": "error",
-            "suggestions": [],
-        }
-
-        with patch.object(beauty_module, "_get_service", return_value=mock_service):
-            response = client.post(
-                "/api/beauty/consult", json={"query": "단발이 어울릴까요?"}
-            )
-
-        assert response.status_code == 503
-        assert response.json()["detail"] == "상담 서비스를 현재 이용할 수 없습니다."
-
-    def test_features_reports_chatbot_availability(self, client):
-        response = client.get("/api/beauty/features")
-
-        assert response.status_code == 200
-        chatbot = response.json()["features"]["chatbot"]
-
-        assert "available" in chatbot
-        assert chatbot["status"] in ("available", "unavailable")
-        # services.chatbot_service does not exist in this repo (legacy)
-        assert chatbot["available"] is False
-        assert chatbot["status"] == "unavailable"
