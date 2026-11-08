@@ -1,24 +1,19 @@
-"""Face detection service using MediaPipe and Gemini fallback"""
+"""Face detection service using MediaPipe"""
 
-import io
-import json
 from typing import Dict, Any, Optional
-from PIL import Image
 
-# import google.generativeai as genai  # Lazy loaded
-
-from config.settings import settings
 from core.logging import logger, log_structured
 from models.mediapipe_analyzer import MediaPipeFaceAnalyzer, MediaPipeFaceFeatures
 
 
 class FaceDetectionService:
     """
-    Service for face detection with fallback strategy
+    Service for face detection (MediaPipe only)
 
-    Detection flow:
-    1. Try MediaPipe (most accurate - 90%+)
-    2. Fallback to Gemini if MediaPipe fails
+    MediaPipe 가 얼굴을 못 찾으면 그대로 "얼굴 없음"을 돌려준다.
+    예전에는 Gemini 로 한 번 더 확인했지만, Gemini 는 얼굴 유무만 답하고 특징값을
+    주지 않아 "얼굴 있음"이어도 분석을 이어갈 수 없었다(유료 호출 + 500 응답).
+    엔드포인트는 has_face=False 를 받으면 NoFaceDetectedException(400) 으로 응답한다.
     """
 
     def __init__(self, mediapipe_analyzer: Optional[MediaPipeFaceAnalyzer] = None):
@@ -30,49 +25,18 @@ class FaceDetectionService:
         """
         self.mediapipe_analyzer = mediapipe_analyzer
 
-    def verify_face_with_gemini(self, image_data: bytes) -> Dict[str, Any]:
-        """
-        Verify face with Gemini when MediaPipe fails
-
-        Args:
-            image_data: Image binary data
-
-        Returns:
-            Dictionary with face verification results
-        """
-        try:
-            image = Image.open(io.BytesIO(image_data))
-            image.thumbnail((256, 256))
-
-            import google.generativeai as genai
-
-            model = genai.GenerativeModel(settings.MODEL_NAME)
-            prompt = """이미지에 사람 얼굴이 있나요?
-
-JSON으로만 답변:
-{"has_face": true/false, "face_count": 숫자}"""
-
-            response = model.generate_content([prompt, image])
-            result = json.loads(response.text.strip())
-
-            return {
-                "has_face": result.get("has_face", False),
-                "face_count": result.get("face_count", 0),
-                "method": "gemini",
-            }
-
-        except Exception as e:
-            logger.error(f"Gemini 얼굴 검증 실패: {str(e)}")
-            return {
-                "has_face": False,
-                "face_count": 0,
-                "method": "gemini",
-                "error": str(e),
-            }
+    @staticmethod
+    def _no_face_result() -> Dict[str, Any]:
+        return {
+            "has_face": False,
+            "face_count": 0,
+            "method": "mediapipe",
+            "features": None,
+        }
 
     def detect_face(self, image_data: bytes) -> Dict[str, Any]:
         """
-        Detect face (MediaPipe first, fallback to Gemini)
+        Detect face with MediaPipe
 
         Args:
             image_data: Image binary data
@@ -82,48 +46,45 @@ JSON으로만 답변:
             {
                 "has_face": bool,
                 "face_count": int,
-                "method": str ("mediapipe" or "gemini"),
-                "features": MediaPipeFaceFeatures (optional)
+                "method": "mediapipe",
+                "features": MediaPipeFaceFeatures or None
             }
+
+        Raises:
+            RuntimeError: MediaPipe 분석기가 초기화되지 않은 경우 (서버 설정 오류)
         """
-        # 1st attempt: MediaPipe (most accurate - 90%+)
-        if self.mediapipe_analyzer is not None:
-            try:
-                mp_features = self.mediapipe_analyzer.analyze(image_data)
+        if self.mediapipe_analyzer is None:
+            # 서버 설정 오류를 "얼굴 없음"으로 감추지 않는다 (사용자가 재촬영만 반복하게 됨)
+            raise RuntimeError("MediaPipe 분석기가 초기화되지 않았습니다")
 
-                if mp_features:
-                    log_structured(
-                        "face_detection",
-                        {
-                            "method": "mediapipe",
-                            "face_count": 1,
-                            "success": True,
-                            "face_shape": mp_features.face_shape,
-                            "skin_tone": mp_features.skin_tone,
-                            "confidence": mp_features.confidence,
-                        },
-                    )
-                    return {
-                        "has_face": True,
-                        "face_count": 1,
-                        "method": "mediapipe",
-                        "features": mp_features,
-                    }
+        mp_features: Optional[MediaPipeFaceFeatures] = None
+        try:
+            mp_features = self.mediapipe_analyzer.analyze(image_data)
+        except Exception as e:
+            # 실제 분석기는 내부 예외를 잡아 None 을 돌려주므로 같은 취급을 한다
+            logger.error(f"MediaPipe 얼굴 감지 중 예외: {str(e)}", exc_info=True)
 
-            except Exception as e:
-                logger.warning(f"MediaPipe 얼굴 감지 실패: {str(e)}")
-
-        # 2nd attempt: Gemini (final fallback)
-        logger.info("MediaPipe 실패, Gemini로 얼굴 검증 시작...")
-        gemini_result = self.verify_face_with_gemini(image_data)
+        if not mp_features:
+            log_structured(
+                "face_detection",
+                {"method": "mediapipe", "face_count": 0, "success": False},
+            )
+            return self._no_face_result()
 
         log_structured(
             "face_detection",
             {
-                "method": "gemini",
-                "face_count": gemini_result.get("face_count", 0),
-                "success": gemini_result.get("has_face", False),
+                "method": "mediapipe",
+                "face_count": 1,
+                "success": True,
+                "face_shape": mp_features.face_shape,
+                "skin_tone": mp_features.skin_tone,
+                "confidence": mp_features.confidence,
             },
         )
-
-        return gemini_result
+        return {
+            "has_face": True,
+            "face_count": 1,
+            "method": "mediapipe",
+            "features": mp_features,
+        }

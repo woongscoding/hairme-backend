@@ -195,9 +195,8 @@ def test_saved_trending_npz_loads_without_pickle(monkeypatch):
     store, fake_s3 = make_store(monkeypatch)
 
     fake_recommender = MagicMock()
-    fake_recommender.sentence_model.encode.return_value = np.zeros(
-        384, dtype=np.float32
-    )
+    fake_recommender.style_to_idx = {"레이어드 컷": 0}
+    fake_recommender.embeddings = np.zeros((1, 384), dtype=np.float32)
 
     with patch(
         "models.ml_recommender.get_ml_recommender", return_value=fake_recommender
@@ -219,6 +218,31 @@ def test_saved_trending_npz_loads_without_pickle(monkeypatch):
     assert float(data["ground_truth"][0]) == 10.0
     for name in data.files:
         assert data[name].dtype != np.dtype("O"), name
+
+
+def test_trending_style_outside_catalog_is_skipped_not_encoded(monkeypatch):
+    """카탈로그에 없는 트렌드 스타일은 다른 벡터 공간으로 인코딩하지 않고 생략한다"""
+    store, fake_s3 = make_store(monkeypatch)
+
+    fake_recommender = MagicMock()
+    fake_recommender.style_to_idx = {}
+    fake_recommender.embeddings = np.zeros((0, 384), dtype=np.float32)
+
+    with patch(
+        "models.ml_recommender.get_ml_recommender", return_value=fake_recommender
+    ):
+        result = store.save_trending_feedback(
+            analysis_id="abcdef1234567890",
+            face_shape="둥근형",
+            skin_tone="여름쿨",
+            style_name="허쉬컷",
+            feedback="good",
+        )
+
+    assert result["success"] is False
+    assert result["reason"] == "style_not_in_catalog"
+    fake_recommender.sentence_model.encode.assert_not_called()
+    assert npz_bodies(fake_s3) == []
 
 
 # ========== (c) 파일명 충돌 방지 ==========

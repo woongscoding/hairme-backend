@@ -28,7 +28,7 @@ class PersonalColorResult:
     tone: str  # warm, cool
 
     # 분석 상세
-    ita_value: float  # ITA (Individual Typology Angle)
+    ita_value: float  # 표준 ITA (Individual Typology Angle, L* 보정값, 도)
     hue_value: float  # HSV Hue
     brightness: str  # bright, muted, clear
     undertone: str  # yellow, pink, golden, blue
@@ -233,8 +233,12 @@ class PersonalColorService:
             pc_info = self.personal_color_data.get(features.skin_tone, {})
             hair_info = self.hair_color_data.get(features.skin_tone, {})
 
+            # 표준 ITA (L* 보정). features.ITA_value 는 모델 입력용 레거시 스케일이라
+            # 항상 50° 이상으로 나와 밝기 판정에 쓰면 전부 "bright" 가 된다.
+            ita = self._standard_ita(features)
+
             # 밝기 및 언더톤 결정
-            brightness = self._determine_brightness(features.ITA_value)
+            brightness = self._determine_brightness(ita)
             undertone = pc_info.get("skin_features", {}).get("undertone", "neutral")
 
             # 추천 염색 컬러
@@ -254,7 +258,7 @@ class PersonalColorService:
                 confidence=features.confidence,
                 season=pc_info.get("season", "unknown"),
                 tone=pc_info.get("tone", "unknown"),
-                ita_value=features.ITA_value,
+                ita_value=ita,
                 hue_value=features.hue_value,
                 brightness=brightness,
                 undertone=undertone,
@@ -269,7 +273,7 @@ class PersonalColorService:
 
             logger.info(
                 f"✅ Personal color analysis complete: {features.skin_tone} "
-                f"(ITA: {features.ITA_value:.1f}, Hue: {features.hue_value:.1f})"
+                f"(ITA: {ita:.1f}, Hue: {features.hue_value:.1f})"
             )
 
             return result
@@ -278,8 +282,14 @@ class PersonalColorService:
             logger.error(f"❌ Personal color analysis failed: {e}")
             return None
 
+    @staticmethod
+    def _standard_ita(features) -> float:
+        """표준 ITA(도). 보정값이 없으면(구 객체) 레거시 값으로 대체한다."""
+        corrected = getattr(features, "ITA_corrected", None)
+        return corrected if corrected is not None else features.ITA_value
+
     def _determine_brightness(self, ita_value: float) -> str:
-        """ITA 값으로 피부 밝기 결정"""
+        """표준(보정) ITA 값으로 피부 밝기 결정 (41°/28° 근처가 표준 ITA 경계)"""
         if ita_value > 42:
             return "bright"  # 밝은 피부
         elif ita_value > 28:

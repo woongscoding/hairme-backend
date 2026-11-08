@@ -6,13 +6,18 @@ This module provides caching and fallback mechanisms for retrieving secrets.
 
 import os
 import logging
-from typing import Dict, Optional
-from functools import lru_cache
+import threading
+from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# 성공한(None 이 아닌) 조회 결과만 캐시한다.
+# lru_cache 는 일시 장애(스로틀/네트워크)로 돌아온 None 까지 컨테이너 수명 동안
+# 캐시해 버려, 한 번의 실패가 영구 실패가 됐다.
+_secret_cache: Dict[Tuple[str, str], str] = {}
+_secret_cache_lock = threading.Lock()
 
-@lru_cache(maxsize=128)
+
 def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optional[str]:
     """
     Retrieve a secret from AWS Secrets Manager with caching
@@ -25,10 +30,35 @@ def get_secret(secret_name: str, region_name: str = "ap-northeast-2") -> Optiona
         Secret value as string, or None if retrieval fails
 
     Note:
-        - Results are cached using @lru_cache to avoid repeated API calls
+        - Successful (non-None) results are cached in-process to avoid repeated
+          API calls; failures are NOT cached, so the next call retries
         - Only works in AWS environments (Lambda, EC2, ECS)
         - Falls back to None if boto3 is unavailable or secret not found
     """
+    cache_key = (secret_name, region_name)
+    with _secret_cache_lock:
+        cached = _secret_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    secret_value = _fetch_secret(secret_name, region_name)
+    if secret_value is not None:
+        with _secret_cache_lock:
+            _secret_cache[cache_key] = secret_value
+    return secret_value
+
+
+def _secret_cache_clear() -> None:
+    """캐시 비우기 (lru_cache 의 cache_clear 와 호환)"""
+    with _secret_cache_lock:
+        _secret_cache.clear()
+
+
+get_secret.cache_clear = _secret_cache_clear  # type: ignore[attr-defined]
+
+
+def _fetch_secret(secret_name: str, region_name: str) -> Optional[str]:
+    """Secrets Manager 에서 실제로 조회한다 (캐시 없음). 실패 시 None."""
     try:
         import boto3
         from botocore.exceptions import ClientError

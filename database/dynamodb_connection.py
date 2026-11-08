@@ -37,8 +37,10 @@ Usage:
 """
 
 import os
+import time
 import uuid
 import json
+import threading
 from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 from decimal import Decimal
@@ -64,6 +66,15 @@ from core.logging import logger, log_structured
 dynamodb_resource = None
 dynamodb_table = None
 dynamodb_enabled = False
+
+# 지연 (재)초기화 가드
+# 콜드스타트 때 일시 장애로 init_dynamodb() 가 실패해도 컨테이너 수명 내내
+# 저장이 꺼지지 않도록, 각 함수가 _get_table() 로 테이블을 얻으면서 필요하면
+# 다시 초기화한다. 계속 실패하는 경우 매 호출마다 재시도하지 않도록
+# 최소 간격(_INIT_RETRY_INTERVAL_SECONDS)을 둔다.
+_INIT_RETRY_INTERVAL_SECONDS = 30.0
+_last_init_attempt_at: Optional[float] = None
+_init_lock = threading.Lock()
 
 
 def _convert_floats_to_decimal(obj: Any) -> Any:
@@ -111,11 +122,16 @@ def init_dynamodb() -> bool:
     Initialize DynamoDB connection
 
     Reads AWS_REGION and DYNAMODB_TABLE_NAME from environment variables.
+    Only creates the resource/Table handle (no DescribeTable round-trip).
+    If this fails, _get_table() retries lazily (at most every
+    _INIT_RETRY_INTERVAL_SECONDS).
 
     Returns:
         bool: True if connection successful, False otherwise
     """
-    global dynamodb_resource, dynamodb_table, dynamodb_enabled
+    global dynamodb_resource, dynamodb_table, dynamodb_enabled, _last_init_attempt_at
+
+    _last_init_attempt_at = time.monotonic()
 
     if not BOTO3_AVAILABLE:
         logger.error("❌ boto3 not installed. Install: pip install boto3")
@@ -142,8 +158,8 @@ def init_dynamodb() -> bool:
         )
         dynamodb_table = dynamodb_resource.Table(table_name)
 
-        # Verify table exists by describing it
-        dynamodb_table.load()
+        # DescribeTable(table.load()) 로 미리 검증하지 않는다 - 콜드스타트의
+        # 일시 장애가 초기화 실패로 굳어지지 않도록, 오류는 실제 호출에서 드러난다.
 
         dynamodb_enabled = True
 
@@ -177,6 +193,38 @@ def init_dynamodb() -> bool:
         logger.error(f"❌ DynamoDB initialization failed: {str(e)}")
         dynamodb_enabled = False
         return False
+
+
+def _get_table():
+    """
+    초기화된 DynamoDB Table 핸들을 반환한다 (없으면 지연 재초기화).
+
+    - 이미 초기화돼 있으면 그대로 반환
+    - 아니면 마지막 초기화 시도 후 _INIT_RETRY_INTERVAL_SECONDS 가 지났을 때만
+      init_dynamodb() 를 다시 시도한다 (계속 실패할 때 호출마다 재시도하지 않음)
+
+    Returns:
+        Table 또는 None (비활성/초기화 실패)
+    """
+    if dynamodb_enabled and dynamodb_table is not None:
+        return dynamodb_table
+
+    with _init_lock:
+        # 다른 스레드가 먼저 초기화했을 수 있다
+        if dynamodb_enabled and dynamodb_table is not None:
+            return dynamodb_table
+
+        if (
+            _last_init_attempt_at is not None
+            and time.monotonic() - _last_init_attempt_at < _INIT_RETRY_INTERVAL_SECONDS
+        ):
+            return None
+
+        init_dynamodb()
+
+    if dynamodb_enabled and dynamodb_table is not None:
+        return dynamodb_table
+    return None
 
 
 def save_analysis(data: Dict[str, Any]) -> Optional[str]:
@@ -214,7 +262,8 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
         >>> print(analysis_id)
         '550e8400-e29b-41d4-a716-446655440000'
     """
-    if not dynamodb_enabled or dynamodb_table is None:
+    table = _get_table()
+    if table is None:
         logger.error("❌ DynamoDB not initialized")
         return None
 
@@ -326,7 +375,7 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
         item = _convert_floats_to_decimal(item)
 
         # Save to DynamoDB
-        dynamodb_table.put_item(Item=item)
+        table.put_item(Item=item)
 
         logger.info(f"✅ DynamoDB 저장 성공 (ID: {analysis_id})")
         log_structured(
@@ -365,12 +414,13 @@ def get_analysis(analysis_id: str) -> Optional[Dict[str, Any]]:
         >>> print(result['face_shape'])
         '계란형'
     """
-    if not dynamodb_enabled or dynamodb_table is None:
+    table = _get_table()
+    if table is None:
         logger.error("❌ DynamoDB not initialized")
         return None
 
     try:
-        response = dynamodb_table.get_item(Key={"analysis_id": analysis_id})
+        response = table.get_item(Key={"analysis_id": analysis_id})
 
         if "Item" not in response:
             logger.warning(f"⚠️  Analysis not found: {analysis_id}")
@@ -417,7 +467,8 @@ def save_feedback(
         >>> save_feedback('550e8400-...', 1, 'good', True)
         True
     """
-    if not dynamodb_enabled or dynamodb_table is None:
+    table = _get_table()
+    if table is None:
         logger.error("❌ DynamoDB not initialized")
         return False
 
@@ -445,7 +496,7 @@ def save_feedback(
             set_clauses.append(f"style_{style_index}_dislike_reason = :dislike_reason")
             expression_values[":dislike_reason"] = dislike_reason
 
-        response = dynamodb_table.update_item(
+        response = table.update_item(
             Key={"analysis_id": analysis_id},
             UpdateExpression="SET " + ", ".join(set_clauses),
             ExpressionAttributeValues=expression_values,
@@ -515,12 +566,13 @@ def get_recent_analyses(limit: int = 10) -> List[Dict[str, Any]]:
         >>> for analysis in recent:
         ...     print(analysis['analysis_id'], analysis['created_at'])
     """
-    if not dynamodb_enabled or dynamodb_table is None:
+    table = _get_table()
+    if table is None:
         logger.error("❌ DynamoDB not initialized")
         return []
 
     try:
-        response = dynamodb_table.query(
+        response = table.query(
             IndexName="created_at-index",
             KeyConditionExpression="entity_type = :type",
             ExpressionAttributeValues={":type": "ANALYSIS"},
@@ -564,7 +616,8 @@ def get_feedback_stats() -> Dict[str, Any]:
         >>> print(stats['like_counts']['style_1'])
         342
     """
-    if not dynamodb_enabled or dynamodb_table is None:
+    table = _get_table()
+    if table is None:
         logger.error("❌ DynamoDB not initialized")
         return {
             "success": False,
@@ -606,14 +659,12 @@ def get_feedback_stats() -> Dict[str, Any]:
         # or use separate aggregate table (feedback-stats) to avoid full table scan
         logger.info("🔍 통계 캐시 미스, DynamoDB scan 시작...")
 
-        response = dynamodb_table.scan()
+        response = table.scan()
         items = response.get("Items", [])
 
         # Handle pagination if needed
         while "LastEvaluatedKey" in response:
-            response = dynamodb_table.scan(
-                ExclusiveStartKey=response["LastEvaluatedKey"]
-            )
+            response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
             items.extend(response.get("Items", []))
 
         total_analysis = len(items)

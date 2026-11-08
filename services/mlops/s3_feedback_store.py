@@ -436,12 +436,26 @@ class S3FeedbackStore:
             }
 
         try:
-            # 1. SentenceTransformer로 스타일명 임베딩 생성 (384D)
+            # 1. 스타일 임베딩 (384D) - 모델이 학습한 카탈로그 벡터 공간에서만 가져온다.
+            # SentenceTransformer 로 새로 인코딩하면 안 된다: style_embeddings.npz 는
+            # 이 모델의 원출력과 다른 공간이라(동일 이름 코사인 ≈ 0, 2026-11-08 확인)
+            # 학습 데이터가 오염된다. Lambda 에는 sentence_model 도 없다.
             from models.ml_recommender import get_ml_recommender
 
             recommender = get_ml_recommender()
-            style_embedding = recommender.sentence_model.encode(style_name)
-            style_embedding = np.array(style_embedding, dtype=np.float32)
+            idx = getattr(recommender, "style_to_idx", {}).get(style_name)
+            if idx is None:
+                logger.warning(
+                    "⚠️ 트렌드 피드백 학습 샘플 생략 - 모델 임베딩 공간에 없는 스타일: "
+                    f"{style_name}"
+                )
+                return {
+                    "success": False,
+                    "pending_count": 0,
+                    "should_trigger_training": False,
+                    "reason": "style_not_in_catalog",
+                }
+            style_embedding = np.array(recommender.embeddings[idx], dtype=np.float32)
 
             # 2. Ground truth
             ground_truth = 90.0 if feedback == "good" else 10.0

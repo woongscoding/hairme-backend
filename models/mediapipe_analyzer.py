@@ -30,7 +30,11 @@ class MediaPipeFaceFeatures:
     forehead_width: float  # 이마 너비 (픽셀)
     cheekbone_width: float  # 광대 너비 (픽셀)
     jaw_width: float  # 턱 너비 (픽셀)
-    ITA_value: float  # 피부톤 ITA 값
+    # ⚠️ 레거시 스케일 ITA. OpenCV 8bit L(0~255)을 L*(0~100) 자리에 그대로 넣어 계산한
+    # 값이라 실제 ITA보다 크게 나온다(대략 50~90°). 그래도 ML 추천 모델 입력(skin_features),
+    # DynamoDB mediapipe_ITA_value, MLOps 학습 샘플, SKIN_FEATURE_STATS 정규화가 모두 이
+    # 분포에 맞춰져 있어 바꾸면 학습/서빙 스큐가 생긴다. 피부톤 분류·밝기 판정은 ITA_corrected 를 쓴다.
+    ITA_value: float  # 피부톤 ITA 값 (레거시 스케일, 모델 입력용)
     hue_value: float  # 색조 값 (HSV)
 
     # ML 모델 입력용 특징 벡터 (학습 데이터와 동일한 형식)
@@ -44,6 +48,10 @@ class MediaPipeFaceFeatures:
     # 고개 각도 (도). 좌우(yaw)·상하(pitch). 정면이면 0에 가깝다
     head_yaw: float = 0.0
     head_pitch: float = 0.0
+
+    # 표준 ITA (L* = L_cv * 100/255 로 보정, 도). 피부톤 분류·사용자 표시용.
+    # 모델 입력에는 쓰지 않는다. None 이면 미계산(테스트 픽스처 등).
+    ITA_corrected: Optional[float] = None
 
     def to_dict(self) -> dict:
         """dict로 변환 (로깅 및 DB 저장용)"""
@@ -63,7 +71,83 @@ class MediaPipeFaceFeatures:
             "gender_confidence": self.gender_confidence,
             "head_yaw": self.head_yaw,
             "head_pitch": self.head_pitch,
+            "ITA_corrected": self.ITA_corrected,
         }
+
+
+# ========== 피부톤 ITA 계산/분류 (순수 함수, 테스트 가능) ==========
+# ITA 4단계 경계 (보정된 ITA 기준, 도)
+SKIN_TONE_ITA_THRESHOLDS = (42.0, 32.0, 22.0)
+
+
+def compute_ita(L_cv_mean: float, b_star_mean: float) -> Tuple[float, float]:
+    """
+    ITA (Individual Typology Angle) 계산.
+
+    Args:
+        L_cv_mean: OpenCV 8bit LAB 의 L 평균 (0~255)
+        b_star_mean: b* 평균 (OpenCV b - 128, 약 -128~127)
+
+    Returns:
+        (legacy_ita, corrected_ita)
+        - legacy_ita: 예전 공식 그대로 (L_cv 를 L* 로 착각). 모델 입력/DB 저장용으로 유지.
+        - corrected_ita: L* = L_cv * 100/255 로 보정한 표준 ITA. 분류/표시용.
+    """
+    if abs(b_star_mean) <= 0.1:
+        return 0.0, 0.0
+    legacy = math.atan((L_cv_mean - 50) / b_star_mean) * 180 / math.pi
+    L_star = L_cv_mean * 100.0 / 255.0
+    corrected = math.atan((L_star - 50) / b_star_mean) * 180 / math.pi
+    return legacy, corrected
+
+
+def classify_skin_tone(ita: float, hue_mean: float, b_star_mean: float) -> str:
+    """
+    보정된 ITA + HSV Hue + b* 로 4계절 피부톤 분류.
+
+    Args:
+        ita: 보정된 ITA (compute_ita 의 corrected_ita)
+        hue_mean: HSV Hue 평균 (OpenCV 0~179)
+        b_star_mean: b* 평균
+    """
+    # Hue 기준 (한국인 피부톤 균형 조정):
+    # - Hue < 10: 매우 강한 웜톤
+    # - 10 ≤ Hue < 16: 웜톤
+    # - 16 ≤ Hue < 20: 중립~약간 쿨
+    # - Hue ≥ 20: 쿨톤
+    # b값 (노란기/푸른기)도 고려
+    is_warm = b_star_mean > 5  # b > 5이면 노란기가 강함 (웜톤)
+    is_very_warm = b_star_mean > 10
+    t_very_light, t_light, t_medium = SKIN_TONE_ITA_THRESHOLDS
+
+    if ita > t_very_light:
+        # 매우 밝은 피부
+        if hue_mean < 10 and is_very_warm:
+            return "봄웜"  # 매우 밝고 노란기 강함
+        elif hue_mean < 16:
+            return "봄웜" if is_warm else "여름쿨"  # 밝고 약간 노란기 / 밝고 중립
+        return "여름쿨"  # 밝고 쿨톤
+    elif ita > t_light:
+        # 밝은 피부
+        if hue_mean < 10 and is_very_warm:
+            return "봄웜"  # 밝고 노란기 강함
+        elif hue_mean < 16:
+            return "가을웜" if is_warm else "여름쿨"  # 밝고~중간 웜 / 중립~쿨
+        return "여름쿨"  # 밝고 쿨톤
+    elif ita > t_medium:
+        # 중간 피부
+        if hue_mean < 12 and is_warm:
+            return "가을웜"  # 중간이고 웜톤
+        elif hue_mean < 18:
+            return "가을웜" if is_warm else "여름쿨"  # 약간 웜 / 중립~쿨
+        return "여름쿨"  # 중간이고 쿨톤
+    else:
+        # 어두운 피부
+        if hue_mean < 14 and is_warm:
+            return "가을웜"  # 어둡고 웜톤
+        elif hue_mean < 18:
+            return "가을웜"  # 어둡고 중립~웜
+        return "겨울쿨"  # 어둡고 쿨톤
 
 
 class MediaPipeFaceAnalyzer:
@@ -156,7 +240,8 @@ class MediaPipeFaceAnalyzer:
             )
 
             # 2. 피부톤 분석
-            skin_tone, ita_value, hue_value = self._analyze_skin_tone(
+            # ita_value 는 레거시 스케일(모델 입력용), ita_corrected 는 표준 ITA
+            skin_tone, ita_value, hue_value, ita_corrected = self._analyze_skin_tone(
                 img, face_landmarks, (h, w)
             )
 
@@ -172,6 +257,7 @@ class MediaPipeFaceAnalyzer:
                 round(measurements["forehead_ratio"], 3),
                 round(measurements["jaw_ratio"], 3),
             ]
+            # 레거시 스케일 ITA 유지: 학습 데이터·SKIN_FEATURE_STATS 와 같은 분포여야 한다
             skin_features = [round(ita_value, 2), round(hue_value, 2)]
 
             # 성별 추론 (NEW)
@@ -179,7 +265,8 @@ class MediaPipeFaceAnalyzer:
 
             logger.info(
                 f"✅ MediaPipe 분석 완료: {face_shape} (신뢰도: {final_confidence:.0%}), "
-                f"피부톤: {skin_tone} (ITA: {ita_value:.1f}°), "
+                f"피부톤: {skin_tone} (ITA: {ita_corrected:.1f}°, "
+                f"legacy {ita_value:.1f}), "
                 f"성별: {gender} (신뢰도: {gender_confidence:.0%}), "
                 f"고개 yaw={measurements['head_yaw']:.0f}° "
                 f"pitch={measurements['head_pitch']:.0f}°"
@@ -203,6 +290,7 @@ class MediaPipeFaceAnalyzer:
                 gender_confidence=round(gender_confidence, 2),
                 head_yaw=round(measurements["head_yaw"], 1),
                 head_pitch=round(measurements["head_pitch"], 1),
+                ITA_corrected=round(ita_corrected, 2),
             )
 
         except Exception as e:
@@ -394,12 +482,13 @@ class MediaPipeFaceAnalyzer:
 
     def _analyze_skin_tone(
         self, image: Any, landmarks, image_shape: Tuple[int, int]
-    ) -> Tuple[str, float, float]:
+    ) -> Tuple[str, float, float, float]:
         """
         피부톤 분석 (ITA + HSV 방식)
 
         Returns:
-            (피부톤, ITA값, Hue값)
+            (피부톤, 레거시 ITA값, Hue값, 보정 ITA값)
+            레거시 ITA 는 모델 입력/DB 저장용, 분류는 보정 ITA 로 한다.
         """
         h, w = image_shape
 
@@ -435,7 +524,7 @@ class MediaPipeFaceAnalyzer:
 
         if len(skin_pixels) == 0:
             logger.warning("피부 영역 추출 실패, 기본값 사용")
-            return "봄웜", 0.0, 0.0
+            return "봄웜", 0.0, 0.0, 0.0
 
         # ========== ITA (Individual Typology Angle) 계산 ==========
         # LAB 색공간으로 변환
@@ -448,83 +537,27 @@ class MediaPipeFaceAnalyzer:
             np.mean(lab_pixels[:, 2]) - 128
         )  # LAB의 b는 0~255이므로 -128~127로 변환
 
-        # ITA 계산: arctan((L - 50) / b) * 180 / π
-        if abs(b_mean) > 0.1:
-            ita = math.atan((L_mean - 50) / b_mean) * 180 / math.pi
-        else:
-            ita = 0.0
+        # ITA 계산: arctan((L* - 50) / b*) * 180 / π
+        # OpenCV 8bit LAB 의 L 은 0~255 라서 L* = L * 100/255 로 바꿔야 표준 ITA 가 된다.
+        # 예전 공식(레거시)은 이 변환을 빠뜨려 ITA 가 항상 크게(50~90°) 나왔다.
+        # 레거시 값은 모델 입력 호환 때문에 그대로 반환하고, 분류에는 보정값을 쓴다.
+        ita_legacy, ita_corrected = compute_ita(float(L_mean), float(b_mean))
 
         # ========== HSV 색조 분석 ==========
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         hsv_pixels = hsv[mask > 0]
         hue_mean = np.mean(hsv_pixels[:, 0])  # 0~179
 
-        # ========== 피부톤 분류 (재개선 - 4계절 균형) ==========
-        # ITA 기준:
-        # - ITA > 41°: 밝은 피부
-        # - 28° < ITA ≤ 41°: 중간 피부
-        # - ITA ≤ 28°: 어두운 피부
-
-        # Hue 기준 (한국인 피부톤 균형 조정):
-        # - Hue < 10: 매우 강한 웜톤
-        # - 10 ≤ Hue < 16: 웜톤
-        # - 16 ≤ Hue < 20: 중립~약간 쿨
-        # - Hue ≥ 20: 쿨톤
-
-        # b값 (노란기/푸른기)도 고려
-        is_warm = b_mean > 5  # b > 5이면 노란기가 강함 (웜톤)
-        is_very_warm = b_mean > 10
-
-        if ita > 42:
-            # 매우 밝은 피부
-            if hue_mean < 10 and is_very_warm:
-                skin_tone = "봄웜"  # 매우 밝고 노란기 강함
-            elif hue_mean < 16:
-                if is_warm:
-                    skin_tone = "봄웜"  # 밝고 약간 노란기
-                else:
-                    skin_tone = "여름쿨"  # 밝고 중립
-            else:
-                skin_tone = "여름쿨"  # 밝고 쿨톤
-        elif ita > 32:
-            # 밝은 피부
-            if hue_mean < 10 and is_very_warm:
-                skin_tone = "봄웜"  # 밝고 노란기 강함
-            elif hue_mean < 16:
-                if is_warm:
-                    skin_tone = "가을웜"  # 밝고~중간, 웜톤
-                else:
-                    skin_tone = "여름쿨"  # 밝고 중립~쿨
-            elif hue_mean < 20:
-                skin_tone = "여름쿨"  # 밝고 쿨톤
-            else:
-                skin_tone = "여름쿨"  # 밝고 쿨톤
-        elif ita > 22:
-            # 중간 피부
-            if hue_mean < 12 and is_warm:
-                skin_tone = "가을웜"  # 중간이고 웜톤
-            elif hue_mean < 18:
-                if is_warm:
-                    skin_tone = "가을웜"  # 중간이고 약간 웜
-                else:
-                    skin_tone = "여름쿨"  # 중간이고 중립~쿨
-            else:
-                skin_tone = "여름쿨"  # 중간이고 쿨톤
-        else:
-            # 어두운 피부
-            if hue_mean < 14 and is_warm:
-                skin_tone = "가을웜"  # 어둡고 웜톤
-            elif hue_mean < 18:
-                skin_tone = "가을웜"  # 어둡고 중립~웜
-            else:
-                skin_tone = "겨울쿨"  # 어둡고 쿨톤
+        # ========== 피부톤 분류 (보정 ITA 기준) ==========
+        skin_tone = classify_skin_tone(ita_corrected, float(hue_mean), float(b_mean))
 
         logger.debug(
             f"피부톤 분석: L={L_mean:.1f}, b={b_mean:.1f}, "
-            f"ITA={ita:.1f}°, Hue={hue_mean:.1f} → {skin_tone}"
+            f"ITA={ita_corrected:.1f}° (legacy {ita_legacy:.1f}), "
+            f"Hue={hue_mean:.1f} → {skin_tone}"
         )
 
-        return skin_tone, ita, hue_mean
+        return skin_tone, ita_legacy, float(hue_mean), ita_corrected
 
     def _infer_gender(self, measurements: dict) -> Tuple[str, float]:
         """
