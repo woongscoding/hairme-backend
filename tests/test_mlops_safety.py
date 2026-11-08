@@ -25,6 +25,10 @@ import services.mlops.s3_feedback_store as sfs
 
 BUNDLED_MODEL_PATH = "models/hairstyle_recommender_v6_multitoken.pt"
 
+# 실제 측정값 형태 (측정값이 없으면 store 는 샘플을 쓰지 않는다)
+FACE = [1.22, 450.0, 560.0, 440.0, 0.80, 0.79]
+SKIN = [78.0, 12.0]
+
 
 # ========== Fake S3 ==========
 
@@ -207,6 +211,8 @@ def test_saved_trending_npz_loads_without_pickle(monkeypatch):
             skin_tone="여름쿨",
             style_name="레이어드 컷",
             feedback="bad",
+            face_features=FACE,
+            skin_features=SKIN,
         )
 
     assert result["success"] is True
@@ -237,6 +243,8 @@ def test_trending_style_outside_catalog_is_skipped_not_encoded(monkeypatch):
             skin_tone="여름쿨",
             style_name="허쉬컷",
             feedback="good",
+            face_features=FACE,
+            skin_features=SKIN,
         )
 
     assert result["success"] is False
@@ -261,6 +269,8 @@ def test_feedback_filename_includes_style_and_is_unique(monkeypatch):
             skin_tone="봄웜",
             hairstyle_id=hairstyle_id,
             feedback="good",
+            face_features=FACE,
+            skin_features=SKIN,
         )
         assert result["success"] is True
 
@@ -285,6 +295,8 @@ def test_same_style_twice_still_unique(monkeypatch):
             skin_tone="봄웜",
             hairstyle_id=3,
             feedback="good",
+            face_features=FACE,
+            skin_features=SKIN,
         )
 
     keys = [k for k, _ in npz_bodies(fake_s3)]
@@ -309,6 +321,8 @@ def test_trigger_fires_on_threshold_crossing(monkeypatch):
         skin_tone="봄웜",
         hairstyle_id=1,
         feedback="good",
+        face_features=FACE,
+        skin_features=SKIN,
     )
 
     assert result["pending_count"] == 100
@@ -336,6 +350,8 @@ def test_trigger_does_not_fire_again_within_cooldown(monkeypatch):
         skin_tone="봄웜",
         hairstyle_id=1,
         feedback="good",
+        face_features=FACE,
+        skin_features=SKIN,
     )
 
     assert result["pending_count"] == 101
@@ -362,6 +378,8 @@ def test_trigger_fires_again_after_cooldown(monkeypatch):
         skin_tone="봄웜",
         hairstyle_id=1,
         feedback="good",
+        face_features=FACE,
+        skin_features=SKIN,
     )
 
     assert result["pending_count"] == 101
@@ -436,8 +454,8 @@ def test_verify_model_checksum_accepts_match(tmp_path):
     assert mlr._verify_model_checksum(s3, "bucket", str(model_file)) is True
 
 
-def test_verify_model_checksum_passes_when_metadata_missing(tmp_path):
-    """metadata.json 이 없으면 경고 후 통과"""
+def test_verify_model_checksum_fails_closed_when_metadata_missing(tmp_path):
+    """metadata.json 이 없으면 검증 실패 (fail closed -> 번들 모델 폴백)"""
     import models.ml_recommender as mlr
 
     model_file = tmp_path / "model.pt"
@@ -446,7 +464,7 @@ def test_verify_model_checksum_passes_when_metadata_missing(tmp_path):
     s3 = MagicMock()
     s3.get_object.side_effect = Exception("NoSuchKey")
 
-    assert mlr._verify_model_checksum(s3, "bucket", str(model_file)) is True
+    assert mlr._verify_model_checksum(s3, "bucket", str(model_file)) is False
 
 
 # ========== Trainer: 랜덤 초기화 모델 배포 차단 ==========

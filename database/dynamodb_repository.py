@@ -1,5 +1,6 @@
 """DynamoDB implementation of AnalysisRepository"""
 
+import math
 from typing import Optional, Dict, Any
 from database.repository import AnalysisRepository
 from database.dynamodb_connection import (
@@ -9,6 +10,26 @@ from database.dynamodb_connection import (
     get_feedback_stats,
 )
 from core.logging import logger
+
+
+def _feature_version(mp_features: Any) -> str:
+    """MediaPipeFaceFeatures.feature_version (문자열이 아니면 현재 측정 방식)"""
+    from models.mediapipe_analyzer import FEATURE_VERSION
+
+    value = getattr(mp_features, "feature_version", None)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return FEATURE_VERSION
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    """유한한 숫자만 float 로 (None/NaN/목 객체는 None -> 저장하지 않음)"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if math.isnan(number) or math.isinf(number):
+        return None
+    return number
 
 
 class DynamoDBAnalysisRepository(AnalysisRepository):
@@ -99,6 +120,17 @@ class DynamoDBAnalysisRepository(AnalysisRepository):
                 # 고개 각도 (2026-11-08~). 이 필드가 있는 행은 3D 거리로 잰 측정값이다
                 data["mediapipe_head_yaw"] = getattr(mp_features, "head_yaw", None)
                 data["mediapipe_head_pitch"] = getattr(mp_features, "head_pitch", None)
+
+                # 측정 방식 표식: 트레이너가 2D(v1_2d)/3D(v2_3d) 샘플을 구분한다
+                data["mediapipe_feature_version"] = _feature_version(mp_features)
+
+                # 피부 영역 평균 L*/b* 원값 (쿨톤 임계값 재보정용, 분류에는 안 씀)
+                data["mediapipe_L_star"] = _optional_float(
+                    getattr(mp_features, "L_star", None)
+                )
+                data["mediapipe_b_star"] = _optional_float(
+                    getattr(mp_features, "b_star", None)
+                )
 
                 logger.info(
                     f"✅ MediaPipe 연속형 변수 포함: ratio={mp_features.face_ratio:.2f}, ITA={mp_features.ITA_value:.1f}"

@@ -16,6 +16,20 @@ import math
 # 로거 초기화
 logger = logging.getLogger(__name__)
 
+# ========== 얼굴 측정값(face_features) 버전 표식 ==========
+# 측정 방식이 바뀌면 같은 6차원 자리에 다른 분포의 값이 들어간다. 분석 행
+# (mediapipe_feature_version)과 MLOps 학습 샘플 metadata(feature_version)에 이 표식을
+# 남겨 트레이너가 섞인 데이터를 구분할 수 있게 한다 (모델 입력 자체는 바꾸지 않는다).
+#   v1_2d: 2D 픽셀 거리 (f5b170e 이전 - 번들 v6 학습 데이터와 기존 S3 샘플 전부)
+#   v2_3d: MediaPipe z 포함 3D 거리 (f5b170e~)
+# 표식이 없으면 v1_2d 로 본다. 단 표식 없이 mediapipe_head_yaw 가 있는 분석 행은 3D 로 잰
+# 것이다 (services/mlops/feedback_features.feature_version_of).
+# lambda_trainer/lambda_function.py 는 이 모듈을 import 할 수 없어 같은 문자열을 따로 둔다.
+FEATURE_VERSION_2D = "v1_2d"
+FEATURE_VERSION_3D = "v2_3d"
+FEATURE_VERSION_LEGACY = FEATURE_VERSION_2D
+FEATURE_VERSION = FEATURE_VERSION_3D  # 현재 analyze() 가 만드는 측정값
+
 
 @dataclass
 class MediaPipeFaceFeatures:
@@ -53,6 +67,14 @@ class MediaPipeFaceFeatures:
     # 모델 입력에는 쓰지 않는다. None 이면 미계산(테스트 픽스처 등).
     ITA_corrected: Optional[float] = None
 
+    # 피부 영역 평균 L*(0~100, = L_cv * 100/255) 와 b*(OpenCV b - 128). 쿨톤/웜톤 임계값
+    # 재보정용 원값 기록 (분류에는 쓰지 않는다). None 이면 미계산.
+    L_star: Optional[float] = None
+    b_star: Optional[float] = None
+
+    # face_features 측정 방식 버전 (모듈 상단 FEATURE_VERSION 참고)
+    feature_version: str = FEATURE_VERSION
+
     def to_dict(self) -> dict:
         """dict로 변환 (로깅 및 DB 저장용)"""
         return {
@@ -72,6 +94,9 @@ class MediaPipeFaceFeatures:
             "head_yaw": self.head_yaw,
             "head_pitch": self.head_pitch,
             "ITA_corrected": self.ITA_corrected,
+            "L_star": self.L_star,
+            "b_star": self.b_star,
+            "feature_version": self.feature_version,
         }
 
 
@@ -241,9 +266,14 @@ class MediaPipeFaceAnalyzer:
 
             # 2. 피부톤 분석
             # ita_value 는 레거시 스케일(모델 입력용), ita_corrected 는 표준 ITA
-            skin_tone, ita_value, hue_value, ita_corrected = self._analyze_skin_tone(
-                img, face_landmarks, (h, w)
-            )
+            (
+                skin_tone,
+                ita_value,
+                hue_value,
+                ita_corrected,
+                L_star,
+                b_star,
+            ) = self._analyze_skin_tone(img, face_landmarks, (h, w))
 
             # 최종 신뢰도 (얼굴형 신뢰도 기준)
             final_confidence = shape_confidence
@@ -291,6 +321,9 @@ class MediaPipeFaceAnalyzer:
                 head_yaw=round(measurements["head_yaw"], 1),
                 head_pitch=round(measurements["head_pitch"], 1),
                 ITA_corrected=round(ita_corrected, 2),
+                L_star=None if L_star is None else round(L_star, 2),
+                b_star=None if b_star is None else round(b_star, 2),
+                feature_version=FEATURE_VERSION,
             )
 
         except Exception as e:
@@ -482,13 +515,14 @@ class MediaPipeFaceAnalyzer:
 
     def _analyze_skin_tone(
         self, image: Any, landmarks, image_shape: Tuple[int, int]
-    ) -> Tuple[str, float, float, float]:
+    ) -> Tuple[str, float, float, float, Optional[float], Optional[float]]:
         """
         피부톤 분석 (ITA + HSV 방식)
 
         Returns:
-            (피부톤, 레거시 ITA값, Hue값, 보정 ITA값)
+            (피부톤, 레거시 ITA값, Hue값, 보정 ITA값, 평균 L*(0~100), 평균 b*)
             레거시 ITA 는 모델 입력/DB 저장용, 분류는 보정 ITA 로 한다.
+            L*/b* 는 임계값 재보정용 기록값 (피부 영역 추출 실패 시 None).
         """
         h, w = image_shape
 
@@ -524,7 +558,7 @@ class MediaPipeFaceAnalyzer:
 
         if len(skin_pixels) == 0:
             logger.warning("피부 영역 추출 실패, 기본값 사용")
-            return "봄웜", 0.0, 0.0, 0.0
+            return "봄웜", 0.0, 0.0, 0.0, None, None
 
         # ========== ITA (Individual Typology Angle) 계산 ==========
         # LAB 색공간으로 변환
@@ -557,7 +591,16 @@ class MediaPipeFaceAnalyzer:
             f"Hue={hue_mean:.1f} → {skin_tone}"
         )
 
-        return skin_tone, ita_legacy, float(hue_mean), ita_corrected
+        # 임계값 재보정용 원값 (compute_ita 와 같은 L* 변환)
+        L_star_mean = float(L_mean) * 100.0 / 255.0
+        return (
+            skin_tone,
+            ita_legacy,
+            float(hue_mean),
+            ita_corrected,
+            L_star_mean,
+            float(b_mean),
+        )
 
     def _infer_gender(self, measurements: dict) -> Tuple[str, float]:
         """

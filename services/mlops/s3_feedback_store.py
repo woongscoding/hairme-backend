@@ -42,6 +42,11 @@ from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import logging
 
+from services.mlops.feedback_features import (
+    normalize_feature_version,
+    valid_feature_vectors,
+)
+
 logger = logging.getLogger(__name__)
 
 # S3 Configuration
@@ -266,9 +271,14 @@ class S3FeedbackStore:
         feedback: str,  # 'good' or 'bad'
         face_features: Optional[List[float]] = None,
         skin_features: Optional[List[float]] = None,
+        feature_version: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         피드백을 S3에 저장
+
+        실제 MediaPipe 측정값(face 6 + skin 2)이 없으면 샘플을 쓰지 않는다
+        (success=False, reason="missing_features"). 얼굴형/피부톤 라벨을 측정값 자리에
+        one-hot 으로 넣던 레거시 경로는 트레이너가 그것을 픽셀 측정값으로 학습해 제거했다.
 
         Args:
             analysis_id: 분석 ID (UUID)
@@ -276,14 +286,17 @@ class S3FeedbackStore:
             skin_tone: 피부톤
             hairstyle_id: 헤어스타일 ID
             feedback: 피드백 ('good' or 'bad')
-            face_features: MediaPipe 얼굴 측정값 (6차원)
-            skin_features: MediaPipe 피부 측정값 (2차원)
+            face_features: MediaPipe 얼굴 측정값 (6차원, 필수)
+            skin_features: MediaPipe 피부 측정값 (2차원, 필수)
+            feature_version: 측정 방식 표식 (feedback_features.feature_version_of).
+                없으면 v1_2d 로 기록한다.
 
         Returns:
             {
                 "success": bool,
                 "pending_count": int,
-                "should_trigger_training": bool
+                "should_trigger_training": bool,
+                "reason": str (측정값 없음 등 일부 실패 시)
             }
         """
         if not self.enabled:
@@ -293,6 +306,11 @@ class S3FeedbackStore:
                 "pending_count": 0,
                 "should_trigger_training": False,
             }
+
+        if not valid_feature_vectors(face_features, skin_features):
+            return self._skip_missing_features(
+                analysis_id, face_features, skin_features, hairstyle_id=hairstyle_id
+            )
 
         try:
             # 1. Ground truth 결정
@@ -310,15 +328,9 @@ class S3FeedbackStore:
                     "should_trigger_training": False,
                 }
 
-            # 3. Feature 벡터 구성
-            if face_features is not None and skin_features is not None:
-                # 실제 측정값 사용 (6 + 2 = 8차원)
-                face_vec = np.array(face_features, dtype=np.float32)
-                skin_vec = np.array(skin_features, dtype=np.float32)
-            else:
-                # 레거시: 라벨 기반 인코딩 (4 + 4 = 8차원)
-                face_vec = self._encode_face_shape(face_shape)
-                skin_vec = self._encode_skin_tone(skin_tone)
+            # 3. Feature 벡터 (실제 측정값 6 + 2 = 8차원, 위에서 검증됨)
+            face_vec = np.array(face_features, dtype=np.float32)
+            skin_vec = np.array(skin_features, dtype=np.float32)
 
             # 4. NPZ 데이터 준비
             timestamp = datetime.now(timezone.utc)
@@ -345,6 +357,9 @@ class S3FeedbackStore:
                                 "hairstyle_id": hairstyle_id,
                                 "feedback": feedback,
                                 "timestamp": timestamp.isoformat(),
+                                "feature_version": normalize_feature_version(
+                                    feature_version
+                                ),
                             }
                         )
                     ],
@@ -408,6 +423,7 @@ class S3FeedbackStore:
         feedback: str,
         face_features: Optional[List[float]] = None,
         skin_features: Optional[List[float]] = None,
+        feature_version: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         트렌드 스타일 피드백을 S3에 저장
@@ -422,8 +438,9 @@ class S3FeedbackStore:
             skin_tone: 피부톤
             style_name: 트렌드 스타일명
             feedback: 'good' or 'bad'
-            face_features: MediaPipe 얼굴 측정값 (6차원)
-            skin_features: MediaPipe 피부 측정값 (2차원)
+            face_features: MediaPipe 얼굴 측정값 (6차원, 필수 - 없으면 저장 안 함)
+            skin_features: MediaPipe 피부 측정값 (2차원, 필수)
+            feature_version: 측정 방식 표식 (없으면 v1_2d)
 
         Returns:
             {"success": bool, "pending_count": int, "should_trigger_training": bool}
@@ -434,6 +451,11 @@ class S3FeedbackStore:
                 "pending_count": 0,
                 "should_trigger_training": False,
             }
+
+        if not valid_feature_vectors(face_features, skin_features):
+            return self._skip_missing_features(
+                analysis_id, face_features, skin_features, style_name=style_name
+            )
 
         try:
             # 1. 스타일 임베딩 (384D) - 모델이 학습한 카탈로그 벡터 공간에서만 가져온다.
@@ -460,13 +482,9 @@ class S3FeedbackStore:
             # 2. Ground truth
             ground_truth = 90.0 if feedback == "good" else 10.0
 
-            # 3. Feature 벡터
-            if face_features is not None and skin_features is not None:
-                face_vec = np.array(face_features, dtype=np.float32)
-                skin_vec = np.array(skin_features, dtype=np.float32)
-            else:
-                face_vec = self._encode_face_shape(face_shape)
-                skin_vec = self._encode_skin_tone(skin_tone)
+            # 3. Feature 벡터 (실제 측정값, 위에서 검증됨)
+            face_vec = np.array(face_features, dtype=np.float32)
+            skin_vec = np.array(skin_features, dtype=np.float32)
 
             # 4. NPZ 데이터
             timestamp = datetime.now(timezone.utc)
@@ -491,6 +509,9 @@ class S3FeedbackStore:
                                 "source": "trending",
                                 "feedback": feedback,
                                 "timestamp": timestamp.isoformat(),
+                                "feature_version": normalize_feature_version(
+                                    feature_version
+                                ),
                             }
                         )
                     ],
@@ -601,36 +622,34 @@ class S3FeedbackStore:
 
         return should_trigger
 
-    def _encode_face_shape(self, face_shape: str) -> np.ndarray:
-        """얼굴형 라벨 인코딩 (레거시 지원)"""
-        FACE_SHAPES = ["각진형", "둥근형", "긴형", "계란형"]
-        vec = np.zeros(6, dtype=np.float32)
-
-        if face_shape == "하트형":
-            face_shape = "계란형"
-
-        if face_shape in FACE_SHAPES:
-            idx = FACE_SHAPES.index(face_shape)
-            vec[idx] = 1.0
-        else:
-            vec[3] = 1.0  # 기본값: 계란형
-
-        return vec
-
-    def _encode_skin_tone(self, skin_tone: str) -> np.ndarray:
-        """피부톤 라벨 인코딩 (레거시 지원)"""
-        SKIN_TONES = ["겨울쿨", "가을웜", "봄웜", "여름쿨"]
-        vec = np.zeros(2, dtype=np.float32)
-
-        # 웜톤/쿨톤으로 단순화
-        if skin_tone in ["봄웜", "가을웜"]:
-            vec[0] = 1.0  # 웜톤
-        elif skin_tone in ["여름쿨", "겨울쿨"]:
-            vec[1] = 1.0  # 쿨톤
-        else:
-            vec[0] = 1.0  # 기본값: 웜톤
-
-        return vec
+    @staticmethod
+    def _skip_missing_features(
+        analysis_id: str,
+        face_features: Any,
+        skin_features: Any,
+        **style_ref: Any,
+    ) -> Dict[str, Any]:
+        """측정값이 없거나 잘못된 피드백은 학습 샘플로 쓰지 않는다 (구조화 경고 로그)"""
+        logger.warning(
+            json.dumps(
+                {
+                    "event_type": "mlops_sample_skipped",
+                    "analysis_id": analysis_id,
+                    "reason": "missing_features",
+                    "has_face_features": face_features is not None,
+                    "has_skin_features": skin_features is not None,
+                    **style_ref,
+                },
+                ensure_ascii=False,
+                default=str,
+            )
+        )
+        return {
+            "success": False,
+            "pending_count": 0,
+            "should_trigger_training": False,
+            "reason": "missing_features",
+        }
 
     def get_pending_feedbacks(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
         """

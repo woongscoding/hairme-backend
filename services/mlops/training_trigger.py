@@ -106,14 +106,24 @@ class TrainingTrigger:
                 "reason": f"Threshold not met ({pending_count}/{RETRAIN_THRESHOLD})",
             }
 
-        # 트리거 실행
-        return self.trigger_training(
-            trigger_type="data_threshold",
-            metadata={"pending_count": pending_count, "threshold": RETRAIN_THRESHOLD},
+        # 학습은 주간 정기 실행에 맡기고 여기서는 기록만 한다.
+        # 예전 임계치 트리거는 pending 만 쓰는 모드라 홀드아웃이 모자라 매번 실패했고,
+        # 전체 재학습으로 바꾸면 게이트 거부 시 pending 이 남아 2시간마다 전체 재학습이
+        # 반복된다. 정기 실행이 같은 데이터를 다 읽으므로 잃는 것이 없다.
+        logger.info(
+            f"📊 재학습 임계치 도달 ({pending_count}/{RETRAIN_THRESHOLD}) - "
+            "주간 정기 학습에서 반영"
         )
+        return {
+            "triggered": False,
+            "reason": "threshold_reached_deferred_to_schedule",
+        }
 
     def trigger_training(
-        self, trigger_type: str = "manual", metadata: Optional[Dict[str, Any]] = None
+        self,
+        trigger_type: str = "manual",
+        metadata: Optional[Dict[str, Any]] = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         재학습 Lambda 호출
@@ -121,6 +131,8 @@ class TrainingTrigger:
         Args:
             trigger_type: 트리거 유형 ("manual", "data_threshold", "scheduled")
             metadata: 추가 메타데이터
+            options: 트레이너 이벤트 플래그 (from_base / include_processed / force /
+                skip_gate ...). payload 최상위에 그대로 들어간다.
 
         Returns:
             {
@@ -134,6 +146,7 @@ class TrainingTrigger:
 
         try:
             payload = {
+                **(options or {}),
                 "trigger_type": trigger_type,
                 "triggered_at": datetime.now(timezone.utc).isoformat(),
                 "metadata": metadata or {},

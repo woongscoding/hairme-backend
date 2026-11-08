@@ -1478,14 +1478,23 @@ def _download_current_model_from_s3() -> Optional[str]:
             f"✅ S3 재학습 모델 다운로드 완료: s3://{bucket}/models/current/model.pt"
         )
 
-        # 무결성 검증: models/current/metadata.json 의 sha256과 대조
+        # 무결성 검증: models/current/metadata.json 의 sha256과 대조 (fail closed)
         if not _verify_model_checksum(s3, bucket, local_path):
+            _remove_quietly(local_path)
             return None
 
         return local_path
     except Exception as e:
         logger.warning(f"⚠️ S3 재학습 모델 다운로드 실패 - 기본 모델 사용: {e}")
         return None
+
+
+def _remove_quietly(path: str) -> None:
+    """검증에 실패한 다운로드 파일 삭제 (실패해도 무시 - 경로가 다시 쓰이지 않는다)"""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def _sha256_of_file(path: str) -> str:
@@ -1501,40 +1510,42 @@ def _sha256_of_file(path: str) -> str:
 
 def _verify_model_checksum(s3_client, bucket: str, local_path: str) -> bool:
     """
-    S3 models/current/metadata.json 의 sha256과 다운로드된 모델을 대조
+    S3 models/current/metadata.json 의 sha256과 다운로드된 모델을 대조 (fail closed)
 
-    - metadata.json 이 없거나 sha256 필드가 없으면 경고만 남기고 통과 (True)
-    - sha256 이 있는데 불일치하면 에러 로그 후 False (기본 모델로 폴백)
+    - metadata.json 이 없거나 읽기/파싱 실패, sha256 필드 없음 -> False
+    - sha256 불일치 -> False
+    False 이면 호출측은 S3 모델을 쓰지 않고 번들 모델로 폴백한다.
+
+    트레이너(lambda_trainer save_current_model_metadata)는 models/current/model.pt 를
+    교체할 때마다 같은 키의 "sha256" 필드(hex)를 기록한다.
     """
     import json as _json
 
     metadata_key = "models/current/metadata.json"
+    fallback = "번들 모델로 폴백"
 
     try:
         response = s3_client.get_object(Bucket=bucket, Key=metadata_key)
         metadata = _json.loads(response["Body"].read().decode("utf-8"))
     except Exception as e:
-        logger.warning(
-            f"⚠️ 모델 무결성 메타데이터 없음/조회 실패 - 검증 생략 "
+        logger.error(
+            f"❌ S3 모델 무결성 메타데이터 없음/조회 실패 - {fallback} "
             f"(s3://{bucket}/{metadata_key}): {e}"
         )
-        return True
+        return False
 
-    expected = None
-    if isinstance(metadata, dict):
-        expected = metadata.get("sha256")
-
-    if not expected:
-        logger.warning(
-            f"⚠️ 모델 메타데이터에 sha256 필드 없음 - 검증 생략 "
+    expected = metadata.get("sha256") if isinstance(metadata, dict) else None
+    if not isinstance(expected, str) or not expected.strip():
+        logger.error(
+            f"❌ S3 모델 메타데이터에 sha256 없음 - {fallback} "
             f"(s3://{bucket}/{metadata_key})"
         )
-        return True
+        return False
 
     actual = _sha256_of_file(local_path)
-    if actual.lower() != str(expected).lower():
+    if actual.lower() != expected.strip().lower():
         logger.error(
-            f"❌ S3 모델 SHA-256 불일치 - 기본 모델로 폴백 "
+            f"❌ S3 모델 SHA-256 불일치 - {fallback} "
             f"(expected={expected}, actual={actual})"
         )
         return False

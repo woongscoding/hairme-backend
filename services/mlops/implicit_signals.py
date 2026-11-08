@@ -6,7 +6,7 @@
 샘플 형식은 S3FeedbackStore.save_feedback 과 같은 npz 레이아웃
 (face_features / skin_features / style_embedding / ground_truth / metadata) 에
 sample_weight(float32[1]) 를 더하고, metadata 에 source="implicit" / signal_type /
-rec_rank / ml_rank / propensity 를 넣는다.
+rec_rank / ml_rank / propensity / feature_version 을 넣는다.
 
     | signal_type      | ground_truth | base_weight |
     | share            | 85           | 1.0         |
@@ -57,6 +57,7 @@ from core.logging import log_structured
 from services.mlops.feedback_features import (
     card_hairstyle_id,
     extract_features,
+    feature_version_of,
     recommendation_cards,
     to_float,
 )
@@ -266,6 +267,8 @@ def build_sample_npz(
         "propensity": propensity,
         "sample_weight": weight,
         "model_version": analysis.get("model_version"),
+        # face_features 측정 방식 (v1_2d 2D / v2_3d 3D) - 트레이너가 버전별로 센다
+        "feature_version": feature_version_of(analysis),
     }
 
     npz_data = {

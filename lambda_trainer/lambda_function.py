@@ -26,6 +26,18 @@ S3에서 피드백 데이터를 가져와 모델을 재학습합니다.
   (base + 전체 데이터 재학습 → 홀드아웃이 충분히 확보됨). event 에 명시값이 있으면 그 값 우선.
   실행 조건은 "새 pending 샘플(중복 제거 후) >= MIN_SAMPLES".
 - data_threshold / manual: from_base=False, include_processed=False (기존과 동일)
+  단, 서버의 임계값 트리거(services/mlops/training_trigger.py)는 from_base=True,
+  include_processed=True 를 명시해 보내므로 실제로는 정기 실행과 같은 모드로 돈다.
+
+학습 샘플 필터:
+- feature_version (metadata, 없으면 v1_2d): 얼굴 측정 방식. v1_2d = 2D 픽셀 거리
+  (번들 v6 / 기존 샘플 전부), v2_3d = 3D 거리 (2026-11-08~). TRAIN_FEATURE_VERSIONS
+  (기본 "v1_2d,v2_3d" = 필터 없음, "*" 도 전체)에 있는 버전만 학습한다. 버전별 수는
+  항상 로그/리포트(data_summary.feature_versions)에 남는다.
+- 라벨 인코딩 샘플: 예전 서버가 측정값이 없을 때 얼굴형/피부톤 one-hot 을 측정값 자리에
+  넣어 저장한 샘플은 픽셀 측정값이 아니므로 제외한다 (TRAIN_DROP_LABEL_ENCODED=false 로 끔).
+- 필터로 빠진 pending 파일도 학습 성공 시 processed/ 로 옮긴다 (중복 제거와 동일).
+  정기 실행은 processed/ 도 다시 읽으므로 필터를 바꾸면 다음 정기 실행에 반영된다.
 
 이벤트 플래그:
 - force: MIN_SAMPLES 게이트 우회 (품질 게이트는 우회하지 않음)
@@ -116,6 +128,19 @@ IMPLICIT_SIGNAL_PRIORITY: Dict[str, int] = {
 }
 # 알 수 없는 signal_type 의 암묵 샘플은 가장 뒤로
 SAMPLE_PRIORITY_UNKNOWN_IMPLICIT = 99
+
+# ========== 얼굴 측정값 버전 (feature_version) ==========
+# 서버 models/mediapipe_analyzer.py 의 FEATURE_VERSION_* 와 같은 문자열 (이 이미지는
+# lambda_function.py 만 담으므로 import 하지 않고 따로 둔다).
+FEATURE_VERSION_2D = "v1_2d"
+FEATURE_VERSION_3D = "v2_3d"
+# metadata 에 feature_version 이 없는 샘플 (2026-11-08 이전 전부)
+FEATURE_VERSION_DEFAULT = FEATURE_VERSION_2D
+# 번들 v6 base 모델(ai_face_1000.npz) 의 측정 방식
+BASE_MODEL_FEATURE_VERSION = FEATURE_VERSION_2D
+# 학습에 쓸 버전 (쉼표 구분, "*" = 전체). 기본값은 두 버전 모두 = 필터 없음 (기존 동작)
+DEFAULT_TRAIN_FEATURE_VERSIONS = f"{FEATURE_VERSION_2D},{FEATURE_VERSION_3D}"
+ALL_FEATURE_VERSIONS = "*"
 
 # 라벨 정규화 상수
 LABEL_MIN = 10.0
@@ -856,6 +881,122 @@ def read_sample_weight(data: Any) -> float:
     return weight
 
 
+def sample_feature_version(meta: Dict[str, Any]) -> str:
+    """npz metadata 의 feature_version (없거나 빈 값이면 v1_2d)"""
+    value = meta.get("feature_version")
+    if value is None:
+        return FEATURE_VERSION_DEFAULT
+    text = str(value).strip()
+    return text or FEATURE_VERSION_DEFAULT
+
+
+def allowed_feature_versions(raw: Optional[str] = None) -> Optional[List[str]]:
+    """
+    TRAIN_FEATURE_VERSIONS 해석. None 이면 필터 없음 ("*").
+
+    raw 를 주지 않으면 실행 시점의 환경변수를 읽는다 (기본 "v1_2d,v2_3d").
+    빈 문자열·쉼표만 있으면 기본값으로 본다 (실수로 전부 제외하지 않도록).
+    """
+    if raw is None:
+        raw = os.getenv("TRAIN_FEATURE_VERSIONS", DEFAULT_TRAIN_FEATURE_VERSIONS)
+    versions = [v.strip() for v in str(raw).split(",") if v.strip()]
+    if not versions:
+        versions = DEFAULT_TRAIN_FEATURE_VERSIONS.split(",")
+    if ALL_FEATURE_VERSIONS in versions:
+        return None
+    return sorted(set(versions))
+
+
+def drop_label_encoded_enabled() -> bool:
+    return os.getenv("TRAIN_DROP_LABEL_ENCODED", "true").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def is_label_encoded_sample(face: Any, skin: Any) -> bool:
+    """
+    예전 서버의 레거시 폴백 샘플인지 (측정값 자리에 얼굴형/피부톤 one-hot).
+
+    s3_feedback_store._encode_face_shape / _encode_skin_tone (2026-11-08 제거) 은
+    face 6칸 중 정확히 한 칸, skin 2칸 중 정확히 한 칸만 1.0 이고 나머지는 0 이었다.
+    실제 측정값은 이마/광대/턱 폭이 수백 픽셀이라 이 모양이 나올 수 없다.
+    """
+    try:
+        face_arr = np.asarray(face, dtype=np.float64).reshape(-1)
+        skin_arr = np.asarray(skin, dtype=np.float64).reshape(-1)
+    except (TypeError, ValueError):
+        return False
+    for arr in (face_arr, skin_arr):
+        if arr.size == 0 or not np.all(np.isin(arr, (0.0, 1.0))):
+            return False
+        if int(arr.sum()) != 1:
+            return False
+    return True
+
+
+def count_values(values: List[Any]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for value in values:
+        key = str(value)
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def summarize_feature_versions(
+    feature_versions: List[str], indices: Optional[List[int]] = None
+) -> Dict[str, int]:
+    """feature_version 별 샘플 수 (indices 가 있으면 그 부분집합)"""
+    if indices is None:
+        indices = list(range(len(feature_versions)))
+    return count_values([feature_versions[i] for i in indices])
+
+
+def filter_training_records(
+    records: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    학습에 쓸 레코드만 남긴다 (중복 제거 전에 적용 - 제외된 샘플이 다른 샘플을
+    중복으로 밀어내지 않도록).
+
+    - TRAIN_FEATURE_VERSIONS 에 없는 feature_version
+    - 라벨 인코딩(one-hot) 레거시 샘플 (TRAIN_DROP_LABEL_ENCODED, 기본 켜짐)
+
+    Returns:
+        (kept, filter_info) - filter_info 는 로그/리포트용 카운트
+    """
+    allowed = allowed_feature_versions()
+    drop_label_encoded = drop_label_encoded_enabled()
+
+    kept: List[Dict[str, Any]] = []
+    excluded_versions: List[str] = []
+    label_encoded = 0
+    for rec in records:
+        version = rec.get("feature_version", FEATURE_VERSION_DEFAULT)
+        if allowed is not None and version not in allowed:
+            excluded_versions.append(version)
+            continue
+        if drop_label_encoded and is_label_encoded_sample(rec["face"], rec["skin"]):
+            label_encoded += 1
+            continue
+        kept.append(rec)
+
+    info = {
+        "allowed_feature_versions": (
+            [ALL_FEATURE_VERSIONS] if allowed is None else allowed
+        ),
+        "feature_versions_loaded": count_values(
+            [rec.get("feature_version", FEATURE_VERSION_DEFAULT) for rec in records]
+        ),
+        "excluded_by_feature_version": count_values(excluded_versions),
+        "label_encoded_dropped": label_encoded,
+        "drop_label_encoded": drop_label_encoded,
+    }
+    return kept, info
+
+
 def dedupe_feedback_records(
     records: List[Dict[str, Any]],
 ) -> Tuple[List[Dict[str, Any]], int]:
@@ -900,6 +1041,7 @@ def empty_sample_info() -> Dict[str, Any]:
         "signal_types": [],
         "duplicates_dropped": 0,
         "timestamps": [],
+        "feature_versions": [],
     }
 
 
@@ -932,7 +1074,9 @@ def load_pending_feedbacks(
           중복으로 빠진 pending 파일이 pending 에 계속 남지 않는다.
         - sample_info: 샘플별 부가 정보 (배열과 같은 순서)
             {"sample_keys", "sample_weights", "sources", "signal_types",
-             "duplicates_dropped"}
+             "duplicates_dropped", "timestamps", "feature_versions",
+             "filter": filter_training_records 카운트}
+        - feature_version 필터 / 라벨 인코딩 샘플로 빠진 키도 file_keys 에는 남는다
     """
     empty = (None, None, None, None, 0, [], [], empty_sample_info())
     s3 = get_s3_client()
@@ -977,6 +1121,7 @@ def load_pending_feedbacks(
                         "signal_type": signal_type,
                         "priority": sample_priority(source, signal_type),
                         "timestamp": parse_timestamp(meta.get("timestamp")),
+                        "feature_version": sample_feature_version(meta),
                     }
                 )
 
@@ -988,6 +1133,20 @@ def load_pending_feedbacks(
             return empty
 
         file_keys = [rec["key"] for rec in records]
+
+        records, filter_info = filter_training_records(records)
+        logger.info(
+            f"🧬 feature_version 별 로드: {filter_info['feature_versions_loaded']} "
+            f"(학습 대상 {filter_info['allowed_feature_versions']}, "
+            f"버전 제외 {filter_info['excluded_by_feature_version']}, "
+            f"라벨 인코딩 샘플 제외 {filter_info['label_encoded_dropped']}개)"
+        )
+        if not records:
+            logger.warning("⚠️ 필터 후 학습 가능한 샘플 없음")
+            empty_info = empty_sample_info()
+            empty_info["filter"] = filter_info
+            return (None, None, None, None, 0, file_keys, [], empty_info)
+
         kept, dropped = dedupe_feedback_records(records)
         if dropped:
             logger.info(f"🧹 중복 (analysis_id, 스타일) 샘플 {dropped}개 제외")
@@ -1006,6 +1165,8 @@ def load_pending_feedbacks(
             "signal_types": [rec["signal_type"] for rec in kept],
             "duplicates_dropped": dropped,
             "timestamps": [rec["timestamp"] for rec in kept],
+            "feature_versions": [rec["feature_version"] for rec in kept],
+            "filter": filter_info,
         }
 
         logger.info(
@@ -1048,6 +1209,8 @@ def complete_sample_info(
     if info.get("timestamps") is None:
         # 시각을 모르면 "이전" 으로 취급 (누수 방지)
         info["timestamps"] = [_MIN_TIMESTAMP] * count
+    if info.get("feature_versions") is None:
+        info["feature_versions"] = [FEATURE_VERSION_DEFAULT] * count
     info.setdefault("duplicates_dropped", 0)
     return info
 
@@ -1741,7 +1904,14 @@ def save_model_to_s3(
         logger.info(f"✅ 현재 모델 교체 완료")
 
         # 3. 무결성 메타데이터 기록 (서빙 측 SHA-256 검증용)
-        save_current_model_metadata(model_bytes, config, new_version)
+        # 서빙(models/ml_recommender.py)은 sha256 이 없거나 다르면 S3 모델을 쓰지 않고
+        # 번들 모델로 폴백한다(fail closed). 기록에 실패하면 승격 실패로 처리한다.
+        if not save_current_model_metadata(model_bytes, config, new_version):
+            logger.error(
+                "❌ models/current/metadata.json sha256 기록 실패 - 서빙은 번들 모델로 "
+                "폴백한다. 승격 실패로 처리 (pending 미이동)"
+            )
+            return False
 
         return True
 
@@ -2054,13 +2224,19 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         ) = load_pending_feedbacks(include_processed=include_processed)
 
         if count == 0:
-            result["message"] = "No pending feedbacks"
+            filter_info = (sample_info or {}).get("filter")
+            if filter_info:
+                result["sample_filter"] = filter_info
+                result["message"] = "No trainable feedbacks after filtering"
+            else:
+                result["message"] = "No pending feedbacks"
             return result
 
         sample_info = complete_sample_info(sample_info, count, file_keys)
         sample_weights = np.asarray(sample_info["sample_weights"], dtype=np.float32)
         sources = sample_info["sources"]
         signal_types = sample_info["signal_types"]
+        feature_versions = sample_info["feature_versions"]
 
         # 새로 들어온 샘플 수 = 중복 제거 후 pending/ 에서 온 샘플 수
         new_pending_count = sum(
@@ -2137,8 +2313,22 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
             **summarize_samples(sources, signal_types),
             "duplicates_dropped": int(sample_info.get("duplicates_dropped", 0)),
             "new_pending": new_pending_count,
-            "train": summarize_samples(sources, signal_types, train_idx),
-            "holdout": summarize_samples(sources, signal_types, holdout_idx),
+            # 학습에 쓴 샘플의 측정 방식별 수 (base 모델은 v1_2d)
+            "feature_versions": summarize_feature_versions(feature_versions),
+            "base_model_feature_version": BASE_MODEL_FEATURE_VERSION,
+            "sample_filter": sample_info.get("filter"),
+            "train": {
+                **summarize_samples(sources, signal_types, train_idx),
+                "feature_versions": summarize_feature_versions(
+                    feature_versions, train_idx
+                ),
+            },
+            "holdout": {
+                **summarize_samples(sources, signal_types, holdout_idx),
+                "feature_versions": summarize_feature_versions(
+                    feature_versions, holdout_idx
+                ),
+            },
         }
         result["data_summary"] = data_summary
         logger.info(f"  샘플 구성: {data_summary}")
@@ -2239,6 +2429,10 @@ def run_training_pipeline(event: Optional[Dict[str, Any]] = None) -> Dict[str, A
         config["explicit_samples"] = data_summary["explicit"]
         config["implicit_samples"] = data_summary["implicit"]
         config["implicit_by_signal_type"] = data_summary["implicit_by_signal_type"]
+        config["feature_versions"] = data_summary["feature_versions"]
+        config["train_feature_versions"] = (sample_info.get("filter") or {}).get(
+            "allowed_feature_versions"
+        )
         config["from_base"] = from_base
         config["include_processed"] = include_processed
         config["source_model_key"] = source_model_key

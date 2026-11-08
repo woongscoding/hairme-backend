@@ -55,6 +55,7 @@ from services.mlops.feedback_features import (  # noqa: E402,F401 - 기존 이�
     SKIN_FEATURE_FIELDS,
     extract_features,
     extract_hairstyle_id,
+    feature_version_of,
     to_float,
 )
 
@@ -136,6 +137,7 @@ def build_npz_bytes(
     skin_features: Sequence[float],
     style_embedding: np.ndarray,
     timestamp: datetime,
+    feature_version: str = "v1_2d",
 ) -> bytes:
     """
     S3FeedbackStore.save_feedback 과 동일한 NPZ 바이트 생성
@@ -159,6 +161,7 @@ def build_npz_bytes(
                         "feedback": feedback,
                         "timestamp": timestamp.isoformat(),
                         "source": "backfill",
+                        "feature_version": feature_version,
                     }
                 )
             ],
@@ -379,6 +382,7 @@ def build_samples(
                     "style_embedding": style_embedding,
                     "created_at": when,
                     "month": when.strftime("%Y-%m"),
+                    "feature_version": feature_version_of(item),
                 }
             )
             stats["would_write"] += 1
@@ -430,6 +434,7 @@ def upload_samples(s3_client, bucket: str, samples: Sequence[Dict[str, Any]]) ->
             skin_features=sample["skin_features"],
             style_embedding=sample["style_embedding"],
             timestamp=sample["created_at"],
+            feature_version=sample.get("feature_version", "v1_2d"),
         )
 
         try:

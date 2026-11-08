@@ -319,6 +319,11 @@ def save_analysis(data: Dict[str, Any]) -> Optional[str]:
             "mediapipe_features_complete",
             "mediapipe_head_yaw",
             "mediapipe_head_pitch",
+            # 측정 방식 표식 (v1_2d / v2_3d, models/mediapipe_analyzer.FEATURE_VERSION)
+            "mediapipe_feature_version",
+            # 피부 영역 평균 L*(0~100)·b* 원값 (피부톤 임계값 재보정용)
+            "mediapipe_L_star",
+            "mediapipe_b_star",
         ]
         for field in mediapipe_fields:
             if field in data and data[field] is not None:
@@ -801,6 +806,25 @@ def get_feedback_stats() -> Dict[str, Any]:
 # ========== MLOps: S3 피드백 저장 헬퍼 ==========
 
 
+def _log_mlops_sample_skipped(
+    analysis_id: str, style_index: int, reason: str, **extra: Any
+) -> None:
+    """학습 샘플을 쓰지 않은 피드백 (구조화 경고 로그 - CloudWatch 에서 사유별 집계)"""
+    logger.warning(
+        json.dumps(
+            {
+                "event_type": "mlops_sample_skipped",
+                "analysis_id": analysis_id,
+                "style_index": style_index,
+                "reason": reason,
+                **extra,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+    )
+
+
 def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
     """
     피드백을 S3에 저장 (ML 학습용)
@@ -827,93 +851,70 @@ def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
             logger.warning(f"⚠️ S3 저장 건너뜀: 분석 데이터 없음 ({analysis_id})")
             return
 
-        # 2. 필요한 데이터 추출
+        # 2. MediaPipe 측정값 - 8개가 모두 있을 때만 학습 샘플을 만든다.
+        # (기본값 400/500/0.8 이나 얼굴형 one-hot 으로 채우면 트레이너가 그것을 픽셀
+        # 측정값으로 학습한다. 백필·암묵 신호와 같은 feedback_features 규칙을 쓴다)
+        from services.mlops.feedback_features import (
+            extract_features,
+            feature_version_of,
+            missing_feature_fields,
+        )
+
+        features = extract_features(analysis)
+        if features is None:
+            _log_mlops_sample_skipped(
+                analysis_id,
+                style_index,
+                "missing_mediapipe_features",
+                missing_fields=missing_feature_fields(analysis),
+            )
+            return
+        face_features, skin_features = features
+        feature_version = feature_version_of(analysis)
+
         face_shape = analysis.get("face_shape", "")
         skin_tone = analysis.get("personal_color", "")
 
-        # recommended_styles에서 hairstyle_id 추출
+        # 3. recommended_styles 에서 hairstyle_id 추출
         recommended_styles = analysis.get("recommended_styles", [])
-        if style_index <= len(recommended_styles):
-            style_data = recommended_styles[style_index - 1]
-            hairstyle_id = style_data.get("hairstyle_id")
-
-            # hairstyle_id가 None인 경우: 트렌드 스타일이면 별도 처리
-            if hairstyle_id is None:
-                style_name = style_data.get("style_name", "")
-                source = style_data.get("source", "")
-
-                if source == "trending" and style_name:
-                    # 트렌드 스타일: on-the-fly 임베딩 생성 후 S3 저장
-                    try:
-                        # MediaPipe 측정값 추출 (있으면)
-                        _face_features = None
-                        _skin_features = None
-                        if analysis.get("mediapipe_face_ratio") is not None:
-                            _face_features = [
-                                analysis.get("mediapipe_face_ratio", 1.2),
-                                analysis.get("mediapipe_forehead_width", 400),
-                                analysis.get("mediapipe_cheekbone_width", 500),
-                                analysis.get("mediapipe_jaw_width", 400),
-                                analysis.get("mediapipe_forehead_ratio", 0.8),
-                                analysis.get("mediapipe_jaw_ratio", 0.8),
-                            ]
-                        if analysis.get("mediapipe_ITA_value") is not None:
-                            _skin_features = [
-                                analysis.get("mediapipe_ITA_value", 70),
-                                analysis.get("mediapipe_hue_value", 15),
-                            ]
-
-                        from services.mlops.s3_feedback_store import (
-                            get_s3_feedback_store,
-                        )
-
-                        s3_store = get_s3_feedback_store()
-                        result = s3_store.save_trending_feedback(
-                            analysis_id=analysis_id,
-                            face_shape=face_shape,
-                            skin_tone=skin_tone,
-                            style_name=style_name,
-                            feedback=feedback,
-                            face_features=_face_features,
-                            skin_features=_skin_features,
-                        )
-                        if result.get("success"):
-                            logger.info(f"트렌드 피드백 S3 저장 완료: {style_name}")
-                    except Exception as e:
-                        logger.warning(f"트렌드 피드백 S3 저장 실패: {e}")
-                    return
-
-                logger.warning(f"⚠️ hairstyle_id 없음 - style_name: {style_name}")
-                return
-        else:
+        if style_index > len(recommended_styles):
             logger.warning(f"⚠️ S3 저장 건너뜀: style_index 범위 초과")
             return
 
-        # 3. MediaPipe 측정값 추출 (있으면)
-        face_features = None
-        skin_features = None
+        style_data = recommended_styles[style_index - 1]
+        hairstyle_id = style_data.get("hairstyle_id")
 
-        # MediaPipe 측정값이 저장되어 있으면 사용
-        if analysis.get("mediapipe_face_ratio") is not None:
-            face_features = [
-                analysis.get("mediapipe_face_ratio", 1.2),
-                analysis.get("mediapipe_forehead_width", 400),
-                analysis.get("mediapipe_cheekbone_width", 500),
-                analysis.get("mediapipe_jaw_width", 400),
-                analysis.get("mediapipe_forehead_ratio", 0.8),
-                analysis.get("mediapipe_jaw_ratio", 0.8),
-            ]
-
-        if analysis.get("mediapipe_ITA_value") is not None:
-            skin_features = [
-                analysis.get("mediapipe_ITA_value", 70),
-                analysis.get("mediapipe_hue_value", 15),
-            ]
-
-        # 4. S3에 저장
         from services.mlops.s3_feedback_store import get_s3_feedback_store
 
         s3_store = get_s3_feedback_store()
+
+        # hairstyle_id 가 None 인 경우: 트렌드 스타일이면 별도 처리
+        if hairstyle_id is None:
+            style_name = style_data.get("style_name", "")
+            source = style_data.get("source", "")
+
+            if source == "trending" and style_name:
+                try:
+                    result = s3_store.save_trending_feedback(
+                        analysis_id=analysis_id,
+                        face_shape=face_shape,
+                        skin_tone=skin_tone,
+                        style_name=style_name,
+                        feedback=feedback,
+                        face_features=face_features,
+                        skin_features=skin_features,
+                        feature_version=feature_version,
+                    )
+                    if result.get("success"):
+                        logger.info(f"트렌드 피드백 S3 저장 완료: {style_name}")
+                except Exception as e:
+                    logger.warning(f"트렌드 피드백 S3 저장 실패: {e}")
+                return
+
+            logger.warning(f"⚠️ hairstyle_id 없음 - style_name: {style_name}")
+            return
+
+        # 4. S3에 저장
         result = s3_store.save_feedback(
             analysis_id=analysis_id,
             face_shape=face_shape,
@@ -922,6 +923,7 @@ def _save_feedback_to_s3(analysis_id: str, style_index: int, feedback: str):
             feedback=feedback,
             face_features=face_features,
             skin_features=skin_features,
+            feature_version=feature_version,
         )
 
         if result.get("success"):
