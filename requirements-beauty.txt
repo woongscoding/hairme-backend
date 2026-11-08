@@ -1,5 +1,5 @@
 # Lambda deployment requirements for Beauty Lambda
-# Personal Color + Hair Color (NO PyTorch)
+# Hair Color 합성 전용 (NO PyTorch)
 
 # FastAPI & Web Framework
 fastapi==0.109.0
@@ -13,17 +13,11 @@ boto3==1.35.0
 # Google Gemini AI
 google-genai>=1.52.0
 
-# Image Processing (NO PyTorch, NO scikit-learn for ML)
+# Image Processing (NO PyTorch)
+# 2026-11: personal-color/beauty 라우터 삭제로 beauty Lambda 는 염색 합성(PIL + Gemini)만 한다.
+# mediapipe/opencv/jax/scipy 는 import 하는 곳이 없어 뺐다 (이미지·콜드스타트 감소).
 pillow==10.4.0
-opencv-python-headless==4.9.0.80
 numpy==1.26.3
-mediapipe==0.10.14
-
-# mediapipe의 jax/scipy 의존성 고정 (Lambda AMI의 GCC 7.3과 호환되는 버전)
-jax==0.4.30
-jaxlib==0.4.30
-ml_dtypes==0.4.1
-scipy==1.11.4
 
 # 회원 인증 (hair-color 합성이 core.quota → core.jwt_auth 를 import함, 2026-09-10 502 장애 원인)
 PyJWT==2.10.1

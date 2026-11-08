@@ -524,7 +524,7 @@ jobs:
             exit 1
           fi
           docker run --rm --entrypoint python -e GEMINI_API_KEY=dummy \
-            $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG -c "import main_beauty, models.mediapipe_analyzer; print('imports ok')"
+            $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG -c "import main_beauty, api.endpoints.hair_color, services.hair_color_service; print('imports ok')"
 
           docker push $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG
           docker push $ECR_REGISTRY/hairme-beauty:latest

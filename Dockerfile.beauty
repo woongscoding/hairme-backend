@@ -1,27 +1,11 @@
 # AWS Lambda Python 3.11 base image
-# Beauty Lambda: Personal Color + Hair Color (No PyTorch)
+# Beauty Lambda: Hair Color 합성 전용 (PIL + Gemini, No PyTorch / MediaPipe / OpenCV)
 FROM public.ecr.aws/lambda/python:3.11
 
-# Install system dependencies for OpenCV, MediaPipe, and build tools
-RUN yum install -y \
-    mesa-libGL \
-    glib2 \
-    libSM \
-    libXext \
-    libXrender \
-    gcc \
-    gcc-c++ \
-    make \
-    cmake \
-    pkgconfig \
-    && yum clean all \
-    && rm -rf /var/cache/yum
-
-# Copy requirements and install Python dependencies
-# NO PyTorch - using MediaPipe + Gemini only
+# 시스템 패키지 없음: OpenCV/MediaPipe 를 빼면서 mesa-libGL·gcc 등이 필요 없어졌다.
+# (남은 의존성은 전부 manylinux 휠로 설치된다)
 COPY requirements-beauty.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir numpy==1.26.3 && \
     pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
 # Copy application code
