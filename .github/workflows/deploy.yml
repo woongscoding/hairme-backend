@@ -114,6 +114,14 @@ jobs:
           echo "Current (pre-deploy) image: ${CURRENT_IMAGE:-<none>}"
           echo "previous_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
 
+          # 롤백 때 이미지와 함께 환경변수도 되돌리기 위해 배포 전 값을 저장한다.
+          # 시크릿이 들어 있으므로 출력/로그가 아니라 runner 임시 디렉터리 파일로만 둔다.
+          aws lambda get-function-configuration \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query '{Variables: Environment.Variables}' \
+            --output json > "$RUNNER_TEMP/prev-env.json" || rm -f "$RUNNER_TEMP/prev-env.json"
+
           if [ -n "$CURRENT_IMAGE" ]; then
             CURRENT_DIGEST=$(echo "$CURRENT_IMAGE" | grep -o 'sha256:[a-f0-9]*' || echo "")
             if [ -n "$CURRENT_DIGEST" ]; then
@@ -148,10 +156,33 @@ jobs:
             --platform linux/amd64 \
             .
 
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # 테스트 job 은 requirements.txt(어느 이미지도 쓰지 않음)로 돈다.
+      # 여기서는 실제로 배포할 이미지 안에서 전체 테스트를 돌려, 운영 의존성 조합
+      # (torch CPU, protobuf<5, mediapipe --no-deps 등)에서 깨지는 것을 push 전에 막는다.
+      - name: Test inside the production image
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.image }}
+        run: |
+          docker run --rm \
+            -v "$PWD:/src" -w /src \
+            -e GEMINI_API_KEY=test_api_key \
+            -e AWS_ACCESS_KEY_ID=testing -e AWS_SECRET_ACCESS_KEY=testing \
+            -e AWS_DEFAULT_REGION=us-east-1 \
+            --entrypoint sh "$IMAGE_URI" -c "
+              pip install -q pytest==8.3.4 pytest-asyncio==0.24.0 pytest-mock==3.14.0 \
+                pytest-timeout==2.3.1 'moto[dynamodb,s3]==5.0.28' &&
+              python -m pytest -p no:cacheprovider -o addopts='' -q -W ignore \
+                --ignore=tests/test_dynamodb_integration.py"
+
+      - name: Push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Update Lambda function
         env:
@@ -325,6 +356,22 @@ jobs:
             --function-name $LAMBDA_FUNCTION_NAME \
             --region $AWS_REGION
 
+          # 이번 배포가 바꾼 환경변수도 배포 전 값으로 되돌린다
+          if [ -s "$RUNNER_TEMP/prev-env.json" ] && [ "$(jq -r '.Variables' "$RUNNER_TEMP/prev-env.json")" != "null" ]; then
+            aws lambda update-function-configuration \
+              --function-name $LAMBDA_FUNCTION_NAME \
+              --environment "file://$RUNNER_TEMP/prev-env.json" \
+              --region $AWS_REGION \
+              --output json > /dev/null
+            aws lambda wait function-updated \
+              --function-name $LAMBDA_FUNCTION_NAME \
+              --region $AWS_REGION
+            echo "Environment variables restored to pre-deploy values"
+          else
+            echo "::warning::No saved pre-deploy environment - only the image was rolled back"
+          fi
+          rm -f "$RUNNER_TEMP/prev-env.json"
+
           echo "::error::Deployment failed health check and was rolled back to the previous image"
           exit 1
 
@@ -414,6 +461,13 @@ jobs:
           echo "Current (pre-deploy) image: ${CURRENT_IMAGE:-<none>}"
           echo "previous_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
 
+          # 롤백 시 환경변수 복구용 (시크릿 포함 → runner 임시 파일로만 보관)
+          aws lambda get-function-configuration \
+            --function-name hairme-beauty \
+            --region ap-northeast-2 \
+            --query '{Variables: Environment.Variables}' \
+            --output json > "$RUNNER_TEMP/prev-env-beauty.json" || rm -f "$RUNNER_TEMP/prev-env-beauty.json"
+
           if [ -n "$CURRENT_IMAGE" ]; then
             CURRENT_DIGEST=$(echo "$CURRENT_IMAGE" | grep -o 'sha256:[a-f0-9]*' || echo "")
             if [ -n "$CURRENT_DIGEST" ]; then
@@ -449,6 +503,28 @@ jobs:
             -t $ECR_REGISTRY/hairme-beauty:latest \
             --platform linux/amd64 \
             .
+
+          # push 전 스모크 테스트: Lambda 런타임 에뮬레이터로 /api/health 호출 + 핵심 모듈 import
+          docker run -d --name beauty-smoke -p 9000:8080 \
+            -e GEMINI_API_KEY=dummy -e AWS_REGION=ap-northeast-2 \
+            -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x \
+            $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG
+          PAYLOAD='{"version":"2.0","requestContext":{"http":{"method":"GET","path":"/api/health","sourceIp":"127.0.0.1","protocol":"HTTP/1.1","userAgent":"smoke"}},"rawPath":"/api/health","headers":{"host":"localhost"}}'
+          RESP=""
+          for i in $(seq 1 10); do
+            RESP=$(curl -s -m 60 -XPOST localhost:9000/2015-03-31/functions/function/invocations -d "$PAYLOAD") && [ -n "$RESP" ] && break
+            sleep 3
+          done
+          docker logs beauty-smoke | tail -20
+          docker rm -f beauty-smoke > /dev/null
+          echo "Smoke response: $RESP"
+          BODY_STATUS=$(echo "$RESP" | jq -r 'try (.body | fromjson | .status) catch empty')
+          if [ "$BODY_STATUS" != "healthy" ]; then
+            echo "::error::Beauty image smoke test failed - not pushing"
+            exit 1
+          fi
+          docker run --rm --entrypoint python -e GEMINI_API_KEY=dummy \
+            $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG -c "import main_beauty, models.mediapipe_analyzer; print('imports ok')"
 
           docker push $ECR_REGISTRY/hairme-beauty:$IMAGE_TAG
           docker push $ECR_REGISTRY/hairme-beauty:latest
@@ -585,5 +661,160 @@ jobs:
             --function-name hairme-beauty \
             --region ap-northeast-2
 
+          if [ -s "$RUNNER_TEMP/prev-env-beauty.json" ] && [ "$(jq -r '.Variables' "$RUNNER_TEMP/prev-env-beauty.json")" != "null" ]; then
+            aws lambda update-function-configuration \
+              --function-name hairme-beauty \
+              --environment "file://$RUNNER_TEMP/prev-env-beauty.json" \
+              --region ap-northeast-2 \
+              --output json > /dev/null
+            aws lambda wait function-updated \
+              --function-name hairme-beauty \
+              --region ap-northeast-2
+            echo "Environment variables restored to pre-deploy values"
+          else
+            echo "::warning::No saved pre-deploy environment - only the image was rolled back"
+          fi
+          rm -f "$RUNNER_TEMP/prev-env-beauty.json"
+
           echo "::error::Beauty deployment failed health check and was rolled back to the previous image"
+          exit 1
+
+  # 트레이너 Lambda(hairme-model-trainer)는 예전엔 수동 push 라서 코드와 운영 이미지가
+  # 어긋났다 (main 은 v6+ 인데 운영은 9/11 v5). lambda_trainer/ 가 바뀐 push 에서만 배포한다.
+  # 트레이너는 호출하면 실제 학습·모델 교체가 일어나므로 배포 후 invoke 하지 않고,
+  # 이미지 안에서 import + 함수 상태(Active/Successful)만 확인한다.
+  build-and-deploy-trainer:
+    name: Build and Deploy Trainer Lambda
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    env:
+      TRAINER_FUNCTION_NAME: hairme-model-trainer
+      TRAINER_ECR_REPOSITORY: hairme-trainer
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect trainer changes
+        id: changes
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo "Unknown base commit - deploying trainer to be safe"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- lambda_trainer/; then
+            echo "lambda_trainer/ unchanged - skipping trainer deploy"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            git diff --stat "$BEFORE_SHA" "$GITHUB_SHA" -- lambda_trainer/
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.changes.outputs.changed == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.changes.outputs.changed == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Record current trainer image
+        if: steps.changes.outputs.changed == 'true'
+        id: backup
+        run: |
+          CURRENT_IMAGE=$(aws lambda get-function \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query 'Code.ResolvedImageUri' \
+            --output text 2>/dev/null || echo "")
+          [ "$CURRENT_IMAGE" = "None" ] && CURRENT_IMAGE=""
+          echo "Current trainer image: ${CURRENT_IMAGE:-<none>}"
+          echo "previous_image=$CURRENT_IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Build and smoke-test trainer image
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          docker build --platform linux/amd64 -t trainer-smoke:local lambda_trainer
+          docker run --rm --entrypoint python trainer-smoke:local -c \
+            "import lambda_function as lf, torch; assert callable(lf.lambda_handler); print('trainer import ok', torch.__version__)"
+
+      # Lambda 는 OCI 인덱스/attestation 매니페스트를 거부하므로 docker v2 매니페스트로 push 한다
+      - name: Push trainer image to ECR
+        if: steps.changes.outputs.changed == 'true'
+        id: push
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$TRAINER_ECR_REPOSITORY:${GITHUB_SHA::12}
+          docker buildx build --platform linux/amd64 \
+            --provenance=false --sbom=false \
+            -t "$IMAGE_URI" \
+            --output type=registry,oci-mediatypes=false \
+            lambda_trainer
+          echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Update trainer Lambda
+        if: steps.changes.outputs.changed == 'true'
+        id: update
+        env:
+          IMAGE_URI: ${{ steps.push.outputs.image }}
+        run: |
+          aws lambda update-function-code \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --image-uri "$IMAGE_URI" \
+            --region $AWS_REGION \
+            --output json > /dev/null
+          aws lambda wait function-updated \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --region $AWS_REGION
+          STATUS=$(aws lambda get-function-configuration \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --region $AWS_REGION \
+            --query '[State,LastUpdateStatus]' --output text)
+          echo "Trainer state: $STATUS"
+          if [ "$STATUS" != "$(printf 'Active\tSuccessful')" ]; then
+            echo "::error::Trainer Lambda is not Active/Successful after update"
+            exit 1
+          fi
+
+      - name: Roll back trainer after failed update
+        if: always() && steps.update.outcome == 'failure'
+        env:
+          PREVIOUS_IMAGE: ${{ steps.backup.outputs.previous_image }}
+        run: |
+          if [ -z "$PREVIOUS_IMAGE" ]; then
+            echo "::error::No previous trainer image recorded - manual rollback required"
+            exit 1
+          fi
+          aws lambda update-function-code \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --image-uri "$PREVIOUS_IMAGE" \
+            --region $AWS_REGION \
+            --output json > /dev/null
+          aws lambda wait function-updated \
+            --function-name $TRAINER_FUNCTION_NAME \
+            --region $AWS_REGION
+          echo "::error::Trainer update failed and was rolled back to $PREVIOUS_IMAGE"
           exit 1
