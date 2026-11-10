@@ -39,6 +39,7 @@ from services.credit_service import RefAlreadyClaimedError, get_credit_service
 from services.free_policy_service import resolve_device_arm, signup_bonus_for
 from services.kakao_auth_service import get_kakao_auth_service
 from services.photo_storage_service import get_photo_storage_service
+from services.withdrawal_hold_service import hold_transact_item, recently_withdrawn
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
@@ -213,16 +214,21 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
 
         is_new_user = user is None
         arm: Optional[str] = None
+        pro_bonus = 0
+        bonus_held = False
         if is_new_user:
             try:
                 if pro:
+                    # 탈퇴 후 보관 기간(약 6개월) 안에 다시 가입하면 체험을 주지 않는다
+                    bonus_held = recently_withdrawn(profile["kakao_id"])
+                    pro_bonus = 0 if bonus_held else settings.PRO_SIGNUP_BONUS_CREDITS
                     # Pro 계정은 무료 정책 실험에 넣지 않는다 (기기 코호트 등록도 하지 않음)
                     user = user_repo.create(
                         kakao_id=profile["kakao_id"],
                         nickname=profile["nickname"],
                         email=profile.get("email"),
                         initial_credits=0,
-                        signup_bonus_pending=settings.PRO_SIGNUP_BONUS_CREDITS,
+                        signup_bonus_pending=pro_bonus,
                         account_type=account_type,
                     )
                 else:
@@ -269,9 +275,7 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
 
         if is_new_user:
             if pro:
-                bonus = _grant_pending_signup_bonus(
-                    user, settings.PRO_SIGNUP_BONUS_CREDITS
-                )
+                bonus = _grant_pending_signup_bonus(user, pro_bonus)
                 log_structured(
                     "signup",
                     {
@@ -279,6 +283,7 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
                         "arm": None,
                         "bonus": bonus,
                         "account_type": account_type,
+                        "bonus_held": bonus_held,
                     },
                 )
             else:
@@ -430,6 +435,8 @@ async def withdraw(
        실패하면 503 으로 멈춘다 (계정이 남아 있어야 다시 시도할 수 있다).
     2. 회원 행과 카카오 유일성 마커를 지운다. 남은 합성 횟수는 사라진다.
        크레딧 원장·결제 마커는 결제 기록 보관을 위해 남긴다 (user_id 만 있음).
+       같은 트랜잭션에서 카카오 회원번호를 되돌릴 수 없게 바꾼 값을 약 6개월 보관한다
+       (그 기간의 재가입에는 체험을 주지 않는다 - services/withdrawal_hold_service.py).
     이미 탈퇴한 계정의 재요청(같은 액세스 토큰)은 결과 폴더만 다시 확인하고 성공으로 답한다.
 
     손님 계정은 403 withdrawal_not_supported (이번 범위 밖).
@@ -475,7 +482,11 @@ async def withdraw(
 
     if user is not None:
         try:
-            user_repo.delete_account(user_id, user["kakao_id"])
+            user_repo.delete_account(
+                user_id,
+                user["kakao_id"],
+                extra_items=[hold_transact_item(user["kakao_id"])],
+            )
         except ValueError:
             pass  # 동시 요청이 먼저 지움
         except Exception as e:

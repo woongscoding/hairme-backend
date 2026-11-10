@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
     # Pro 계정 가입 체험 수량 (무료 등급). 무료 정책 실험과 무관하게 이 값을 쓴다.
     PRO_SIGNUP_BONUS_CREDITS: int = 10
+    # Pro 계정 탈퇴 후 이 기간(일, 약 6개월) 안에 재가입하면 가입 체험을 주지 않는다.
+    # 카카오 회원번호를 되돌릴 수 없게 바꾼 값만 이 기간 보관 (services/withdrawal_hold_service.py)
+    PRO_WITHDRAWAL_HOLD_DAYS: int = 183
     SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
 
     # ===== 합성 출력 등급 (무료 / 유료) =====

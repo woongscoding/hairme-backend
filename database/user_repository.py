@@ -15,7 +15,7 @@
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Sequence
 
 try:
     import boto3
@@ -355,7 +355,9 @@ class UserRepository:
 
         logger.info(f"🔐 계정 상태 변경: user_id={user_id}, status={status}")
 
-    def delete_account(self, user_id: str, kakao_id: str) -> None:
+    def delete_account(
+        self, user_id: str, kakao_id: str, extra_items: Sequence[Dict[str, Any]] = ()
+    ) -> None:
         """회원 탈퇴 - 사용자 아이템과 kakao_id 유일성 마커를 한 트랜잭션으로 지운다.
 
         사용자 아이템(닉네임·이메일·카카오 회원번호·잔액)이 사라지므로 리프레시는 401,
@@ -363,6 +365,7 @@ class UserRepository:
         크레딧 원장(hairme-credit-ledger)과 결제 중복 방지 마커는 결제 기록 보관 의무 때문에
         남긴다 (이름·연락처 없이 user_id 만 있다).
         마커는 이 사용자의 것일 때만 지운다 (없으면 그대로 통과).
+        extra_items: 같은 트랜잭션에 넣을 다른 쓰기 (예: 재가입 체험 방지 보관 기록)
 
         Raises:
             ValueError: 존재하지 않는 사용자 (이미 탈퇴)
@@ -388,6 +391,7 @@ class UserRepository:
                             "ExpressionAttributeValues": {":uid": user_id},
                         }
                     },
+                    *extra_items,
                 ]
             )
         except ClientError as e:

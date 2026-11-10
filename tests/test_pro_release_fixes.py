@@ -87,9 +87,13 @@ class TestWithdraw:
         assert response.status_code == 200, response.text
         assert response.json() == {"success": True, "deleted_results": 3}
         env["storage"].delete_user_results.assert_called_once_with("pro-user-id", True)
-        env["repo"].delete_account.assert_called_once_with(
-            "pro-user-id", PRO_USER["kakao_id"]
-        )
+        env["repo"].delete_account.assert_called_once()
+        call = env["repo"].delete_account.call_args
+        assert call.args == ("pro-user-id", PRO_USER["kakao_id"])
+        # 같은 트랜잭션에 재가입 체험 방지 기록 (카카오 회원번호 원문은 없다)
+        (hold,) = call.kwargs["extra_items"]
+        assert hold["Update"]["Key"]["device_id"].startswith("withdrawn_kakao#")
+        assert PRO_USER["kakao_id"] not in str(hold)
         event = env["log"].call_args.args
         assert event[0] == "account_withdrawn"
         assert event[1]["deleted_results"] == 3
@@ -229,6 +233,221 @@ class TestDeleteUserResults:
         svc._client.list_objects_v2.return_value = {"IsTruncated": False}
         assert svc.delete_user_results("u1", True) == 0
         svc._client.delete_objects.assert_not_called()
+
+
+class TestDeleteAccountExtraItems:
+    def test_extra_items_join_same_transaction(self):
+        from database.user_repository import UserRepository
+
+        repo = UserRepository()
+        table = MagicMock()
+        table.name = "hairme-users"
+        extra = {"Update": {"TableName": "hairstyle_usage"}}
+        with patch.object(UserRepository, "table", table):
+            repo.delete_account("u1", "900001", extra_items=[extra])
+        items = table.meta.client.transact_write_items.call_args.kwargs["TransactItems"]
+        assert len(items) == 3
+        assert "Delete" in items[0] and "Delete" in items[1]
+        assert items[2] == extra
+
+
+# ========== 1-2. 탈퇴 후 재가입 체험 방지 ==========
+
+
+class TestWithdrawalHoldService:
+    def test_key_is_irreversible_and_stable(self):
+        from services.withdrawal_hold_service import hold_key
+
+        key = hold_key("900001")
+        assert key == hold_key("900001")
+        assert key != hold_key("900002")
+        assert key.startswith("withdrawn_kakao#")
+        assert "900001" not in key
+        assert len(key.split("#", 1)[1]) == 64  # SHA-256 hex
+
+    def test_key_depends_on_server_secret(self, monkeypatch):
+        """비밀값 없이 회원번호를 대입해 맞춰 볼 수 없다 (단순 해시가 아니다)"""
+        import hashlib
+
+        from services.withdrawal_hold_service import hold_key
+
+        plain = hashlib.sha256(b"900001").hexdigest()
+        before = hold_key("900001")
+        assert plain not in before
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", "another-secret")
+        assert hold_key("900001") != before
+
+    def test_missing_secret_fails(self, monkeypatch):
+        from services.withdrawal_hold_service import hold_key
+
+        monkeypatch.setattr(settings, "JWT_SECRET_KEY", "")
+        with pytest.raises(RuntimeError):
+            hold_key("900001")
+
+    def test_transact_item_expires_after_hold_days(self):
+        from services.withdrawal_hold_service import hold_key, hold_transact_item
+
+        item = hold_transact_item("900001", now=1_000_000)["Update"]
+        assert item["TableName"] == settings.DYNAMODB_USAGE_TABLE_NAME
+        assert item["Key"] == {"device_id": hold_key("900001"), "date": "withdrawn"}
+        values = item["ExpressionAttributeValues"]
+        assert values[":exp"] == 1_000_000 + 183 * 86400
+        assert settings.PRO_WITHDRAWAL_HOLD_DAYS == 183  # 약 6개월
+        # 테이블의 TTL 속성 이름(expire_at)으로 자동 삭제된다
+        assert "expire_at = :exp" in item["UpdateExpression"]
+
+    @pytest.mark.parametrize(
+        "item, expected",
+        [
+            (None, False),
+            ({"expire_at": 4_000_000_000}, True),
+            # TTL 삭제가 늦어져 남아 있어도 기간이 지났으면 무시
+            ({"expire_at": 1_000}, False),
+        ],
+    )
+    def test_recently_withdrawn(self, item, expected):
+        from services import withdrawal_hold_service as hold
+
+        table = MagicMock()
+        table.get_item.return_value = {"Item": item} if item else {}
+        usage = MagicMock()
+        usage.table = table
+        with patch.object(hold, "get_usage_limit_service", return_value=usage):
+            assert hold.recently_withdrawn("900001") is expected
+        kwargs = table.get_item.call_args.kwargs
+        assert kwargs["Key"] == {
+            "device_id": hold.hold_key("900001"),
+            "date": "withdrawn",
+        }
+        assert kwargs["ConsistentRead"] is True
+
+
+@pytest.fixture
+def pro_signup_env():
+    from api.endpoints import auth
+    from tests.test_pro_account import _kakao_service
+
+    previous = auth.limiter.enabled
+    auth.limiter.enabled = False
+    repo = MagicMock()
+    repo.get_by_kakao_id.return_value = None
+    repo.create.return_value = dict(PRO_USER, credits=0)
+    credit = MagicMock()
+    credit.grant_with_claim.return_value = settings.PRO_SIGNUP_BONUS_CREDITS
+    with patch(
+        "api.endpoints.auth.get_kakao_auth_service",
+        return_value=_kakao_service(ACCOUNT_PRO),
+    ), patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
+        "api.endpoints.auth.get_credit_service", return_value=credit
+    ), patch(
+        "api.endpoints.auth.recently_withdrawn"
+    ) as withdrawn, patch(
+        "api.endpoints.auth.log_structured"
+    ) as log:
+        yield {"repo": repo, "credit": credit, "withdrawn": withdrawn, "log": log}
+    auth.limiter.enabled = previous
+
+
+def _kakao_login(client):
+    return client.post("/api/auth/kakao", json={"kakao_access_token": "t"})
+
+
+class TestRejoinWithinHold:
+    def test_rejoin_gets_no_trial(self, client, pro_signup_env):
+        env = pro_signup_env
+        env["withdrawn"].return_value = True
+        response = _kakao_login(client)
+        assert response.status_code == 200, response.text
+        assert response.json()["is_new_user"] is True
+        assert response.json()["user"]["credits"] == 0
+        env["withdrawn"].assert_called_once_with("900001")
+        assert env["repo"].create.call_args.kwargs["signup_bonus_pending"] == 0
+        env["credit"].grant_with_claim.assert_not_called()
+        signup = [c.args[1] for c in env["log"].call_args_list if c.args[0] == "signup"]
+        assert signup[0]["bonus"] == 0
+        assert signup[0]["bonus_held"] is True
+
+    def test_first_signup_gets_trial(self, client, pro_signup_env):
+        env = pro_signup_env
+        env["withdrawn"].return_value = False
+        response = _kakao_login(client)
+        assert response.json()["user"]["credits"] == settings.PRO_SIGNUP_BONUS_CREDITS
+        assert (
+            env["repo"].create.call_args.kwargs["signup_bonus_pending"]
+            == settings.PRO_SIGNUP_BONUS_CREDITS
+        )
+
+    def test_hold_check_failure_blocks_signup(self, client, pro_signup_env):
+        """확인이 안 되면 체험을 잘못 주지 않도록 가입을 멈춘다 (다시 시도하면 된다)"""
+        pro_signup_env["withdrawn"].side_effect = RuntimeError("ddb down")
+        assert _kakao_login(client).status_code == 500
+        pro_signup_env["repo"].create.assert_not_called()
+
+    def test_existing_pro_login_does_not_check(self, client, pro_signup_env):
+        pro_signup_env["repo"].get_by_kakao_id.return_value = dict(PRO_USER)
+        assert _kakao_login(client).status_code == 200
+        pro_signup_env["withdrawn"].assert_not_called()
+
+    def test_customer_signup_does_not_check(self, client, pro_signup_env):
+        from tests.test_pro_account import _kakao_service
+
+        repo = pro_signup_env["repo"]
+        repo.create.return_value = dict(CUSTOMER_USER, credits=0)
+        with patch(
+            "api.endpoints.auth.get_kakao_auth_service",
+            return_value=_kakao_service("customer", "900002"),
+        ):
+            assert _kakao_login(client).status_code == 200
+        pro_signup_env["withdrawn"].assert_not_called()
+
+
+# ========== 5. 제휴 상품 클릭 ==========
+
+
+class TestProductClickRejectsPro:
+    def _click(self, client, headers):
+        from api.endpoints import products
+
+        previous = products.limiter.enabled
+        products.limiter.enabled = False
+        try:
+            with patch(
+                "api.endpoints.products.get_affiliate_click_service"
+            ) as clicks, patch(
+                "api.endpoints.products._find_product",
+                return_value=({"product_id": "p1", "affiliate_url": "u"}, "문구"),
+            ):
+                response = client.post(
+                    "/api/products/click",
+                    json={
+                        "product_id": "p1",
+                        "hair_profile": {"face_shape": "oval"},
+                    },
+                    headers=headers,
+                )
+        finally:
+            products.limiter.enabled = previous
+        return response, clicks
+
+    def test_pro_rejected_without_logging(self, client):
+        response, clicks = self._click(client, _pro_auth())
+        assert response.status_code == 403
+        assert response.json() == {
+            "error": "pro_not_supported",
+            "message": "이 계정에서는 제휴 상품을 사용할 수 없습니다.",
+        }
+        clicks.assert_not_called()
+
+    def test_customer_unchanged(self, client):
+        response, clicks = self._click(client, _customer_auth())
+        assert response.status_code == 200
+        assert response.json() == {
+            "success": True,
+            "product_id": "p1",
+            "affiliate_url": "u",
+            "disclosure": "문구",
+        }
+        clicks.return_value.log_click.assert_called_once()
 
 
 # ========== 2. 짧은 공유 주소 ==========

@@ -232,6 +232,8 @@ class TestProLogin:
         ), patch(
             "api.endpoints.auth._signup_arm"
         ) as signup_arm, patch(
+            "api.endpoints.auth.recently_withdrawn", return_value=False
+        ), patch(
             "api.endpoints.auth.log_structured"
         ) as log:
             response = client.post(

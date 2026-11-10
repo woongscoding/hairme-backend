@@ -3,6 +3,8 @@
 - GET /products/recommendations: 스타일 기반 제품 추천 (affiliate_url 미포함)
 - POST /products/click: 클릭 로그 기록 + 제휴 링크 발급 (로그인 불필요)
   헤어 제품과 체형별 패션 아이템(/fashion/body-analyze 의 items)을 함께 처리한다.
+  Pro 계정(미용실용 앱)은 403 pro_not_supported - hair_profile 이 손님의 얼굴 정보라서
+  디자이너 계정에 쌓이면 안 된다.
 
 클릭이 로그인 필수였던 동안 합성 성공의 84%(비로그인)가 제품 링크를 아예 받을 수
 없었다. 제휴 수수료는 사업자 등록 없이도 수령 가능한 유일한 수익 채널인데 도달이
@@ -19,11 +21,13 @@ from typing import Any, Dict, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from core.jwt_auth import get_optional_user_id
+from core.account_type import is_pro
+from core.jwt_auth import get_account_type, get_optional_user_id
 from core.logging import logger
 from services.affiliate_click_service import get_affiliate_click_service
 from services.body_fashion_service import get_body_fashion_service
@@ -128,6 +132,7 @@ async def click_product(
     request: Request,
     body: ClickRequest,
     user_id: Optional[str] = Depends(get_optional_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     제휴 제품 클릭: 클릭 로그 기록 후 제휴 링크 반환 (로그인 불필요)
@@ -136,6 +141,15 @@ async def click_product(
     비로그인도 device_id로 로그를 남기므로 "헤어 프로필 x 제품 클릭" 데이터 자산은
     유지된다 - 오히려 모집단이 6배가 된다.
     """
+    if user_id is not None and is_pro(account_type):
+        # 클릭 로그를 남기기 전에 거절한다
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "pro_not_supported",
+                "message": "이 계정에서는 제휴 상품을 사용할 수 없습니다.",
+            },
+        )
     product, disclosure = _find_product(body.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="존재하지 않는 제품입니다.")
