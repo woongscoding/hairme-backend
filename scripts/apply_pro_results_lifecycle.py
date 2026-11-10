@@ -4,7 +4,8 @@
 
 Pro 계정은 손님 사진을 다루므로 결과를 pro/results/{user_id}/ 에 따로 저장하고
 짧게 보관한다 (services/photo_storage_service.py). 손님용 results/ 규칙(180일)과
-접두사가 겹치지 않는다.
+접두사가 겹치지 않는다. 손님에게 보내는 짧은 주소의 연결 정보(pro/results/_share/)도
+같은 접두사 아래라 이 규칙 하나로 함께 지워진다.
 
 put_bucket_lifecycle_configuration 은 규칙 전체를 덮어쓰므로, 기존 규칙(cache/, results/ 등)을
 읽어서 pro/results/ 규칙만 추가·갱신한 뒤 다시 쓴다 (scripts/apply_body_photo_lifecycle.py 와 같은 방식).

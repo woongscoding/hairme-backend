@@ -23,6 +23,8 @@ Pro 계정 (미용실용 앱, core/account_type.py) - 사진 속 사람이 계�
 - 공용 캐시를 읽지도 쓰지도 않는다 (캐시에는 주인 표시가 없어 나중에 지울 수 없다).
   그래서 같은 사진·스타일을 다시 합성해도 매번 차감된다
 - 결과는 pro/results/{user_id}/ 에 저장한다 (7일 수명주기)
+- 응답에 손님용 짧은 공유 주소(share_url, share_expires_at)를 넣는다 (api/endpoints/share.py)
+- 분당 제한은 IP 가 아니라 계정별이다 (core.rate_limit.pro_account_or_ip_key)
 - 무료 등급 워터마크는 settings.PRO_RESULT_WATERMARK_TEXT
 - 제휴 상품 추천(recommended_products, disclosure)을 응답에 넣지 않는다
 손님 계정의 동작과 응답은 그대로다.
@@ -52,8 +54,10 @@ from fastapi import (
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from api.endpoints.share import iso_expires_at, share_url
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
+from core.rate_limit import pro_account_or_ip_key
 from core.account_type import is_pro
 from core.jwt_auth import get_account_type, get_optional_user_id
 from core.quota import (
@@ -220,18 +224,33 @@ def _store_cached_result(
 
 
 def _store_pro_result(
+    request: Request,
     user_id: Optional[str],
     image_base64: str,
     image_format: str,
     hairstyle_name: Optional[str],
-) -> Optional[str]:
-    """Pro 계정의 합성 결과 저장 - pro/results/ 에만 저장한다 (캐시·원본 없음)"""
+) -> dict:
+    """Pro 계정의 합성 결과 저장 - pro/results/ 에만 저장한다 (캐시·원본 없음)
+
+    Returns:
+        응답에 넣을 {"result_url", "share_url", "share_expires_at"} (실패한 값은 None)
+    """
+    stored = {"result_url": None, "share_url": None, "share_expires_at": None}
     storage = get_photo_storage_service()
     if not user_id or not storage.enabled:
-        return None
-    return storage.save_user_result(
-        user_id, image_base64, image_format, hairstyle_name, pro=True
-    )
+        return stored
+    saved = storage.save_pro_result(user_id, image_base64, image_format, hairstyle_name)
+    if not saved:
+        return stored
+    stored["result_url"] = saved["result_url"]
+    if saved["share_token"]:
+        stored["share_url"] = share_url(
+            request, saved["share_token"], settings.PRO_SHARE_BASE_URL
+        )
+        stored["share_expires_at"] = iso_expires_at(
+            saved["created_at"], settings.PRO_RESULT_RETENTION_DAYS
+        )
+    return stored
 
 
 def _store_result(
@@ -307,7 +326,8 @@ class _SignalContext:
 
 
 @router.post("/synthesize")
-@limiter.limit("5/minute")  # 분당 5회 제한 (이미지 생성은 비용이 높음)
+# 분당 5회 제한 (이미지 생성은 비용이 높음). 손님·비로그인은 IP 별, Pro 계정은 계정별
+@limiter.limit("5/minute", key_func=pro_account_or_ip_key)
 async def synthesize_hairstyle(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -549,10 +569,12 @@ async def synthesize_hairstyle(
                 image_base64, image_format = finalize_image(result, tier)
 
             # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
+            pro_share: dict = {}
             if pro:
-                result_url = _store_pro_result(
-                    user_id, image_base64, image_format, hairstyle_name
+                pro_share = _store_pro_result(
+                    request, user_id, image_base64, image_format, hairstyle_name
                 )
+                result_url = pro_share.pop("result_url")
             else:
                 result_url = _store_result(
                     user_id,
@@ -597,7 +619,10 @@ async def synthesize_hairstyle(
             # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
             "result_id": cache_key[:16],
         }
-        if not pro:
+        if pro:
+            # 손님에게 QR 로 보낼 짧은 주소 (7일 동안 열림)
+            response.update(pro_share)
+        else:
             # 제휴 상품 추천은 손님 앱에만 (Pro 응답에는 키 자체를 넣지 않는다)
             response["recommended_products"] = _safe_product_recommendations(
                 hairstyle_name, gender

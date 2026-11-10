@@ -2,6 +2,8 @@
 
 - POST /fashion/body-analyze: 전신 사진 → 체형 분류 → 추천 핏/제휴 아이템
 
+Pro 계정(미용실용 앱)은 403 pro_not_supported - 손님의 전신 사진을 1년 보관하게 되므로 막는다.
+
 헤어스타일 분석과 독립된 기능이다. 무료(크레딧·Gemini 호출 없음)이고
 MediaPipe Pose 만 쓴다. 분석한 사진은 S3 body/originals/ 에 1년 보관한다
 (헤어 사진과 경로 분리, 앱 촬영 가이드에 보관 사실을 안내). 로그에는 체형·비율·성별·처리 시간만 남긴다.
@@ -25,7 +27,8 @@ from core.exceptions import (
     InvalidFileFormatException,
     NotFrontalPoseException,
 )
-from core.jwt_auth import get_optional_user_id
+from core.account_type import is_pro
+from core.jwt_auth import get_account_type, get_optional_user_id
 from core.logging import logger, log_structured
 from core.upload_validation import validate_file_extension, validate_image_upload
 from models.body_pose_analyzer import (
@@ -93,6 +96,7 @@ async def analyze_body(
         description="비로그인 사진 주체 (S3 저장 경로에 사용)",
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     전신 사진으로 체형을 분류하고 어울리는 핏/아이템을 추천 (로그인 불필요, 무료)
@@ -103,7 +107,17 @@ async def analyze_body(
     recommended[].product_id 는 활성 쿠팡 검색 링크가 있을 때만 값이 있다 (없으면 null).
     affiliate_url 은 POST /products/click 으로 발급받을 것.
     disclosure 는 링크를 보여줄 때 반드시 함께 표시해야 한다.
+
+    Pro 계정은 403 pro_not_supported (사진을 읽거나 저장하기 전에 거절).
     """
+    if user_id is not None and is_pro(account_type):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "pro_not_supported",
+                "message": "이 계정에서는 체형 코디를 사용할 수 없습니다.",
+            },
+        )
     start_time = time.time()
     image_data: Optional[bytes] = None
 

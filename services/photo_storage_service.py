@@ -3,9 +3,13 @@
 버킷 구조 (PHOTO_S3_BUCKET):
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
-- pro/results/{user_id}/{id}.{fmt} Pro 계정(미용실) 합성 결과. 손님 사진이므로
+- pro/results/{user_id}/{ts}_{share_token}.{fmt} Pro 계정(미용실) 합성 결과. 손님 사진이므로
   손님용 결과와 경로를 나누고 짧게(7일) 보관한다 (scripts/apply_pro_results_lifecycle.py).
   Pro 계정은 cache/ 와 originals/ 를 쓰지 않는다 (api/endpoints/synthesis.py).
+- pro/results/_share/{share_token}.json 손님에게 QR 로 보내는 짧은 주소(/s/{share_token})의
+  연결 정보 {"key", "created_at"}. 같은 pro/results/ 수명주기 규칙으로 7일 뒤 지워진다.
+  user_id 는 UUID hex 라 "_share" 와 겹치지 않는다. 토큰을 결과 파일 이름에도 넣어 두어
+  회원 탈퇴 때 연결 정보까지 찾아 지울 수 있다.
 - originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
 - reports/{YYYY-MM-DD}/{id}.json AI 생성 이미지 신고 (결과 이미지 자체는 저장하지 않음)
 - body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (분석한 사진 전부, 1년 보관).
@@ -18,8 +22,10 @@ import base64
 import hashlib
 import json
 import os
+import re
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import quote, unquote
 
@@ -43,11 +49,36 @@ BODY_ORIGINALS_PREFIX = "body/originals/"
 # 손님용 수명주기 규칙(results/ 180일)에 걸리지 않는다.
 RESULTS_PREFIX = "results/"
 PRO_RESULTS_PREFIX = "pro/results/"
+# Pro 결과 공유 주소의 연결 정보 (pro/results/ 수명주기 규칙에 함께 걸린다)
+PRO_SHARE_PREFIX = f"{PRO_RESULTS_PREFIX}_share/"
+
+# 공유 토큰: secrets.token_urlsafe(16) = 128비트 난수, URL-safe base64 22자
+SHARE_TOKEN_BYTES = 16
+SHARE_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{22}")
+
+# S3 delete_objects 한 번에 지울 수 있는 최대 개수
+_DELETE_BATCH = 1000
 
 
 def user_results_prefix(user_id: str, pro: bool = False) -> str:
     """회원 결과가 저장되는 S3 접두사"""
     return f"{PRO_RESULTS_PREFIX if pro else RESULTS_PREFIX}{user_id}/"
+
+
+def share_pointer_key(token: str) -> str:
+    return f"{PRO_SHARE_PREFIX}{token}.json"
+
+
+def share_token_of_key(key: str) -> Optional[str]:
+    """Pro 결과 파일 이름({ts}_{token}.{fmt})에서 공유 토큰을 꺼낸다 (없으면 None)"""
+    name = key.rsplit("/", 1)[-1]
+    _, sep, rest = name.partition("_")
+    token = rest.rsplit(".", 1)[0] if sep else ""
+    return token if SHARE_TOKEN_PATTERN.fullmatch(token) else None
+
+
+class ShareLinkExpired(Exception):
+    """공유 주소의 보관 기간이 지났다"""
 
 
 PNG_SIGNATURE = bytes([0x89]) + b"PNG"
@@ -165,11 +196,16 @@ class PhotoStorageService:
         """
         회원의 합성 결과 저장 후 presigned URL 반환
 
-        pro: Pro 계정이면 pro/results/ 아래에 저장한다
+        pro: Pro 계정이면 pro/results/ 아래에 저장한다 (공유 주소도 만든다 - save_pro_result)
 
         Returns:
             presigned URL (실패 시 None - 합성 응답은 정상 진행)
         """
+        if pro:
+            saved = self.save_pro_result(
+                user_id, image_base64, image_format, hairstyle_name
+            )
+            return saved["result_url"] if saved else None
         if not self.enabled:
             return None
 
@@ -196,6 +232,155 @@ class PhotoStorageService:
         except Exception as e:
             logger.warning(f"결과 저장 실패 (무시): {str(e)}")
             return None
+
+    def save_pro_result(
+        self,
+        user_id: str,
+        image_base64: str,
+        image_format: str = "png",
+        hairstyle_name: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Pro 계정 결과 저장 + 손님에게 보낼 공유 토큰 발급
+
+        결과 파일 이름에 토큰을 넣고(pro/results/{user_id}/{ts}_{token}.{fmt}),
+        토큰 → 파일 연결 정보를 pro/results/_share/{token}.json 에 쓴다.
+        연결 정보 저장이 실패하면 share_token 만 None 이다 (결과 자체는 저장됨).
+
+        Returns:
+            {"result_url", "share_token", "created_at"(datetime)} (결과 저장 실패 시 None)
+        """
+        if not self.enabled:
+            return None
+
+        token = secrets.token_urlsafe(SHARE_TOKEN_BYTES)
+        now = datetime.now(timezone.utc)
+        key = (
+            f"{user_results_prefix(user_id, True)}"
+            f"{now.strftime('%Y%m%dT%H%M%S')}_{token}.{image_format}"
+        )
+        metadata = {}
+        if hairstyle_name:
+            metadata["hairstyle"] = quote(hairstyle_name)
+
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=base64.b64decode(image_base64),
+                ContentType=f"image/{image_format}",
+                Metadata=metadata,
+            )
+        except Exception as e:
+            logger.warning(f"Pro 결과 저장 실패 (무시): {str(e)}")
+            return None
+
+        share_token: Optional[str] = token
+        try:
+            self.client.put_object(
+                Bucket=self.bucket,
+                Key=share_pointer_key(token),
+                Body=json.dumps({"key": key, "created_at": now.isoformat()}).encode(
+                    "utf-8"
+                ),
+                ContentType="application/json",
+            )
+        except Exception as e:
+            logger.warning(f"공유 주소 저장 실패 (결과는 저장됨): {str(e)}")
+            share_token = None
+
+        return {
+            "result_url": self.presigned_url(key),
+            "share_token": share_token,
+            "created_at": now,
+        }
+
+    def resolve_share_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """
+        공유 토큰 → 지금 열 수 있는 이미지 주소
+
+        Returns:
+            {"image_url", "expires_at"(datetime)} / 없는 토큰·지워진 결과는 None
+
+        Raises:
+            ShareLinkExpired: 보관 기간(PRO_RESULT_RETENTION_DAYS)이 지남
+            그 밖의 S3 오류는 그대로 전파 (호출자가 503 처리)
+        """
+        if not self.enabled or not SHARE_TOKEN_PATTERN.fullmatch(token or ""):
+            return None
+        try:
+            response = self.client.get_object(
+                Bucket=self.bucket, Key=share_pointer_key(token)
+            )
+            pointer = json.loads(response["Body"].read())
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                return None
+            raise
+
+        key = pointer.get("key")
+        # 다른 경로를 가리키는 연결 정보는 믿지 않는다
+        if not isinstance(key, str) or not key.startswith(PRO_RESULTS_PREFIX):
+            return None
+        created_at = datetime.fromisoformat(pointer["created_at"])
+        expires_at = created_at + timedelta(days=settings.PRO_RESULT_RETENTION_DAYS)
+        # 수명주기 규칙은 자정 단위로 늦게 지우므로 기간은 서버가 직접 지킨다
+        if datetime.now(timezone.utc) >= expires_at:
+            raise ShareLinkExpired()
+
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404", "NotFound"):
+                return None  # 탈퇴 등으로 결과가 지워짐
+            raise
+
+        image_url = self.presigned_url(key, settings.PRO_SHARE_IMAGE_URL_SECONDS)
+        if image_url is None:
+            raise RuntimeError("presigned URL 생성 실패")
+        return {"image_url": image_url, "expires_at": expires_at}
+
+    def delete_user_results(self, user_id: str, pro: bool) -> int:
+        """
+        회원 결과 전부 삭제 (회원 탈퇴용). Pro 결과면 공유 주소 연결 정보도 지운다.
+
+        Returns:
+            지운 결과 사진 수
+
+        Raises:
+            S3 조회·삭제 실패 시 예외 (호출자가 탈퇴를 중단해야 한다)
+        """
+        if not self.enabled:
+            return 0
+
+        prefix = user_results_prefix(user_id, pro)
+        result_keys: List[str] = []
+        list_kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+        while True:
+            response = self.client.list_objects_v2(**list_kwargs)
+            result_keys.extend(obj["Key"] for obj in response.get("Contents", []))
+            if not response.get("IsTruncated"):
+                break
+            list_kwargs["ContinuationToken"] = response["NextContinuationToken"]
+
+        keys = list(result_keys)
+        if pro:
+            for key in result_keys:
+                token = share_token_of_key(key)
+                if token:
+                    keys.append(share_pointer_key(token))
+
+        for start in range(0, len(keys), _DELETE_BATCH):
+            batch = keys[start : start + _DELETE_BATCH]
+            response = self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
+            )
+            errors = response.get("Errors") or []
+            if errors:
+                raise RuntimeError(f"결과 삭제 일부 실패: {len(errors)}건")
+
+        return len(result_keys)
 
     def list_user_results(
         self,
@@ -360,13 +545,19 @@ class PhotoStorageService:
             logger.warning(f"체형 사진 저장 실패 (무시): {str(e)}")
             return None
 
-    def presigned_url(self, key: str) -> Optional[str]:
-        """조회용 presigned URL 생성"""
+    def presigned_url(
+        self, key: str, expires_in: Optional[int] = None
+    ) -> Optional[str]:
+        """조회용 presigned URL 생성
+
+        Lambda 에서는 실행 역할의 임시 자격증명으로 서명하므로, 그 자격증명이 먼저
+        만료되면 ExpiresIn 보다 일찍 열리지 않는다 (AWS 문서 기준).
+        """
         try:
             return self.client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.bucket, "Key": key},
-                ExpiresIn=settings.PHOTO_URL_EXPIRE_SECONDS,
+                ExpiresIn=expires_in or settings.PHOTO_URL_EXPIRE_SECONDS,
             )
         except Exception as e:
             logger.warning(f"presigned URL 생성 실패: {str(e)}")

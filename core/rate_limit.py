@@ -10,11 +10,47 @@ slowapi 기본 핸들러는 {"error": "Rate limit exceeded: 5 per 1 minute"} 를
 원래 문구는 로그에만 남긴다.
 """
 
-from fastapi import Request
+from typing import Optional
+
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
+from core.account_type import account_type_of_payload, is_pro
+from core.jwt_auth import TOKEN_TYPE_ACCESS, decode_token
 from core.logging import logger
+
+# Pro 계정 제한 키 접두사 (IP 주소와 겹치지 않는다)
+PRO_RATE_LIMIT_KEY_PREFIX = "pro-user:"
+
+
+def _pro_user_id(request: Request) -> Optional[str]:
+    """요청의 액세스 토큰이 유효한 Pro 토큰이면 user_id, 아니면 None"""
+    auth = request.headers.get("authorization") or ""
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    try:
+        payload = decode_token(token.strip(), TOKEN_TYPE_ACCESS)
+    except HTTPException:
+        return None
+    if not is_pro(account_type_of_payload(payload)):
+        return None
+    return payload["sub"]
+
+
+def pro_account_or_ip_key(request: Request) -> str:
+    """분당 제한 키: Pro 계정은 계정별, 그 밖(손님·비로그인)은 기존과 같은 IP 별
+
+    같은 와이파이(같은 공인 IP)를 쓰는 디자이너들이 한도를 나눠 쓰지 않게 한다.
+    손님·비로그인 요청은 get_remote_address 그대로라 기존 카운터를 그대로 쓴다.
+    토큰이 잘못됐으면 IP 로 센다 (엔드포인트의 인증 의존성이 어차피 401 을 낸다).
+    """
+    user_id = _pro_user_id(request)
+    if user_id:
+        return f"{PRO_RATE_LIMIT_KEY_PREFIX}{user_id}"
+    return get_remote_address(request)
 
 
 def rate_limit_response_body() -> dict:

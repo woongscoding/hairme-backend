@@ -11,6 +11,7 @@ import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -37,6 +38,7 @@ from database.user_repository import (
 from services.credit_service import RefAlreadyClaimedError, get_credit_service
 from services.free_policy_service import resolve_device_arm, signup_bonus_for
 from services.kakao_auth_service import get_kakao_auth_service
+from services.photo_storage_service import get_photo_storage_service
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
 router = APIRouter()
@@ -406,6 +408,96 @@ async def get_me(user_id: str = Depends(get_current_user_id)):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
 
     return {"user": _public_user(user)}
+
+
+def _withdrawal_error(status_code: int, error: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code, content={"error": error, "message": message}
+    )
+
+
+@router.delete("/auth/me")
+@limiter.limit("5/minute")
+async def withdraw(
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    account_type: str = Depends(get_account_type),
+):
+    """
+    회원 탈퇴 (지금은 Pro 계정만)
+
+    1. pro/results/{user_id}/ 의 결과 사진과 공유 주소 연결 정보를 지운다.
+       실패하면 503 으로 멈춘다 (계정이 남아 있어야 다시 시도할 수 있다).
+    2. 회원 행과 카카오 유일성 마커를 지운다. 남은 합성 횟수는 사라진다.
+       크레딧 원장·결제 마커는 결제 기록 보관을 위해 남긴다 (user_id 만 있음).
+    이미 탈퇴한 계정의 재요청(같은 액세스 토큰)은 결과 폴더만 다시 확인하고 성공으로 답한다.
+
+    손님 계정은 403 withdrawal_not_supported (이번 범위 밖).
+    카카오 연결 끊기(unlink)는 앱이 카카오 SDK 로 한다.
+
+    Returns:
+        {"success": true, "deleted_results": int}
+    """
+    not_supported = _withdrawal_error(
+        403,
+        "withdrawal_not_supported",
+        "이 앱에서는 탈퇴를 지원하지 않는 계정입니다. 고객센터로 문의해주세요.",
+    )
+    if not is_pro(account_type):
+        return not_supported
+
+    user_repo = get_user_repository()
+    try:
+        user = user_repo.get_by_id_consistent(user_id)
+    except Exception as e:
+        logger.error(f"❌ 탈퇴 사용자 조회 실패: {str(e)}")
+        return _withdrawal_error(
+            503,
+            "withdrawal_failed",
+            "탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        )
+    if user is not None and not is_pro(account_type_of_user(user)):
+        return not_supported
+
+    try:
+        deleted_results = await run_in_threadpool(
+            get_photo_storage_service().delete_user_results, user_id, True
+        )
+    except Exception as e:
+        logger.error(
+            f"❌ 탈퇴 결과 사진 삭제 실패: user_id={mask_user_id(user_id)}, {str(e)}"
+        )
+        return _withdrawal_error(
+            503,
+            "withdrawal_failed",
+            "탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    if user is not None:
+        try:
+            user_repo.delete_account(user_id, user["kakao_id"])
+        except ValueError:
+            pass  # 동시 요청이 먼저 지움
+        except Exception as e:
+            logger.error(
+                f"❌ 탈퇴 회원 삭제 실패: user_id={mask_user_id(user_id)}, {str(e)}"
+            )
+            return _withdrawal_error(
+                503,
+                "withdrawal_failed",
+                "탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.",
+            )
+
+    log_structured(
+        "account_withdrawn",
+        {
+            "user_id": mask_user_id(user_id),
+            "account_type": account_type,
+            "deleted_results": deleted_results,
+            "already_deleted": user is None,
+        },
+    )
+    return {"success": True, "deleted_results": deleted_results}
 
 
 @router.patch("/auth/me/consent")

@@ -355,6 +355,55 @@ class UserRepository:
 
         logger.info(f"🔐 계정 상태 변경: user_id={user_id}, status={status}")
 
+    def delete_account(self, user_id: str, kakao_id: str) -> None:
+        """회원 탈퇴 - 사용자 아이템과 kakao_id 유일성 마커를 한 트랜잭션으로 지운다.
+
+        사용자 아이템(닉네임·이메일·카카오 회원번호·잔액)이 사라지므로 리프레시는 401,
+        크레딧 차감·지급은 attribute_exists 조건에 걸려 실패한다.
+        크레딧 원장(hairme-credit-ledger)과 결제 중복 방지 마커는 결제 기록 보관 의무 때문에
+        남긴다 (이름·연락처 없이 user_id 만 있다).
+        마커는 이 사용자의 것일 때만 지운다 (없으면 그대로 통과).
+
+        Raises:
+            ValueError: 존재하지 않는 사용자 (이미 탈퇴)
+        """
+        table_name = self.table.name
+        try:
+            self.table.meta.client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Delete": {
+                            "TableName": table_name,
+                            "Key": {"user_id": user_id},
+                            "ConditionExpression": "attribute_exists(user_id)",
+                        }
+                    },
+                    {
+                        "Delete": {
+                            "TableName": table_name,
+                            "Key": {"user_id": kakao_marker_id(kakao_id)},
+                            "ConditionExpression": (
+                                "attribute_not_exists(user_id) OR ref_user_id = :uid"
+                            ),
+                            "ExpressionAttributeValues": {":uid": user_id},
+                        }
+                    },
+                ]
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "TransactionCanceledException":
+                reasons = e.response.get("CancellationReasons") or []
+                if reasons and reasons[0].get("Code") == "ConditionalCheckFailed":
+                    raise ValueError("존재하지 않는 사용자입니다")
+            logger.error(
+                "회원 탈퇴 처리 실패: %s | reasons=%s",
+                e.response["Error"]["Message"],
+                e.response.get("CancellationReasons"),
+            )
+            raise
+
+        logger.info(f"👋 회원 탈퇴: user_id={user_id}")
+
 
 # Singleton
 _user_repository: Optional[UserRepository] = None

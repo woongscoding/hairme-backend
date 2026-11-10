@@ -44,6 +44,7 @@ from api.endpoints.style_images import router as style_images_router
 from api.endpoints.products import router as products_router
 from api.endpoints.events import router as events_router
 from api.endpoints.fashion import router as fashion_router
+from api.endpoints.share import router as share_router
 
 # Lambda initialization flag
 _lambda_initialized = False
@@ -120,6 +121,8 @@ app.include_router(style_images_router, prefix="/api", tags=["styles"])
 app.include_router(products_router, prefix="/api", tags=["products"])
 app.include_router(events_router, prefix="/api", tags=["events"])
 app.include_router(fashion_router, prefix="/api", tags=["fashion"])
+# 손님이 QR 로 여는 Pro 결과 페이지 - 주소를 짧게 하려고 /api 를 붙이지 않는다
+app.include_router(share_router, tags=["share"])
 
 
 # ========== Startup Event ==========

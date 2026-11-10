@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     RESULT_WATERMARK_TEXT: str = "HairMe"
     # Pro 계정 무료 등급 워터마크. 기본 글꼴에 한글이 없으므로 영문으로 둔다.
     PRO_RESULT_WATERMARK_TEXT: str = "Hair Consultant"
+    # Pro 계정 결과 보관 기간 (일). 손님에게 보내는 공유 주소도 이 기간만 열린다.
+    # S3 수명주기 규칙(scripts/apply_pro_results_lifecycle.py 의 DAYS)과 같은 값으로 둔다.
+    PRO_RESULT_RETENTION_DAYS: int = 7
+    # 공유 주소 페이지가 이미지에 거는 presigned URL 유효기간 (초).
+    # Lambda 임시 자격증명이 먼저 만료될 수 있어 짧게 두고, 페이지를 열 때마다 새로 만든다.
+    PRO_SHARE_IMAGE_URL_SECONDS: int = 900
+    # 공유 주소 앞부분 (예: https://example.com). 비우면 요청이 들어온 서버 주소를 쓴다.
+    PRO_SHARE_BASE_URL: str = ""
 
     # ===== 무료 정책 실험 (수익화 v2.1 Phase 1) =====
     # 실험군(신규 기기의 TREATMENT_PERCENT%): 비회원 평생 N회 + 가입 보너스 축소

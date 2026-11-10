@@ -10,6 +10,7 @@ S4 그 밖: Pro 워터마크 문구, 제휴 상품 제외, 로그의 계정 유�
 import asyncio
 import io
 import os
+from datetime import datetime, timezone
 
 os.environ.setdefault("GEMINI_API_KEY", "test_api_key_123456")
 os.environ.setdefault("JWT_SECRET_KEY", "test_jwt_secret_key_for_tests_only")
@@ -430,6 +431,11 @@ def synthesis_env():
     storage.build_cache_key.return_value = CACHE_KEY
     storage.get_cached_result.return_value = None
     storage.save_user_result.return_value = "https://s3/result.png"
+    storage.save_pro_result.return_value = {
+        "result_url": "https://s3/result.png",
+        "share_token": "T" * 22,
+        "created_at": datetime(2026, 11, 10, 3, 0, tzinfo=timezone.utc),
+    }
 
     service = MagicMock()
     service.synthesize_hairstyle.return_value = {
@@ -518,10 +524,11 @@ class TestProSynthesis:
         # 원본 사진: 저장하지 않는다 (동의 조회도 하지 않는다)
         storage.save_original_photo.assert_not_called()
         env["user_repo"].get_by_id.assert_not_called()
-        # 결과: pro/results/ 경로로 저장
-        storage.save_user_result.assert_called_once_with(
-            "pro-user-id", "aW1n|Hair Consultant", "png", "레이어드 컷", pro=True
+        # 결과: pro/results/ 경로로 저장 (손님용 저장 함수는 부르지 않는다)
+        storage.save_pro_result.assert_called_once_with(
+            "pro-user-id", "aW1n|Hair Consultant", "png", "레이어드 컷"
         )
+        storage.save_user_result.assert_not_called()
         assert body["result_url"] == "https://s3/result.png"
         # 학습 신호: 추천 카드 정보를 보내도 기록하지 않는다
         env["record"].assert_not_called()
@@ -579,6 +586,7 @@ class TestProSynthesis:
         storage.save_user_result.assert_called_once_with(
             "customer-user-id", "aW1n|None", "png", "레이어드 컷"
         )
+        storage.save_pro_result.assert_not_called()
         # 동의한 손님은 원본 저장 (기존 동작)
         storage.save_original_photo.assert_called_once()
         env["record"].assert_called_once()
@@ -624,8 +632,11 @@ class TestResultsPrefix:
         svc.save_user_result("u1", "aW1n", "png", pro=True)
         svc.save_user_result("u1", "aW1n", "png")
         keys = [c.kwargs["Key"] for c in svc._client.put_object.call_args_list]
+        # Pro: 결과 + 공유 주소 연결 정보 (둘 다 pro/results/ 아래)
         assert keys[0].startswith("pro/results/u1/")
-        assert keys[1].startswith("results/u1/")
+        assert keys[1].startswith("pro/results/_share/")
+        assert keys[2].startswith("results/u1/")
+        assert len(keys) == 3
 
     def test_list_paths(self, monkeypatch):
         svc = self._service(monkeypatch)
