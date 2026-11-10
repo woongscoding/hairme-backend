@@ -8,8 +8,9 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from core.account_type import is_pro
 from core.logging import log_structured, logger, mask_user_id
-from core.jwt_auth import get_current_user_id, get_optional_user_id
+from core.jwt_auth import get_account_type, get_current_user_id, get_optional_user_id
 from services.photo_storage_service import get_photo_storage_service
 from services.usage_limit_service import validate_device_id
 
@@ -85,18 +86,26 @@ async def get_my_results(
         None, description="이전 응답의 next_token (다음 페이지 조회)"
     ),
     user_id: str = Depends(get_current_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     내 합성 결과 목록 (최신순, 마이페이지 재열람용)
 
     각 항목은 presigned URL로 반환되며 PHOTO_URL_EXPIRE_SECONDS 후 만료된다.
     next_token이 null이 아니면 continuation_token으로 넘겨 다음 페이지 조회.
+    Pro 계정은 pro/results/ 아래(7일 보관)만 조회한다.
     """
     service = get_photo_storage_service()
+    # 손님 계정 호출은 기존과 같은 인자로 부른다
+    pro_kwargs = {"pro": True} if is_pro(account_type) else {}
     try:
         # 동기 S3 호출이라 스레드풀로 - 이벤트 루프 차단 방지
         page = await run_in_threadpool(
-            service.list_user_results, user_id, limit, continuation_token
+            service.list_user_results,
+            user_id,
+            limit,
+            continuation_token,
+            **pro_kwargs,
         )
     except Exception:
         logger.error(f"❌ 결과 히스토리 조회 실패: user_id={user_id}", exc_info=True)

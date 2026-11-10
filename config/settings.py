@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # 토큰이 우리 앱에서 발급된 것인지 검증한다 (토큰 치환 공격 차단).
     # 미설정 시 검증 생략 (기존 배포 호환) - 프로덕션에서는 반드시 설정할 것.
     KAKAO_APP_ID: str = ""
+    # 미용실용 앱(Hair Consultant)의 카카오 앱 ID. 이 앱이 발급한 토큰으로 로그인하면
+    # Pro 계정이 된다 (core/account_type.py). 비어 있으면 Pro 로그인은 없다.
+    # KAKAO_APP_ID 와 같은 값이면 무시한다 (손님 전원이 Pro 가 되는 사고 방지).
+    KAKAO_PRO_APP_ID: str = ""
     JWT_SECRET_KEY: str = (
         ""  # 프로덕션에서는 Secrets Manager(hairme-jwt-secret)에서 로드
     )
@@ -67,6 +71,8 @@ class Settings(BaseSettings):
 
     # ===== 크레딧 정책 =====
     SIGNUP_BONUS_CREDITS: int = 5  # 가입 보너스 (평생 무료분)
+    # Pro 계정 가입 체험 수량 (무료 등급). 무료 정책 실험과 무관하게 이 값을 쓴다.
+    PRO_SIGNUP_BONUS_CREDITS: int = 10
     SYNTHESIS_CREDIT_COST: int = 1  # 합성 1회당 차감 크레딧
 
     # ===== 합성 출력 등급 (무료 / 유료) =====
@@ -80,6 +86,8 @@ class Settings(BaseSettings):
     # 무료 등급 결과 우하단에 워터마크를 넣는다. 공유 이미지에 앱 이름이 남는 효과도 있다.
     FREE_RESULT_WATERMARK: bool = True
     RESULT_WATERMARK_TEXT: str = "HairMe"
+    # Pro 계정 무료 등급 워터마크. 기본 글꼴에 한글이 없으므로 영문으로 둔다.
+    PRO_RESULT_WATERMARK_TEXT: str = "Hair Consultant"
 
     # ===== 무료 정책 실험 (수익화 v2.1 Phase 1) =====
     # 실험군(신규 기기의 TREATMENT_PERCENT%): 비회원 평생 N회 + 가입 보너스 축소
@@ -157,6 +165,14 @@ class Settings(BaseSettings):
         "starter_5": 5,
         "credits_10": 10,
         "credits_30": 30,
+    }
+    # Pro 앱(Hair Consultant)의 Play 패키지명. 비어 있으면 Pro 구매 검증은 503.
+    PLAY_PRO_PACKAGE_NAME: str = ""
+    # Pro 앱 상품 ID → 지급 크레딧. 손님용 CREDIT_PRODUCTS 와 ID 가 겹치면 안 된다
+    # (구매 검증·환불 회수가 ID 로 앱을 가른다). 상품 ID 는 Play Console 등록 전 확정할 것.
+    PRO_CREDIT_PRODUCTS: Dict[str, int] = {
+        "pro_credits_30": 30,
+        "pro_credits_100": 100,
     }
     # credits_30 노출 A/B: 이 비율(%)의 회원에게 "추천" 배지를 붙인다 (나머지는 보조 노출)
     PAYWALL_RECOMMENDED_BADGE_PERCENT: int = 50

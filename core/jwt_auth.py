@@ -9,6 +9,12 @@ from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from config.settings import settings
+from core.account_type import (
+    ACCOUNT_CUSTOMER,
+    ACCOUNT_TYPE_CLAIM,
+    account_type_of_payload,
+    is_pro,
+)
 from core.logging import logger
 
 # auto_error=False: 비로그인(레거시 device_id) 요청도 허용해야 하는 엔드포인트가 있음
@@ -48,6 +54,7 @@ def _create_token(
     token_type: str,
     expires_delta: timedelta,
     token_version: int = DEFAULT_TOKEN_VERSION,
+    account_type: Optional[str] = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -58,11 +65,16 @@ def _create_token(
         "iat": int(now.timestamp()),
         "exp": int((now + expires_delta).timestamp()),
     }
+    # Pro 계정만 클레임을 넣는다. 손님 토큰은 기존과 같은 클레임 구성을 유지한다.
+    if is_pro(account_type):
+        payload[ACCOUNT_TYPE_CLAIM] = account_type
     return jwt.encode(payload, _require_secret(), algorithm=settings.JWT_ALGORITHM)
 
 
 def create_access_token(
-    user_id: str, token_version: int = DEFAULT_TOKEN_VERSION
+    user_id: str,
+    token_version: int = DEFAULT_TOKEN_VERSION,
+    account_type: Optional[str] = None,
 ) -> str:
     """액세스 토큰 발급 (기본 1시간)"""
     return _create_token(
@@ -70,11 +82,14 @@ def create_access_token(
         TOKEN_TYPE_ACCESS,
         timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
         token_version=token_version,
+        account_type=account_type,
     )
 
 
 def create_refresh_token(
-    user_id: str, token_version: int = DEFAULT_TOKEN_VERSION
+    user_id: str,
+    token_version: int = DEFAULT_TOKEN_VERSION,
+    account_type: Optional[str] = None,
 ) -> str:
     """리프레시 토큰 발급 (기본 30일)"""
     return _create_token(
@@ -82,6 +97,7 @@ def create_refresh_token(
         TOKEN_TYPE_REFRESH,
         timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS),
         token_version=token_version,
+        account_type=account_type,
     )
 
 
@@ -155,3 +171,22 @@ async def get_optional_user_id(
         return None
     payload = decode_token(credentials.credentials, TOKEN_TYPE_ACCESS)
     return payload["sub"]
+
+
+async def get_account_type(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """요청한 계정의 유형 (DB 조회 없이 액세스 토큰의 acct 클레임으로 판단)
+
+    토큰이 없거나 검증에 실패하면 손님으로 본다. 검증 실패를 여기서 401 로 바꾸지
+    않는 이유: 이 의존성은 항상 get_current_user_id / get_optional_user_id 와 함께
+    쓰이고, 그쪽이 같은 토큰으로 401 을 낸다. 따라서 "Pro 토큰인데 손님 처리" 가
+    실제로 실행되는 경로는 없다.
+    """
+    if credentials is None:
+        return ACCOUNT_CUSTOMER
+    try:
+        payload = decode_token(credentials.credentials, TOKEN_TYPE_ACCESS)
+    except HTTPException:
+        return ACCOUNT_CUSTOMER
+    return account_type_of_payload(payload)

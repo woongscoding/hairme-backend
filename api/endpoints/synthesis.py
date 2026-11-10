@@ -17,6 +17,16 @@
 - 프롬프트에 삽입되는 사용자 입력은 정제 (프롬프트 인젝션 완화)
 - 모든 검증은 과금(크레딧/사용량 차감)보다 먼저 수행
 
+Pro 계정 (미용실용 앱, core/account_type.py) - 사진 속 사람이 계정 주인이 아닌 손님이다:
+- 학습 신호(암묵 피드백)를 기록하지 않는다
+- 원본 사진을 저장하지 않는다 (training_consent 와 무관)
+- 공용 캐시를 읽지도 쓰지도 않는다 (캐시에는 주인 표시가 없어 나중에 지울 수 없다).
+  그래서 같은 사진·스타일을 다시 합성해도 매번 차감된다
+- 결과는 pro/results/{user_id}/ 에 저장한다 (7일 수명주기)
+- 무료 등급 워터마크는 settings.PRO_RESULT_WATERMARK_TEXT
+- 제휴 상품 추천(recommended_products, disclosure)을 응답에 넣지 않는다
+손님 계정의 동작과 응답은 그대로다.
+
 구조화 로그의 api_calls 규약:
 - api_calls 는 "실제로 Gemini 를 시도한" 이벤트에만 넣는다 (성공/실패 모두).
   값 0 은 호출 전에 실패했다는 뜻이다 (예: 이미지 열기 실패).
@@ -44,7 +54,8 @@ from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
-from core.jwt_auth import get_optional_user_id
+from core.account_type import is_pro
+from core.jwt_auth import get_account_type, get_optional_user_id
 from core.quota import (
     QuotaResult,
     charge_synthesis_quota,
@@ -208,6 +219,21 @@ def _store_cached_result(
         return None
 
 
+def _store_pro_result(
+    user_id: Optional[str],
+    image_base64: str,
+    image_format: str,
+    hairstyle_name: Optional[str],
+) -> Optional[str]:
+    """Pro 계정의 합성 결과 저장 - pro/results/ 에만 저장한다 (캐시·원본 없음)"""
+    storage = get_photo_storage_service()
+    if not user_id or not storage.enabled:
+        return None
+    return storage.save_user_result(
+        user_id, image_base64, image_format, hairstyle_name, pro=True
+    )
+
+
 def _store_result(
     user_id: Optional[str],
     image_data: bytes,
@@ -216,7 +242,10 @@ def _store_result(
     image_format: str,
     hairstyle_name: Optional[str],
 ) -> Optional[str]:
-    """합성 성공 후 저장 처리 (캐시 + 회원 결과 + 동의 시 원본). 실패해도 응답에 영향 없음"""
+    """합성 성공 후 저장 처리 (캐시 + 회원 결과 + 동의 시 원본). 실패해도 응답에 영향 없음
+
+    손님 계정 전용. Pro 계정은 _store_pro_result 를 쓴다.
+    """
     storage = get_photo_storage_service()
     if not storage.enabled:
         return None
@@ -304,6 +333,7 @@ async def synthesize_hairstyle(
         None, description="추천 카드의 hairstyle_id (선택)"
     ),
     user_id: Optional[str] = Depends(get_optional_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     헤어스타일 합성 API
@@ -341,8 +371,16 @@ async def synthesize_hairstyle(
     start_time = time.time()
     # 캐시 히트는 잠금을 잡지 않으므로 기본값은 no-op
     release_lock: Callable[[], None] = NOOP_RELEASE
-    signal = _SignalContext(analysis_id, rec_rank, hairstyle_id)
+    # Pro 계정(로그인 필수)은 학습 신호·캐시·원본 저장·제휴 상품을 모두 건너뛴다
+    pro = user_id is not None and is_pro(account_type)
+    if pro:
+        # 추천 카드 정보를 버리면 signal.schedule 이 아무것도 기록하지 않는다
+        signal = _SignalContext(None, None, None)
+    else:
+        signal = _SignalContext(analysis_id, rec_rank, hairstyle_id)
     pipeline = _pipeline(user_id, start_time)
+    # Pro 계정 로그에만 계정 유형을 남긴다 (손님 로그는 기존 모양 그대로)
+    account_log = {"account_type": account_type} if pro else {}
 
     try:
         # ===== 1. 입력 검증 (과금 전에 수행) =====
@@ -396,10 +434,12 @@ async def synthesize_hairstyle(
                 "gender": gender,
                 "file_size_kb": round(len(image_data) / 1024, 2),
                 "authenticated": user_id is not None,
+                **account_log,
             },
         )
 
-        cached = storage.get_cached_result(cache_key)
+        # Pro 계정은 공용 캐시를 읽지 않는다
+        cached = None if pro else storage.get_cached_result(cache_key)
         if cached:
             # 과금은 하지 않지만(무과금 캐시 정책), 회원 결과는 마이페이지에 남긴다
             cached_result_url = _store_cached_result(
@@ -448,7 +488,7 @@ async def synthesize_hairstyle(
 
         # ===== 3~4. 일 예산 상한(비로그인만, 503) + 중복 요청 잠금(409) =====
         # 둘 다 과금보다 먼저 - 거절된 요청은 과금되면 안 된다 (환불할 것도 없다)
-        log_key = {"cache_key": cache_key[:16]}
+        log_key = {"cache_key": cache_key[:16], **account_log}
         rejection, release_lock = pipeline.pre_charge_guard(
             device_id, cache_key, log_fields=log_key
         )
@@ -497,21 +537,31 @@ async def synthesize_hairstyle(
                     api_calls,
                     processing_time,
                     # 등급 확정으로 cache_key 가 바뀌었을 수 있어 다시 만든다
-                    log_fields={"cache_key": cache_key[:16]},
+                    log_fields={"cache_key": cache_key[:16], **account_log},
                 )
 
             # 무료 등급은 워터마크 (캐시·마이페이지에도 워터마크본이 남는다)
-            image_base64, image_format = finalize_image(result, tier)
+            if pro:
+                image_base64, image_format = finalize_image(
+                    result, tier, settings.PRO_RESULT_WATERMARK_TEXT
+                )
+            else:
+                image_base64, image_format = finalize_image(result, tier)
 
             # ===== 7. 저장 (캐시 + 회원 결과 + 동의 시 원본) =====
-            result_url = _store_result(
-                user_id,
-                image_data,
-                cache_key,
-                image_base64,
-                image_format,
-                hairstyle_name,
-            )
+            if pro:
+                result_url = _store_pro_result(
+                    user_id, image_base64, image_format, hairstyle_name
+                )
+            else:
+                result_url = _store_result(
+                    user_id,
+                    image_data,
+                    cache_key,
+                    image_base64,
+                    image_format,
+                    hairstyle_name,
+                )
 
         logger.info(f"✅ 합성 완료: {hairstyle_name} ({processing_time}초)")
         log_structured(
@@ -529,10 +579,11 @@ async def synthesize_hairstyle(
                 "authenticated": user_id is not None,
                 "result_saved": result_url is not None,
                 **signal.log_fields(),
+                **account_log,
             },
         )
         signal.schedule(background_tasks, hairstyle_name, cache_key[:16])
-        return {
+        response = {
             "success": True,
             "image_base64": image_base64,
             "image_format": image_format,
@@ -545,11 +596,14 @@ async def synthesize_hairstyle(
             "is_preview": is_preview(tier),
             # 신고(POST /api/results/report)용 식별자 = 로그의 cache_key 앞 16자
             "result_id": cache_key[:16],
-            "recommended_products": _safe_product_recommendations(
-                hairstyle_name, gender
-            ),
-            "disclosure": _safe_disclosure(),
         }
+        if not pro:
+            # 제휴 상품 추천은 손님 앱에만 (Pro 응답에는 키 자체를 넣지 않는다)
+            response["recommended_products"] = _safe_product_recommendations(
+                hairstyle_name, gender
+            )
+            response["disclosure"] = _safe_disclosure()
+        return response
 
     except InvalidFileFormatException as e:
         return invalid_file_format_response(e)
@@ -567,6 +621,7 @@ async def synthesize_hairstyle(
                 "error_message": str(e),
                 "processing_time": pipeline.elapsed(),
                 "authenticated": user_id is not None,
+                **account_log,
             },
         )
         raise internal_error()

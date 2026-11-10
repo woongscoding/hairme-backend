@@ -11,16 +11,20 @@ import asyncio
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from config.settings import settings
+from core.account_type import ACCOUNT_CUSTOMER, account_type_of_user, is_pro
 from core.logging import log_structured, logger, mask_user_id
 from core.jwt_auth import (
     TOKEN_TYPE_REFRESH,
     create_access_token,
     create_refresh_token,
     decode_token,
+    get_account_type,
     get_current_user_id,
     normalize_token_version,
     token_version_of,
@@ -93,13 +97,26 @@ def _is_suspended(user: dict) -> bool:
     return status_value is not None and status_value != STATUS_ACTIVE
 
 
-def _issue_tokens(user_id: str, token_version: int) -> dict:
-    """액세스 + 리프레시 토큰 쌍 발급 (둘 다 tv 클레임 포함)"""
+def _issue_tokens(
+    user_id: str, token_version: int, account_type: str = ACCOUNT_CUSTOMER
+) -> dict:
+    """액세스 + 리프레시 토큰 쌍 발급 (둘 다 tv 클레임, Pro 는 acct 클레임 포함)"""
     return {
-        "access_token": create_access_token(user_id, token_version),
-        "refresh_token": create_refresh_token(user_id, token_version),
+        "access_token": create_access_token(user_id, token_version, account_type),
+        "refresh_token": create_refresh_token(user_id, token_version, account_type),
         "token_type": "bearer",
     }
+
+
+def _account_type_mismatch_response() -> JSONResponse:
+    """이미 있는 계정과 다른 앱으로 로그인한 경우 (손님 계정 ↔ Pro 계정 전환 금지)"""
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": "account_type_mismatch",
+            "message": "이 카카오 계정은 다른 앱에서 가입되어 있어 로그인할 수 없습니다.",
+        },
+    )
 
 
 def _public_user(user: dict) -> dict:
@@ -184,6 +201,9 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
     """
     kakao_service = get_kakao_auth_service()
     profile = await kakao_service.verify_access_token(body.kakao_access_token)
+    # 토큰을 발급한 카카오 앱으로 정해진 계정 유형 (클라이언트 입력이 아니다)
+    account_type = profile.get("account_type") or ACCOUNT_CUSTOMER
+    pro = is_pro(account_type)
 
     try:
         user_repo = get_user_repository()
@@ -192,17 +212,28 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
         is_new_user = user is None
         arm: Optional[str] = None
         if is_new_user:
-            arm = _signup_arm(body.device_id)
             try:
-                user = user_repo.create(
-                    kakao_id=profile["kakao_id"],
-                    nickname=profile["nickname"],
-                    email=profile.get("email"),
-                    initial_credits=0,
-                    free_policy_arm=arm,
-                    # 실험군 기기로 가입하면 보너스가 줄어든다 (free_policy_service 참고)
-                    signup_bonus_pending=signup_bonus_for(arm),
-                )
+                if pro:
+                    # Pro 계정은 무료 정책 실험에 넣지 않는다 (기기 코호트 등록도 하지 않음)
+                    user = user_repo.create(
+                        kakao_id=profile["kakao_id"],
+                        nickname=profile["nickname"],
+                        email=profile.get("email"),
+                        initial_credits=0,
+                        signup_bonus_pending=settings.PRO_SIGNUP_BONUS_CREDITS,
+                        account_type=account_type,
+                    )
+                else:
+                    arm = _signup_arm(body.device_id)
+                    user = user_repo.create(
+                        kakao_id=profile["kakao_id"],
+                        nickname=profile["nickname"],
+                        email=profile.get("email"),
+                        initial_credits=0,
+                        free_policy_arm=arm,
+                        # 실험군 기기로 가입하면 보너스가 줄어든다 (free_policy_service 참고)
+                        signup_bonus_pending=signup_bonus_for(arm),
+                    )
             except UserAlreadyExistsError:
                 # 동시 요청이 먼저 가입시킴 - 기존 로그인으로 전환 (보너스 없음)
                 user = await _resolve_raced_user(user_repo, profile["kakao_id"])
@@ -225,12 +256,39 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
                 detail="이용이 정지된 계정입니다. 고객센터에 문의해주세요.",
             )
 
-        if is_new_user:
-            bonus = _grant_pending_signup_bonus(user, signup_bonus_for(arm))
-            log_structured(
-                "signup",
-                {"user_id": mask_user_id(user["user_id"]), "arm": arm, "bonus": bonus},
+        # 손님 계정을 Pro 앱으로(또는 반대로) 쓰지 못하게 한다.
+        # 카카오 회원번호는 앱마다 따로 나오므로 보통은 생기지 않는다.
+        if account_type_of_user(user) != account_type:
+            logger.warning(
+                f"⛔ 계정 유형 불일치 로그인 거절: user_id={mask_user_id(user['user_id'])}, "
+                f"login={account_type}"
             )
+            return _account_type_mismatch_response()
+
+        if is_new_user:
+            if pro:
+                bonus = _grant_pending_signup_bonus(
+                    user, settings.PRO_SIGNUP_BONUS_CREDITS
+                )
+                log_structured(
+                    "signup",
+                    {
+                        "user_id": mask_user_id(user["user_id"]),
+                        "arm": None,
+                        "bonus": bonus,
+                        "account_type": account_type,
+                    },
+                )
+            else:
+                bonus = _grant_pending_signup_bonus(user, signup_bonus_for(arm))
+                log_structured(
+                    "signup",
+                    {
+                        "user_id": mask_user_id(user["user_id"]),
+                        "arm": arm,
+                        "bonus": bonus,
+                    },
+                )
         else:
             user_repo.update_last_login(user["user_id"])
             # 가입 때 보너스 지급이 실패한 계정이면 지금 다시 지급.
@@ -255,7 +313,7 @@ async def kakao_login(request: Request, body: KakaoLoginRequest):
         )
 
     return {
-        **_issue_tokens(user["user_id"], _user_token_version(user)),
+        **_issue_tokens(user["user_id"], _user_token_version(user), account_type),
         "is_new_user": is_new_user,
         "user": _public_user(user),
     }
@@ -308,7 +366,8 @@ async def refresh_token(request: Request, body: RefreshRequest):
             detail="만료된 세션입니다. 다시 로그인해주세요.",
         )
 
-    return _issue_tokens(user_id, current_version)
+    # 계정 유형은 회원 행 기준 (토큰 클레임이 아니라) - 갱신 후에도 Pro 가 유지된다
+    return _issue_tokens(user_id, current_version, account_type_of_user(user))
 
 
 @router.post("/auth/logout-all")
@@ -351,14 +410,26 @@ async def get_me(user_id: str = Depends(get_current_user_id)):
 
 @router.patch("/auth/me/consent")
 async def update_consent(
-    body: ConsentRequest, user_id: str = Depends(get_current_user_id)
+    body: ConsentRequest,
+    user_id: str = Depends(get_current_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     원본 사진 AI 학습 활용 동의 변경 (선택 동의)
 
     동의 시: 이후 합성 요청의 원본 사진이 학습용으로 저장됨.
     철회 시: 이후 저장 중단 (기존 저장분 삭제는 별도 처리 필요).
+
+    Pro 계정은 403: 사진 속 사람이 계정 주인이 아니라 손님이므로 동의를 대신할 수 없다.
     """
+    if is_pro(account_type):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "pro_consent_not_allowed",
+                "message": "이 계정은 사진을 학습에 쓰지 않습니다.",
+            },
+        )
     try:
         get_user_repository().set_training_consent(user_id, body.training_consent)
     except ValueError:

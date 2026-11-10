@@ -3,6 +3,9 @@
 버킷 구조 (PHOTO_S3_BUCKET):
 - cache/{cache_key}.{fmt}      합성 결과 캐시 (같은 사진+스타일 재요청 시 Gemini 재호출 방지)
 - results/{user_id}/{id}.{fmt} 회원별 합성 결과 (마이페이지 재열람용)
+- pro/results/{user_id}/{id}.{fmt} Pro 계정(미용실) 합성 결과. 손님 사진이므로
+  손님용 결과와 경로를 나누고 짧게(7일) 보관한다 (scripts/apply_pro_results_lifecycle.py).
+  Pro 계정은 cache/ 와 originals/ 를 쓰지 않는다 (api/endpoints/synthesis.py).
 - originals/{user_id}/{id}.jpg 원본 사진 (training_consent=True인 회원만, AI 학습용)
 - reports/{YYYY-MM-DD}/{id}.json AI 생성 이미지 신고 (결과 이미지 자체는 저장하지 않음)
 - body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (분석한 사진 전부, 1년 보관).
@@ -35,6 +38,16 @@ from core.logging import logger
 
 # 체형 사진 경로 (수명주기 규칙도 이 접두사로 건다)
 BODY_ORIGINALS_PREFIX = "body/originals/"
+
+# 회원 결과 경로. Pro 경로는 손님용 "results/" 로 시작하지 않으므로
+# 손님용 수명주기 규칙(results/ 180일)에 걸리지 않는다.
+RESULTS_PREFIX = "results/"
+PRO_RESULTS_PREFIX = "pro/results/"
+
+
+def user_results_prefix(user_id: str, pro: bool = False) -> str:
+    """회원 결과가 저장되는 S3 접두사"""
+    return f"{PRO_RESULTS_PREFIX if pro else RESULTS_PREFIX}{user_id}/"
 
 
 PNG_SIGNATURE = bytes([0x89]) + b"PNG"
@@ -147,9 +160,12 @@ class PhotoStorageService:
         image_base64: str,
         image_format: str = "png",
         hairstyle_name: Optional[str] = None,
+        pro: bool = False,
     ) -> Optional[str]:
         """
         회원의 합성 결과 저장 후 presigned URL 반환
+
+        pro: Pro 계정이면 pro/results/ 아래에 저장한다
 
         Returns:
             presigned URL (실패 시 None - 합성 응답은 정상 진행)
@@ -158,7 +174,10 @@ class PhotoStorageService:
             return None
 
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        key = f"results/{user_id}/{ts}_{uuid.uuid4().hex[:8]}.{image_format}"
+        key = (
+            f"{user_results_prefix(user_id, pro)}{ts}_{uuid.uuid4().hex[:8]}"
+            f".{image_format}"
+        )
 
         metadata = {}
         if hairstyle_name:
@@ -183,6 +202,7 @@ class PhotoStorageService:
         user_id: str,
         limit: int = 20,
         continuation_token: Optional[str] = None,
+        pro: bool = False,
     ) -> Dict[str, Any]:
         """
         회원의 합성 결과 목록 (최신순, presigned URL 포함)
@@ -193,6 +213,7 @@ class PhotoStorageService:
 
         Args:
             continuation_token: 이전 페이지 마지막 항목의 key (이후 과거분 조회)
+            pro: Pro 계정이면 pro/results/ 아래만 조회한다
 
         Returns:
             {"items": [{"key", "url", "hairstyle", "created_at"}], "next_token": str|None}
@@ -203,7 +224,7 @@ class PhotoStorageService:
         if not self.enabled:
             return {"items": [], "next_token": None}
 
-        prefix = f"results/{user_id}/"
+        prefix = user_results_prefix(user_id, pro)
         keys: List[Tuple[str, Any]] = []  # (key, last_modified)
         list_kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
         while True:

@@ -16,6 +16,9 @@
            (상품 매핑이 바뀐 과거 구매는) → 해당 사용자 원장에서
            reason="purchase" AND ref_id=<token> 항목의 amount 로 폴백
 - 마커가 없으면(테스트 결제/타 경로 지급 등) not_found 로 집계하고 건너뛴다
+
+패키지: 손님용 PLAY_PACKAGE_NAME 을 먼저 돌고, PLAY_PRO_PACKAGE_NAME 이 설정돼 있으면
+미용실용 앱도 같은 방식으로 돈다. 집계(summary)는 두 앱을 합친 값이다.
 """
 
 import hashlib
@@ -89,11 +92,45 @@ class PlayVoidReclaimService:
             * 1000
         )
 
+        self._poll_package(start_time_millis, summary)
+        pro_package = self._pro_package_name()
+        if pro_package:
+            self._poll_package(start_time_millis, summary, package_name=pro_package)
+
+        logger.info(
+            "🧾 Play 환불 회수 완료: "
+            f"checked={summary['checked']}, reclaimed={summary['reclaimed']}, "
+            f"already={summary['already_reclaimed']}, "
+            f"not_found={summary['not_found']}, failed={summary['failed']}"
+        )
+        return summary
+
+    # ---------- 내부 ----------
+
+    def _pro_package_name(self) -> str:
+        """미용실용 앱 패키지명 (미설정·조회 실패면 빈 문자열 - 손님용만 돈다)"""
+        try:
+            value = getattr(self.play_service, "pro_package_name", "")
+        except Exception:
+            return ""
+        return value.strip() if isinstance(value, str) else ""
+
+    def _poll_package(
+        self,
+        start_time_millis: int,
+        summary: Dict[str, Any],
+        package_name: Optional[str] = None,
+    ) -> None:
+        """한 앱 패키지의 환불 목록을 페이지 끝까지 돌며 회수 (예외는 failed 집계)
+
+        package_name 이 없으면 손님용 패키지 (기존 호출과 같은 인자).
+        """
+        package_kwargs = {"package_name": package_name} if package_name else {}
         page_token: Optional[str] = None
         for _ in range(MAX_PAGES):
             try:
                 page = self.play_service.list_voided_purchases(
-                    start_time_millis, page_token=page_token
+                    start_time_millis, page_token=page_token, **package_kwargs
                 )
             except Exception as e:
                 # 401/500 등 - 다음 실행에서 재시도되므로 실패만 집계하고 종료
@@ -111,16 +148,6 @@ class PlayVoidReclaimService:
             logger.warning(
                 f"⚠️ voidedpurchases 최대 페이지({MAX_PAGES}) 도달 - 일부 미처리"
             )
-
-        logger.info(
-            "🧾 Play 환불 회수 완료: "
-            f"checked={summary['checked']}, reclaimed={summary['reclaimed']}, "
-            f"already={summary['already_reclaimed']}, "
-            f"not_found={summary['not_found']}, failed={summary['failed']}"
-        )
-        return summary
-
-    # ---------- 내부 ----------
 
     def _check_configuration(self) -> Optional[Dict[str, Any]]:
         """설정 누락이면 disabled 요약, 정상이면 None (fail-safe)"""
@@ -226,7 +253,14 @@ class PlayVoidReclaimService:
 
         detail = marker.get("detail") or {}
         product_id = detail.get("product_id")
-        amount = settings.CREDIT_PRODUCTS.get(product_id) if product_id else None
+        amount = (
+            (
+                settings.CREDIT_PRODUCTS.get(product_id)
+                or settings.PRO_CREDIT_PRODUCTS.get(product_id)
+            )
+            if product_id
+            else None
+        )
 
         if not amount:
             # 상품 매핑이 없거나 바뀐 과거 구매 - 원장 기록으로 폴백

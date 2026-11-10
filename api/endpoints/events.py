@@ -6,6 +6,9 @@ POST /api/events/style-action
 
     기록은 best effort 다. 스키마 위반(422)이 아니면 기록 성공 여부와 무관하게
     200 {"success": true} 를 돌려주고, 학습 샘플 저장은 응답 뒤(BackgroundTasks)에서 한다.
+
+    Pro 계정(미용실용 앱) 토큰이면 아무것도 기록하지 않고 200 을 돌려준다
+    (사진 속 사람이 계정 주인이 아닌 손님이므로 학습 신호로 쓰지 않는다).
 """
 
 from typing import Literal, Optional
@@ -15,6 +18,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from core.account_type import account_type_of_payload, is_pro
 from core.jwt_auth import TOKEN_TYPE_ACCESS, decode_token
 from core.logging import log_structured
 from services.mlops.implicit_signals import parse_analysis_id, record_style_signal
@@ -36,14 +40,14 @@ class StyleActionRequest(BaseModel):
     )
 
 
-def _optional_user_id(request: Request) -> Optional[str]:
+def _optional_token_payload(request: Request) -> Optional[dict]:
     """로그인 선택. 토큰이 깨졌거나 만료돼도 이벤트는 받는다 (401 을 내지 않는다)"""
     header = request.headers.get("authorization") or ""
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         return None
     try:
-        return decode_token(token.strip(), TOKEN_TYPE_ACCESS).get("sub")
+        return decode_token(token.strip(), TOKEN_TYPE_ACCESS)
     except Exception:
         return None
 
@@ -56,7 +60,10 @@ async def style_action(
     background_tasks: BackgroundTasks,
 ):
     """합성 결과 저장/공유 이벤트 -> 암묵 피드백 샘플 (best effort)"""
-    user_id = _optional_user_id(request)
+    payload = _optional_token_payload(request)
+    if payload is not None and is_pro(account_type_of_payload(payload)):
+        return {"success": True}
+    user_id = payload.get("sub") if payload else None
     # user_id / device_id 원문은 로그·학습 샘플에 남기지 않는다
     log_structured(
         "style_action",

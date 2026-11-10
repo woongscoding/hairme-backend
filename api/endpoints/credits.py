@@ -1,4 +1,10 @@
-"""크레딧 조회/구매 엔드포인트"""
+"""크레딧 조회/구매 엔드포인트
+
+상품은 앱별로 나뉜다. 계정 유형(core/account_type.py)이 어느 앱인지 정한다.
+- 손님 계정: settings.CREDIT_PRODUCTS, 패키지 PLAY_PACKAGE_NAME
+- Pro 계정:  settings.PRO_CREDIT_PRODUCTS, 패키지 PLAY_PRO_PACKAGE_NAME
+다른 앱의 상품 ID 는 "알 수 없는 상품"(400) 이므로 서로의 상품을 살 수 없다.
+"""
 
 import hashlib
 from typing import Optional
@@ -11,8 +17,9 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from config.settings import settings
+from core.account_type import is_pro
 from core.logging import log_structured, logger, mask_user_id
-from core.jwt_auth import get_current_user_id, get_optional_user_id
+from core.jwt_auth import get_account_type, get_current_user_id, get_optional_user_id
 from database.user_repository import get_user_repository
 from services.free_policy_service import (
     REWARD_UNLOCK_FEATURES,
@@ -131,8 +138,45 @@ def _starter_used_response(product_id: str) -> JSONResponse:
     )
 
 
+def _pro_products_response(user_id: str) -> dict:
+    """Pro 계정 결제 화면용 상품 목록 (계정당 1회 상품·배지 A/B 없음)"""
+    try:
+        wallet = get_credit_service().get_wallet(user_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+    except Exception as e:
+        logger.error(f"❌ 상품 목록 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="상품 정보를 불러오지 못했습니다.")
+
+    products = [
+        {
+            "product_id": product_id,
+            "credits": credits,
+            "one_per_account": False,
+            "available": True,
+            "default": False,
+            "badge": None,
+        }
+        for product_id, credits in settings.PRO_CREDIT_PRODUCTS.items()
+    ]
+    log_structured(
+        "paywall_products_viewed",
+        {"user_id": mask_user_id(user_id), "account_type": "pro"},
+    )
+    return {
+        "products": products,
+        "paywall_variant": None,
+        "balance": wallet["balance"],
+        "paid_balance": wallet["paid_balance"],
+        "ad_free": bool(wallet["first_purchase_at"]),
+    }
+
+
 @router.get("/credits/products")
-async def list_credit_products(user_id: str = Depends(get_current_user_id)):
+async def list_credit_products(
+    user_id: str = Depends(get_current_user_id),
+    account_type: str = Depends(get_account_type),
+):
     """
     결제 화면용 상품 목록 + 잔액 + 광고 제거 여부
 
@@ -147,7 +191,12 @@ async def list_credit_products(user_id: str = Depends(get_current_user_id)):
             "paywall_variant": "recommended" | "secondary",  # credits_30 노출 A/B
             "balance": 3, "paid_balance": 0, "ad_free": false
         }
+
+    Pro 계정은 PRO_CREDIT_PRODUCTS 만 내려주고 paywall_variant 는 null 이다.
     """
+    if is_pro(account_type):
+        return _pro_products_response(user_id)
+
     service = get_credit_service()
     try:
         wallet = service.get_wallet(user_id)
@@ -233,6 +282,7 @@ async def purchase_credits(
     request: Request,
     body: PurchaseRequest,
     user_id: str = Depends(get_current_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     크레딧 구매 (Google Play 인앱결제 영수증 검증)
@@ -245,16 +295,36 @@ async def purchase_credits(
        (미승인 구매는 3일 후 Google 자동 환불 → "환불 + 크레딧 유지" 차단)
     4. purchase_token 클레임 마커(조건부 put)로 중복 지급 방지
     5. credit_service.grant(reason="purchase", paid=True) - 지급 실패 시 마커 회수
+
+    Pro 계정은 PRO_CREDIT_PRODUCTS 와 PLAY_PRO_PACKAGE_NAME 으로 검증한다.
     """
-    amount = settings.CREDIT_PRODUCTS.get(body.product_id)
+    pro = is_pro(account_type)
+    products = settings.PRO_CREDIT_PRODUCTS if pro else settings.CREDIT_PRODUCTS
+    amount = products.get(body.product_id)
     if amount is None:
         raise HTTPException(status_code=400, detail="알 수 없는 상품입니다.")
 
     # 영수증 검증 (동기 requests 호출이라 스레드풀로 - 이벤트 루프 차단 방지)
     play_service = get_play_billing_service()
+    # 손님 계정 호출은 기존과 같은 인자로 부른다. Pro 는 Pro 앱 패키지로만 검증한다
+    # (미설정이면 손님 패키지로 대신 검증하지 않고 503).
+    package_kwargs = {}
+    if pro:
+        if not play_service.pro_package_name:
+            logger.error(
+                "❌ PLAY_PRO_PACKAGE_NAME이 설정되지 않음 (Pro 구매 검증 불가)"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="결제 검증 서비스를 일시적으로 사용할 수 없습니다.",
+            )
+        package_kwargs = {"package_name": play_service.pro_package_name}
     try:
         receipt = await run_in_threadpool(
-            play_service.verify_product_purchase, body.product_id, body.purchase_token
+            play_service.verify_product_purchase,
+            body.product_id,
+            body.purchase_token,
+            **package_kwargs,
         )
     except InvalidPurchaseError:
         logger.warning(
@@ -306,6 +376,7 @@ async def purchase_credits(
                 play_service.acknowledge_product_purchase,
                 body.product_id,
                 body.purchase_token,
+                **package_kwargs,
             )
     except InvalidPurchaseError:
         release_once()
@@ -359,6 +430,7 @@ async def purchase_credits(
             "user_id": mask_user_id(user_id),
             "product_id": body.product_id,
             "credits": amount,
+            **({"account_type": account_type} if pro else {}),
         },
     )
     return {

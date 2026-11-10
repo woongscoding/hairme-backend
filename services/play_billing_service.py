@@ -72,6 +72,11 @@ class PlayBillingService:
     def package_name(self) -> str:
         return os.getenv("PLAY_PACKAGE_NAME", settings.PLAY_PACKAGE_NAME)
 
+    @property
+    def pro_package_name(self) -> str:
+        """미용실용 앱(Hair Consultant) 패키지명 (미설정이면 빈 문자열)"""
+        return os.getenv("PLAY_PRO_PACKAGE_NAME", settings.PLAY_PRO_PACKAGE_NAME)
+
     def _load_credentials(self):
         """서비스 계정 자격증명 로드 (Secrets Manager → 환경변수/설정 폴백)"""
         raw = (
@@ -106,10 +111,15 @@ class PlayBillingService:
         return self._session
 
     def verify_product_purchase(
-        self, product_id: str, purchase_token: str
+        self,
+        product_id: str,
+        purchase_token: str,
+        package_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         인앱 상품 구매 영수증 검증
+
+        package_name: 검증할 앱 패키지 (없으면 손님용 PLAY_PACKAGE_NAME)
 
         Returns:
             {"order_id": str|None, "purchase_time_millis": str|None,
@@ -123,12 +133,13 @@ class PlayBillingService:
             InvalidPurchaseError: 토큰이 유효하지 않거나 결제 완료 상태가 아님
             PlayBillingUnavailableError: 설정 누락 또는 Google API 장애
         """
-        if not self.package_name:
+        package = package_name or self.package_name
+        if not package:
             logger.error("❌ PLAY_PACKAGE_NAME이 설정되지 않음 (구매 검증 불가)")
             raise PlayBillingUnavailableError("package name not configured")
 
         url = PLAY_PRODUCTS_GET_URL.format(
-            package_name=quote(self.package_name, safe=""),
+            package_name=quote(package, safe=""),
             product_id=quote(product_id, safe=""),
             token=quote(purchase_token, safe=""),
         )
@@ -178,7 +189,10 @@ class PlayBillingService:
         }
 
     def acknowledge_product_purchase(
-        self, product_id: str, purchase_token: str
+        self,
+        product_id: str,
+        purchase_token: str,
+        package_name: Optional[str] = None,
     ) -> None:
         """
         구매 서버 측 승인 (purchases.products.acknowledge)
@@ -193,7 +207,7 @@ class PlayBillingService:
             PlayBillingUnavailableError: Google API 장애 (클라이언트 재시도 유도)
         """
         url = PLAY_PRODUCTS_ACK_URL.format(
-            package_name=quote(self.package_name, safe=""),
+            package_name=quote(package_name or self.package_name, safe=""),
             product_id=quote(product_id, safe=""),
             token=quote(purchase_token, safe=""),
         )
@@ -226,6 +240,7 @@ class PlayBillingService:
         start_time_millis: int,
         page_token: Optional[str] = None,
         voided_type: int = VOIDED_TYPE_ONE_TIME,
+        package_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         환불/취소/차지백된 구매 목록 1페이지 조회 (purchases.voidedpurchases.list)
@@ -237,6 +252,7 @@ class PlayBillingService:
             start_time_millis: 조회 시작 시각 (epoch ms, Play 는 최대 30일 과거까지)
             page_token: 다음 페이지 토큰 (첫 페이지는 None)
             voided_type: 0=인앱 상품만, 1=구독 포함
+            package_name: 조회할 앱 패키지 (없으면 손님용 PLAY_PACKAGE_NAME)
 
         Returns:
             Play API 원본 JSON ({"voidedPurchases": [...], "tokenPagination": {...}})
@@ -244,12 +260,13 @@ class PlayBillingService:
         Raises:
             PlayBillingUnavailableError: 설정 누락 또는 Google API 장애
         """
-        if not self.package_name:
+        package = package_name or self.package_name
+        if not package:
             logger.error("❌ PLAY_PACKAGE_NAME이 설정되지 않음 (환불 조회 불가)")
             raise PlayBillingUnavailableError("package name not configured")
 
         url = PLAY_VOIDED_PURCHASES_URL.format(
-            package_name=quote(self.package_name, safe=""),
+            package_name=quote(package, safe=""),
         )
         params: Dict[str, Any] = {
             "startTime": str(int(start_time_millis)),

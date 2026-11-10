@@ -193,6 +193,9 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           KAKAO_APP_ID: ${{ vars.KAKAO_APP_ID }}
           PLAY_PACKAGE_NAME: ${{ vars.PLAY_PACKAGE_NAME }}
+          # 미용실용 앱(Hair Consultant). 미설정이면 Pro 로그인·구매가 꺼진 상태로 남는다
+          KAKAO_PRO_APP_ID: ${{ vars.KAKAO_PRO_APP_ID }}
+          PLAY_PRO_PACKAGE_NAME: ${{ vars.PLAY_PRO_PACKAGE_NAME }}
           ADMOB_REWARD_AD_UNIT_IDS: ${{ vars.ADMOB_REWARD_AD_UNIT_IDS }}
           # 수익화 v2.1 운영 값 (GitHub vars 미설정이면 Lambda 기존 값 유지)
           DAILY_SYNTHESIS_BUDGET: ${{ vars.DAILY_SYNTHESIS_BUDGET }}
@@ -240,6 +243,8 @@ jobs:
             --arg sentry_dsn "$SENTRY_DSN" \
             --arg kakao_app_id "$KAKAO_APP_ID" \
             --arg play_package_name "$PLAY_PACKAGE_NAME" \
+            --arg kakao_pro_app_id "$KAKAO_PRO_APP_ID" \
+            --arg play_pro_package_name "$PLAY_PRO_PACKAGE_NAME" \
             --arg admob_reward_ad_unit_ids "$ADMOB_REWARD_AD_UNIT_IDS" \
             --arg daily_synthesis_budget "$DAILY_SYNTHESIS_BUDGET" \
             --arg free_policy_experiment_enabled "$FREE_POLICY_EXPERIMENT_ENABLED" \
@@ -257,6 +262,8 @@ jobs:
                MLOPS_S3_BUCKET: "hairme-mlops",
                KAKAO_APP_ID: $kakao_app_id,
                PLAY_PACKAGE_NAME: $play_package_name,
+               KAKAO_PRO_APP_ID: $kakao_pro_app_id,
+               PLAY_PRO_PACKAGE_NAME: $play_pro_package_name,
                ADMOB_REWARD_AD_UNIT_IDS: $admob_reward_ad_unit_ids,
                DAILY_SYNTHESIS_BUDGET: $daily_synthesis_budget,
                FREE_POLICY_EXPERIMENT_ENABLED: $free_policy_experiment_enabled,

@@ -27,13 +27,15 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request, Form
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from core.logging import logger, log_structured
 from core.exceptions import InvalidFileFormatException
-from core.jwt_auth import get_optional_user_id
+from core.account_type import is_pro
+from core.jwt_auth import get_account_type, get_optional_user_id
 from core.quota import charge_synthesis_quota, client_ip_from_request
 from core.synthesis_budget import daily_budget_exceeded, record_api_calls
 from core.synthesis_lock import NOOP_RELEASE, acquire_synthesis_lock
@@ -254,6 +256,7 @@ async def synthesize_hair_color(
     ),
     additional_instructions: Optional[str] = Form(None, description="추가 요청사항"),
     user_id: Optional[str] = Depends(get_optional_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     가상 염색 시뮬레이션 API
@@ -274,7 +277,17 @@ async def synthesize_hair_color(
 
     사전 거절: 503 daily_budget_exceeded (비로그인, 일 예산 상한) /
     409 synthesis_in_progress (같은 요청 진행 중) - 둘 다 과금 전이다.
+
+    Pro 계정(미용실용 앱)은 403 pro_not_supported - 1차 버전에서 쓰지 않는다.
     """
+    if user_id is not None and is_pro(account_type):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "pro_not_supported",
+                "message": "이 계정에서는 염색 합성을 사용할 수 없습니다.",
+            },
+        )
     start_time = time.time()
     # 잠금을 잡기 전에 빠져나가는 경로가 있으므로 기본값은 no-op
     release_lock: Callable[[], None] = NOOP_RELEASE

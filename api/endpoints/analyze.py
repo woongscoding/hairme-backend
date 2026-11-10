@@ -21,7 +21,8 @@ from core.exceptions import (
     InvalidFileFormatException,
 )
 from core.hashing import calculate_image_hash
-from core.jwt_auth import get_optional_user_id
+from core.account_type import is_pro
+from core.jwt_auth import get_account_type, get_optional_user_id
 from core.upload_validation import validate_file_extension, validate_image_upload
 from services.rec_exploration import EXPERIMENT_ID
 
@@ -112,6 +113,7 @@ async def analyze_face_hybrid(
     face_detector: "FaceDetectionService" = Depends(get_face_detection_service),
     ml_recommender: "MLRecommendationService" = Depends(get_hybrid_service),
     user_id: Optional[str] = Depends(get_optional_user_id),
+    account_type: str = Depends(get_account_type),
 ):
     """
     ML 기반 헤어스타일 추천 (v2)
@@ -262,18 +264,24 @@ async def analyze_face_hybrid(
                 engagement_assignment.get("engagement_applied")
             )
 
-        analysis_id = save_to_database(
-            image_hash=image_hash,
-            analysis_result=analysis_result_for_db,
-            processing_time=total_time,
-            detection_method="ml",
-            mp_features=mp_features,
-            model_version=model_version,
-            gender=gender,
-        )
+        # Pro 계정(미용실)은 손님 사진이므로 분석 행을 남기지 않는다.
+        # analysis_id 가 없으면 피드백·학습 신호도 이어 붙지 않는다.
+        skip_analysis_row = user_id is not None and is_pro(account_type)
+        if skip_analysis_row:
+            analysis_id = None
+        else:
+            analysis_id = save_to_database(
+                image_hash=image_hash,
+                analysis_result=analysis_result_for_db,
+                processing_time=total_time,
+                detection_method="ml",
+                mp_features=mp_features,
+                model_version=model_version,
+                gender=gender,
+            )
 
         # Warn if database save failed but continue with response
-        if analysis_id is None:
+        if analysis_id is None and not skip_analysis_row:
             logger.warning(
                 "⚠️ 데이터베이스 저장 실패 - 분석은 성공했지만 피드백을 저장할 수 없습니다. "
                 f"image_hash: {image_hash[:16]}"

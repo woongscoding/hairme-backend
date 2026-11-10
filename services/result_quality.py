@@ -81,8 +81,13 @@ def downscale_to(
         return image_base64, image_format
 
 
-def finalize_image(result: dict, tier: str) -> tuple:
-    """무료 등급이면 FREE_IMAGE_SIZE 로 줄이고 워터마크, 유료면 그대로"""
+def finalize_image(
+    result: dict, tier: str, watermark_text: Optional[str] = None
+) -> tuple:
+    """무료 등급이면 FREE_IMAGE_SIZE 로 줄이고 워터마크, 유료면 그대로
+
+    watermark_text: 없으면 settings.RESULT_WATERMARK_TEXT (Pro 계정은 자기 브랜드를 넘긴다)
+    """
     image_base64, image_format = result["image_base64"], result["image_format"]
     if tier == TIER_PAID:
         return image_base64, image_format
@@ -91,4 +96,6 @@ def finalize_image(result: dict, tier: str) -> tuple:
     )
     if not result_quality(tier)["watermarked"]:
         return image_base64, image_format
-    return apply_watermark(image_base64, image_format, settings.RESULT_WATERMARK_TEXT)
+    return apply_watermark(
+        image_base64, image_format, watermark_text or settings.RESULT_WATERMARK_TEXT
+    )
