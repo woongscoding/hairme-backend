@@ -14,6 +14,9 @@
 - reports/{YYYY-MM-DD}/{id}.json AI 생성 이미지 신고 (결과 이미지 자체는 저장하지 않음)
 - body/originals/{subject}/{id}.{ext} 체형 코디 전신 사진 (분석한 사진 전부, 1년 보관).
   얼굴(헤어) 사진과 경로·보관 기간을 분리한다.
+- pro/records/{user_id}/{customer_id}/{visit_id}/{result_id}.{jpg|png} Pro 계정 손님 기록의
+  상담 사진 (services/pro_records_service.py). 기록은 2년 보관하고, 수명주기 규칙은
+  하루 더 긴 731일이다 (scripts/apply_pro_results_lifecycle.py). pro/results/ 와 겹치지 않는다.
 
 PHOTO_S3_BUCKET 미설정 시 모든 기능이 조용히 비활성화됨 (합성 자체는 정상 동작).
 """
@@ -52,6 +55,9 @@ PRO_RESULTS_PREFIX = "pro/results/"
 # Pro 결과 공유 주소의 연결 정보 (pro/results/ 수명주기 규칙에 함께 걸린다)
 PRO_SHARE_PREFIX = f"{PRO_RESULTS_PREFIX}_share/"
 
+# Pro 계정 손님 기록 사진 (2년 보관 - pro/results/ 의 7일 규칙에 걸리지 않는다)
+PRO_RECORDS_PREFIX = "pro/records/"
+
 # 공유 토큰: secrets.token_urlsafe(16) = 128비트 난수, URL-safe base64 22자
 SHARE_TOKEN_BYTES = 16
 SHARE_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{22}")
@@ -63,6 +69,21 @@ _DELETE_BATCH = 1000
 def user_results_prefix(user_id: str, pro: bool = False) -> str:
     """회원 결과가 저장되는 S3 접두사"""
     return f"{PRO_RESULTS_PREFIX if pro else RESULTS_PREFIX}{user_id}/"
+
+
+def pro_records_prefix(user_id: str, customer_id: Optional[str] = None) -> str:
+    """손님 기록 사진 접두사 (customer_id 를 주면 그 손님의 사진만)
+
+    끝에 "/" 를 붙이므로 id 가 다른 id 의 앞부분과 같아도 섞이지 않는다.
+    """
+    prefix = f"{PRO_RECORDS_PREFIX}{user_id}/"
+    return f"{prefix}{customer_id}/" if customer_id else prefix
+
+
+def pro_record_photo_key(
+    user_id: str, customer_id: str, visit_id: str, result_id: str, ext: str
+) -> str:
+    return f"{pro_records_prefix(user_id, customer_id)}{visit_id}/{result_id}.{ext}"
 
 
 def share_pointer_key(token: str) -> str:
@@ -340,6 +361,30 @@ class PhotoStorageService:
             raise RuntimeError("presigned URL 생성 실패")
         return {"image_url": image_url, "expires_at": expires_at}
 
+    def _list_keys(self, prefix: str) -> List[str]:
+        """접두사 아래 모든 객체 키 (조회 실패는 예외로 전파)"""
+        keys: List[str] = []
+        list_kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+        while True:
+            response = self.client.list_objects_v2(**list_kwargs)
+            keys.extend(obj["Key"] for obj in response.get("Contents", []))
+            if not response.get("IsTruncated"):
+                break
+            list_kwargs["ContinuationToken"] = response["NextContinuationToken"]
+        return keys
+
+    def _delete_keys(self, keys: List[str]) -> None:
+        """객체 일괄 삭제 (일부라도 실패하면 예외)"""
+        for start in range(0, len(keys), _DELETE_BATCH):
+            batch = keys[start : start + _DELETE_BATCH]
+            response = self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
+            )
+            errors = response.get("Errors") or []
+            if errors:
+                raise RuntimeError(f"결과 삭제 일부 실패: {len(errors)}건")
+
     def delete_user_results(self, user_id: str, pro: bool) -> int:
         """
         회원 결과 전부 삭제 (회원 탈퇴용). Pro 결과면 공유 주소 연결 정보도 지운다.
@@ -353,15 +398,7 @@ class PhotoStorageService:
         if not self.enabled:
             return 0
 
-        prefix = user_results_prefix(user_id, pro)
-        result_keys: List[str] = []
-        list_kwargs: Dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
-        while True:
-            response = self.client.list_objects_v2(**list_kwargs)
-            result_keys.extend(obj["Key"] for obj in response.get("Contents", []))
-            if not response.get("IsTruncated"):
-                break
-            list_kwargs["ContinuationToken"] = response["NextContinuationToken"]
+        result_keys = self._list_keys(user_results_prefix(user_id, pro))
 
         keys = list(result_keys)
         if pro:
@@ -370,17 +407,57 @@ class PhotoStorageService:
                 if token:
                     keys.append(share_pointer_key(token))
 
-        for start in range(0, len(keys), _DELETE_BATCH):
-            batch = keys[start : start + _DELETE_BATCH]
-            response = self.client.delete_objects(
-                Bucket=self.bucket,
-                Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
-            )
-            errors = response.get("Errors") or []
-            if errors:
-                raise RuntimeError(f"결과 삭제 일부 실패: {len(errors)}건")
-
+        self._delete_keys(keys)
         return len(result_keys)
+
+    # ========== Pro 계정 손님 기록 사진 ==========
+
+    def save_pro_record_photo(
+        self, key: str, image_bytes: bytes, content_type: str
+    ) -> None:
+        """상담 기록 사진 저장 (실패는 예외로 전파 - 호출자가 기록을 쓰지 않아야 한다)"""
+        if not self.enabled:
+            raise RuntimeError("사진 버킷이 설정되지 않았습니다")
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=image_bytes,
+            ContentType=content_type,
+        )
+
+    def delete_object_quietly(self, key: str) -> None:
+        """객체 하나 삭제 (실패해도 무시 - 기록에 연결되지 않은 사진 정리용)"""
+        if not self.enabled:
+            return
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+        except Exception as e:
+            logger.warning(f"사진 정리 실패 (무시): {type(e).__name__}")
+
+    def delete_pro_records(self, prefix: str) -> int:
+        """손님 기록 사진을 접두사 단위로 전부 삭제 (pro_records_prefix 의 값)
+
+        Returns:
+            지운 객체 수
+
+        Raises:
+            S3 조회·삭제 실패 시 예외 (호출자가 기록 삭제를 중단해야 한다)
+        """
+        if not self.enabled:
+            return 0
+        owner = prefix[len(PRO_RECORDS_PREFIX) :]
+        if (
+            not prefix.startswith(PRO_RECORDS_PREFIX)
+            or not prefix.endswith("/")
+            or not owner.strip("/")
+            or "//" in owner
+        ):
+            # 접두사 실수로 다른 경로(또는 모든 디자이너의 기록)를 지우지 않게
+            # 한 디자이너 이하의 손님 기록 경로만 허용한다
+            raise ValueError("손님 기록 경로가 아닙니다")
+        keys = self._list_keys(prefix)
+        self._delete_keys(keys)
+        return len(keys)
 
     def list_user_results(
         self,

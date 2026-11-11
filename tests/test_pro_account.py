@@ -677,9 +677,12 @@ class TestLifecycleScript:
         ]
         rules = merged_rules(existing)
         assert rules[0] == existing[0]
-        assert len(rules) == 2
+        # pro/results/ 7일 + 손님 기록 사진 pro/records/ 731일
+        assert len(rules) == 3
         assert rules[1]["Filter"] == {"Prefix": "pro/results/"}
         assert rules[1]["Expiration"] == {"Days": 7}
+        assert rules[2]["Filter"] == {"Prefix": "pro/records/"}
+        assert rules[2]["Expiration"] == {"Days": 731}
         assert PREFIX == "pro/results/" and DAYS == 7
         # 손님용 results/ 규칙에 Pro 경로가 걸리지 않는다
         assert not PREFIX.startswith("results/")

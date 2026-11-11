@@ -99,6 +99,15 @@ class Settings(BaseSettings):
     PRO_SHARE_IMAGE_URL_SECONDS: int = 900
     # 공유 주소 앞부분 (예: https://example.com). 비우면 요청이 들어온 서버 주소를 쓴다.
     PRO_SHARE_BASE_URL: str = ""
+    # Pro 계정 손님 기록 테이블 (PK: user_id, SK: sk, TTL 속성 expire_at).
+    # scripts/create_pro_customers_table.py 로 만든다. 비우면 손님 기록 기능이 꺼진다 (503).
+    DYNAMODB_PRO_CUSTOMERS_TABLE_NAME: str = "hairme-pro-customers"
+    # 손님 기록 보관 기간 (일). 상담 기록은 상담일부터, 손님은 마지막 상담일부터 센다.
+    # S3 수명주기 규칙(scripts/apply_pro_results_lifecycle.py 의 pro/records/ 731일)은
+    # 이 값보다 하루 길게 둔다 (사진이 기록보다 먼저 지워지지 않게).
+    PRO_RECORD_RETENTION_DAYS: int = 730
+    # 상담 기록 사진에 거는 presigned URL 유효기간 (초)
+    PRO_RECORD_PHOTO_URL_SECONDS: int = 3600
 
     # ===== 무료 정책 실험 (수익화 v2.1 Phase 1) =====
     # 실험군(신규 기기의 TREATMENT_PERCENT%): 비회원 평생 N회 + 가입 보너스 축소

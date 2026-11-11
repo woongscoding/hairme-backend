@@ -254,6 +254,7 @@ jobs:
                USE_DYNAMODB: "true",
                DYNAMODB_TABLE_NAME: "hairme-analysis",
                DYNAMODB_USAGE_TABLE_NAME: "hairstyle_usage",
+               DYNAMODB_PRO_CUSTOMERS_TABLE_NAME: "hairme-pro-customers",
                ALLOWED_ORIGINS: $allowed_origins,
                LOG_LEVEL: "INFO",
                ENVIRONMENT: "production",
@@ -575,6 +576,7 @@ jobs:
                USE_DYNAMODB: "true",
                DYNAMODB_TABLE_NAME: "hairme-analysis",
                DYNAMODB_USAGE_TABLE_NAME: "hairstyle_usage",
+               DYNAMODB_PRO_CUSTOMERS_TABLE_NAME: "hairme-pro-customers",
                LOG_LEVEL: "INFO",
                ENVIRONMENT: "production",
                SENTRY_DSN: $sentry_dsn
