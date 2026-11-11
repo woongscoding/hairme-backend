@@ -39,6 +39,7 @@ from services.credit_service import RefAlreadyClaimedError, get_credit_service
 from services.free_policy_service import resolve_device_arm, signup_bonus_for
 from services.kakao_auth_service import get_kakao_auth_service
 from services.photo_storage_service import get_photo_storage_service
+from services.pro_records_service import get_pro_records_service
 from services.withdrawal_hold_service import hold_transact_item, recently_withdrawn
 from services.usage_limit_service import get_usage_limit_service, validate_device_id
 
@@ -433,17 +434,20 @@ async def withdraw(
 
     1. pro/results/{user_id}/ 의 결과 사진과 공유 주소 연결 정보를 지운다.
        실패하면 503 으로 멈춘다 (계정이 남아 있어야 다시 시도할 수 있다).
-    2. 회원 행과 카카오 유일성 마커를 지운다. 남은 합성 횟수는 사라진다.
+    2. 손님 기록(services/pro_records_service.py)을 전부 지운다: pro/records/{user_id}/ 사진 →
+       손님 기록 테이블의 이 디자이너 파티션. 실패하면 503 (위와 같은 이유).
+       테이블이 설정되지 않았거나 아직 없으면 지울 것이 없으므로 건너뛴다.
+    3. 회원 행과 카카오 유일성 마커를 지운다. 남은 합성 횟수는 사라진다.
        크레딧 원장·결제 마커는 결제 기록 보관을 위해 남긴다 (user_id 만 있음).
        같은 트랜잭션에서 카카오 회원번호를 되돌릴 수 없게 바꾼 값을 약 6개월 보관한다
        (그 기간의 재가입에는 체험을 주지 않는다 - services/withdrawal_hold_service.py).
-    이미 탈퇴한 계정의 재요청(같은 액세스 토큰)은 결과 폴더만 다시 확인하고 성공으로 답한다.
+    이미 탈퇴한 계정의 재요청(같은 액세스 토큰)은 결과 폴더·손님 기록만 다시 확인하고 성공으로 답한다.
 
     손님 계정은 403 withdrawal_not_supported (이번 범위 밖).
     카카오 연결 끊기(unlink)는 앱이 카카오 SDK 로 한다.
 
     Returns:
-        {"success": true, "deleted_results": int}
+        {"success": true, "deleted_results": int, "deleted_records": int(지운 손님 수)}
     """
     not_supported = _withdrawal_error(
         403,
@@ -480,6 +484,21 @@ async def withdraw(
             "탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.",
         )
 
+    try:
+        deleted_records = await run_in_threadpool(
+            get_pro_records_service().delete_all_records, user_id
+        )
+    except Exception as e:
+        logger.error(
+            f"❌ 탈퇴 손님 기록 삭제 실패: user_id={mask_user_id(user_id)}, "
+            f"{type(e).__name__}"
+        )
+        return _withdrawal_error(
+            503,
+            "withdrawal_failed",
+            "탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
     if user is not None:
         try:
             user_repo.delete_account(
@@ -505,10 +524,15 @@ async def withdraw(
             "user_id": mask_user_id(user_id),
             "account_type": account_type,
             "deleted_results": deleted_results,
+            "deleted_records": deleted_records,
             "already_deleted": user is None,
         },
     )
-    return {"success": True, "deleted_results": deleted_results}
+    return {
+        "success": True,
+        "deleted_results": deleted_results,
+        "deleted_records": deleted_records,
+    }
 
 
 @router.patch("/auth/me/consent")

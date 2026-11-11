@@ -73,10 +73,14 @@ def withdraw_env():
     repo.get_by_id_consistent.return_value = dict(PRO_USER)
     storage = MagicMock()
     storage.delete_user_results.return_value = 3
+    records = MagicMock()
+    records.delete_all_records.return_value = 2
     with patch("api.endpoints.auth.get_user_repository", return_value=repo), patch(
         "api.endpoints.auth.get_photo_storage_service", return_value=storage
-    ), patch("api.endpoints.auth.log_structured") as log:
-        yield {"repo": repo, "storage": storage, "log": log}
+    ), patch("api.endpoints.auth.get_pro_records_service", return_value=records), patch(
+        "api.endpoints.auth.log_structured"
+    ) as log:
+        yield {"repo": repo, "storage": storage, "records": records, "log": log}
     auth.limiter.enabled = previous
 
 
@@ -85,8 +89,13 @@ class TestWithdraw:
         env = withdraw_env
         response = client.delete("/api/auth/me", headers=_pro_auth())
         assert response.status_code == 200, response.text
-        assert response.json() == {"success": True, "deleted_results": 3}
+        assert response.json() == {
+            "success": True,
+            "deleted_results": 3,
+            "deleted_records": 2,
+        }
         env["storage"].delete_user_results.assert_called_once_with("pro-user-id", True)
+        env["records"].delete_all_records.assert_called_once_with("pro-user-id")
         env["repo"].delete_account.assert_called_once()
         call = env["repo"].delete_account.call_args
         assert call.args == ("pro-user-id", PRO_USER["kakao_id"])
