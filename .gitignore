@@ -210,3 +210,7 @@ health_*.json
 health_*.txt
 cold_start_*.json
 curl_*.json
+
+# AdMob 출시 후 점검 스크립트의 상태/로그 (로컬 전용)
+scripts/.admob_watch_state.json
+scripts/.admob_watch.log
